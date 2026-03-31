@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Predicciones Mundial 2026</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#contenido-principal">Ir al contenido</a>
+
+    <div
+      id="overlay-admin-settings"
+      class="overlay"
+      hidden
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="admin-settings-title"
+    >
+      <div class="overlay-card overlay-card--admin-settings">
+        <h2 id="admin-settings-title" class="overlay-title">Ajustes del torneo</h2>
+        <p class="overlay-desc">
+          Participantes que pueden usar la quiniela. Si ejecutas el servidor de sincronización (puerto 8787 con Vite, o
+          <code>npm start</code> con la carpeta <code>dist</code>), la lista y las predicciones se comparten entre
+          todos. Si no hay API disponible, todo queda solo en este navegador.
+          <strong id="admin-settings-admin-hint"></strong>
+        </p>
+        <div id="admin-settings-list-wrap" class="admin-settings-list-wrap"></div>
+        <form id="form-admin-add-participant" class="admin-settings-add-form">
+          <p class="admin-settings-add-title">Añadir participante</p>
+          <label class="field">
+            <span class="field-label">Id (sin espacios, ej. <code>pedro</code>)</span>
+            <input id="admin-add-id" class="input" name="id" autocomplete="off" maxlength="32" required />
+          </label>
+          <label class="field">
+            <span class="field-label">Nombre visible</span>
+            <input id="admin-add-name" class="input" name="name" autocomplete="name" maxlength="48" required />
+          </label>
+          <label class="field">
+            <span class="field-label">PIN (opcional; vacío = no pedir PIN)</span>
+            <input id="admin-add-pin" class="input" name="pin" type="password" maxlength="16" autocomplete="new-password" />
+          </label>
+          <p id="admin-settings-form-error" class="form-error" role="alert" hidden></p>
+          <button type="submit" class="btn btn-primary btn-sm">Añadir participante</button>
+        </form>
+        <div class="admin-settings-danger" aria-labelledby="admin-danger-title">
+          <p id="admin-danger-title" class="admin-settings-danger-title">Reinicio masivo</p>
+          <p class="muted admin-settings-danger-desc">
+            Borra predicciones de <strong>todos</strong> los participantes y <strong>todo el resultado oficial</strong>
+            (Partidos, grupos, podio admin, bloqueos). No borra la lista de jugadores en Ajustes.
+          </p>
+          <button type="button" id="btn-admin-reset-all-predictions" class="btn btn-sm admin-settings-danger-btn">
+            Reiniciar predicciones y resultados oficiales
+          </button>
+        </div>
+        <button type="button" id="admin-settings-close" class="btn btn-sm admin-settings-close">Cerrar</button>
+      </div>
+    </div>
+
+    <div id="overlay-onboarding" class="overlay" hidden role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+      <div class="overlay-card">
+        <h2 id="onboarding-title" class="overlay-title">¿Quién juega?</h2>
+        <p class="overlay-desc">
+          Elige tu nombre una sola vez en este navegador. Tus predicciones se guardan aquí; nadie más puede editarlas desde tu sesión.
+        </p>
+        <label class="field">
+          <span class="field-label">Participante</span>
+          <select id="onboarding-participant" class="input"></select>
+        </label>
+        <label class="field" id="onboarding-pin-wrap" hidden>
+          <span class="field-label">PIN (solo la primera vez en este dispositivo)</span>
+          <input id="onboarding-pin" type="password" class="input" inputmode="numeric" maxlength="8" autocomplete="one-time-code" />
+        </label>
+        <p id="onboarding-error" class="form-error" role="alert" hidden></p>
+        <button type="button" id="onboarding-submit" class="btn btn-primary">Entrar</button>
+      </div>
+    </div>
+
+    <header class="site-header">
+      <div class="site-header-inner">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">⚽</span>
+          <div>
+            <p class="brand-title">Mundial 2026</p>
+            <p class="brand-sub">Predicciones con amigos</p>
+          </div>
+        </div>
+        <div class="session-bar">
+          <div id="session-chip" class="session-chip" hidden>
+            <span class="session-chip-label">Jugando como</span>
+            <strong id="session-name" class="session-name"></strong>
+          </div>
+          <button type="button" id="btn-open-rules" class="btn btn-ghost btn-sm">Reglas</button>
+          <button type="button" id="btn-toggle-floating-ranking" class="btn btn-ghost btn-sm">Ranking flotante: ON</button>
+          <button type="button" id="btn-cambiar-sesion" class="btn btn-ghost btn-sm" hidden>Cambiar participante</button>
+          <button
+            type="button"
+            id="btn-admin-settings"
+            class="btn btn-ghost btn-sm btn-admin-settings-gear"
+            hidden
+            aria-haspopup="dialog"
+            aria-label="Ajustes"
+            title="Ajustes"
+          >
+            ⚙️
+          </button>
+        </div>
+      </div>
+      <nav class="tabs" aria-label="Secciones">
+        <button type="button" class="tab tab-pair-start tab-predictions is-active" data-tab="grupos" aria-selected="true">Fase de grupos ✍️</button>
+        <button type="button" class="tab tab-pair-mid" data-tab="team-order" aria-selected="false">Tabla grupos (orden)</button>
+        <button type="button" class="tab tab-pair-end" data-tab="team-order-ranking" aria-selected="false">Ranking grupos</button>
+        <button type="button" class="tab tab-pair-start tab-predictions" data-tab="partidos" aria-selected="false">Partidos ✍️</button>
+        <button type="button" class="tab tab-pair-mid" data-tab="match-history" aria-selected="false">Historial</button>
+        <button type="button" class="tab tab-pair-mid" data-tab="team-stats" aria-selected="false">Tabla de equipos</button>
+        <button type="button" class="tab tab-pair-end" data-tab="match-ranking" aria-selected="false">Ranking partidos</button>
+        <button type="button" class="tab tab-pill-solo" data-tab="generales" aria-selected="false">Predicciones generales</button>
+        <button type="button" class="tab tab-pill-solo" data-tab="brackets" aria-selected="false">Brackets</button>
+        <button type="button" class="tab tab-pair-start" data-tab="final-ranking" aria-selected="false">Ranking final</button>
+        <button type="button" class="tab tab-pair-end" data-tab="stats" aria-selected="false">Estadísticas</button>
+      </nav>
+      <p class="tabs-hint">
+        Empieza por <strong>Fase de grupos</strong> y <strong>Partidos</strong>: ahi haces tus predicciones.
+      </p>
+    </header>
+
+    <main id="contenido-principal" class="main">
+      <section id="panel-reglas" class="panel" data-panel="reglas" hidden tabindex="-1">
+        <h1 class="panel-title">Reglas y puntos</h1>
+        <p class="panel-intro">
+          Resumen rapido de como se reparten los puntos en cada parte del juego.
+        </p>
+
+        <div class="prose prose-rules">
+          <div class="rules-snapshot" aria-label="Resumen de bloques">
+            <h2 class="rules-snapshot__title">Puntos máximos por bloque</h2>
+            <dl class="rules-snapshot__grid">
+              <div class="rules-snapshot__item">
+                <dt>Podio</dt>
+                <dd>16</dd>
+              </div>
+              <div class="rules-snapshot__item">
+                <dt>Jugador / portero / goleador</dt>
+                <dd>9</dd>
+              </div>
+              <div class="rules-snapshot__item">
+                <dt>Grupos <span class="rules-snapshot__hint">(12 × 6)</span></dt>
+                <dd>72</dd>
+              </div>
+              <div class="rules-snapshot__item">
+                <dt>Marcadores</dt>
+                <dd>478</dd>
+              </div>
+            </dl>
+
+            <div class="rules-summary-wrap" id="reglas-resumen-total">
+              <h2 class="rules-summary-wrap__title">Resumen: puntos máximos por sección de la app</h2>
+              <div class="table-scroll table-scroll--rules">
+                <table class="table table-compact table-rules table-rules--summary">
+                  <caption class="visually-hidden">
+                    Techos de puntos por pestaña y por tipo de predicción; total 575 sin bono improbable
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Tipo de predicción</th>
+                      <th scope="col">Pestaña</th>
+                      <th scope="col" class="num">Máx. pts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Podio (1.º, 2.º, 3.º)</td>
+                      <td class="td-muted">Predicciones generales</td>
+                      <td class="num">16</td>
+                    </tr>
+                    <tr>
+                      <td>Mejor jugador, portero y goleador</td>
+                      <td class="td-muted">Predicciones generales</td>
+                      <td class="num">9</td>
+                    </tr>
+                    <tr>
+                      <td>Orden de grupo, 3.º como mejor tercero</td>
+                      <td class="td-muted">Fase de grupos</td>
+                      <td class="num">72</td>
+                    </tr>
+                    <tr>
+                      <td>Marcadores — fase de grupos</td>
+                      <td class="td-muted">Quiniela</td>
+                      <td class="num">288</td>
+                    </tr>
+                    <tr>
+                      <td>Marcadores — eliminatorias</td>
+                      <td class="td-muted">Brackets</td>
+                      <td class="num">190</td>
+                    </tr>
+                    <tr class="rules-summary-total">
+                      <td colspan="2"><strong>Total en la app (sin bono improbable)</strong></td>
+                      <td class="num"><strong>575</strong></td>
+                    </tr>
+                    <tr class="rules-summary-note">
+                      <td colspan="2">Bono «resultado improbable» (aciertos minoritarios en grupos y partidos)</td>
+                      <td class="num td-muted">Sin tope</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p class="rules-summary-wrap__foot muted">
+                La pestaña <strong>Reglas</strong> no suma puntos. La pestaña <strong>Estadísticas</strong> muestra el
+                ranking cuando haya cálculo de resultados.
+              </p>
+            </div>
+
+            <p class="rules-snapshot__foot muted">
+              El bono «resultado improbable» suma <strong>+1</strong> por acierto minoritario (sin techo fijo).
+            </p>
+          </div>
+
+          <nav class="rules-toc" aria-label="Ir a sección">
+            <span class="rules-toc__label">Índice</span>
+            <div class="rules-toc__links">
+              <a href="#reglas-resumen-total">Resumen total</a>
+              <a href="#reglas-uso">Uso de la app</a>
+              <a href="#reglas-podio">Podio</a>
+              <a href="#reglas-premios">Premios</a>
+              <a href="#reglas-grupos">Grupos</a>
+              <a href="#reglas-marcadores">Marcadores</a>
+              <a href="#reglas-improbable">Bono improbable</a>
+            </div>
+          </nav>
+
+          <section id="reglas-uso" class="rule-block">
+            <header class="rule-block__header">
+              <h2 class="rule-block__title">Uso de la app</h2>
+            </header>
+            <ul class="rule-list">
+              <li>Cada participante completa sus pronósticos en las pestañas correspondientes.</li>
+              <li>
+                Puedes cambiar predicciones <strong>hasta el cierre de cada partido</strong> (por defecto: hora de
+                inicio; si el grupo prefiere otro criterio, se puede ajustar en la lógica más adelante).
+              </li>
+              <li>No hay usuario/contraseña: eliges tu nombre una vez en este navegador.</li>
+            </ul>
+            <p class="rule-foot muted">Los desempates globales (fecha de envío, etc.) se definirán cuando haya datos compartidos en servidor.</p>
+          </section>
+
+          <section id="reglas-podio" class="rule-block">
+            <header class="rule-block__header">
+              <h2 class="rule-block__title">Podio (1.º, 2.º y 3.º)</h2>
+              <span class="rule-badge" title="Máximo en este bloque">Máx. 16 pts</span>
+            </header>
+            <p class="rule-lead">
+              Tres países en orden. Recorriendo tus casillas de 1.º a 3.º, cada país que esté en el podio real (en
+              cualquier puesto) suma <strong>+5</strong>, luego el siguiente acierto <strong>+2</strong> y el tercero
+              <strong>+3</strong> (como mucho +10 si aciertas los tres países).
+            </p>
+            <p class="rule-after-table">
+              Bonus por posiciones exactas: <strong>+2</strong> si aciertas el sitio de un país (<em>Bien</em>),
+              <strong>+4</strong> si aciertas dos (<em>Excelente</em>), <strong>+6</strong> si los tres (<em>Perfecto</em>).
+              Máximo del bloque podio: 16 puntos.
+            </p>
+          </section>
+
+          <section id="reglas-premios" class="rule-block">
+            <header class="rule-block__header">
+              <h2 class="rule-block__title">Mejor jugador, portero y goleador</h2>
+              <span class="rule-badge">Máx. 9 pts</span>
+            </header>
+            <p>
+              Una predicción por categoría eligiendo de la lista de jugadores en la app (<code>src/award-nominees.js</code>):
+              <strong>+3</strong> por cada acierto (3 × 3 = 9).
+            </p>
+          </section>
+
+          <section id="reglas-grupos" class="rule-block">
+            <header class="rule-block__header">
+              <h2 class="rule-block__title">Fase de grupos</h2>
+              <span class="rule-badge">Máx. 72 pts <span class="rule-badge__sub">(6 por grupo)</span></span>
+            </header>
+            <p class="rule-lead">12 grupos de 4; en cada uno defines el orden del 1.º al 4.º.</p>
+            <ul class="rule-list rule-list--checks">
+              <li>
+                <strong>+1</strong> por cada equipo que pusiste en <strong>1.º o 2.º</strong> y que
+                <strong>clasifica directo</strong> (como máximo <strong>+2</strong> por grupo en este ítem).
+              </li>
+              <li>
+                <strong>+1</strong> de bonificación si además aciertas el <strong>orden correcto</strong> de esos dos
+                clasificados directos (1.º y 2.º).
+              </li>
+              <li><strong>+2</strong> si aciertas el <strong>orden completo</strong> del grupo (las cuatro posiciones).</li>
+              <li>
+                <strong>+1</strong> si marcas en la app que el <strong>3.º de tu orden</strong> pasa como
+                <strong>mejor tercero</strong> y aciertas (formato 2026: varios terceros compiten y caen 4 equipos).
+              </li>
+            </ul>
+          </section>
+
+          <section id="reglas-marcadores" class="rule-block">
+            <header class="rule-block__header">
+              <h2 class="rule-block__title">Marcadores por fase</h2>
+              <span class="rule-badge">Máx. 478 pts</span>
+            </header>
+            <p class="rule-lead">
+              En cada partido suman hasta tres conceptos (y opcionalmente el bono improbable). Las columnas
+              <strong>A</strong>, <strong>B</strong> y <strong>C</strong> son los puntos que da cada acierto en esa fase.
+            </p>
+            <ol class="rule-steps" aria-label="Conceptos por partido">
+              <li><strong>A</strong> — Ganador o empate.</li>
+              <li><strong>B</strong> — Goles de cada equipo (una vez por equipo acertado).</li>
+              <li><strong>C</strong> — Marcador exacto.</li>
+            </ol>
+            <div class="table-scroll table-scroll--rules">
+              <table class="table table-compact table-rules table-rules--wide">
+                <caption class="visually-hidden">
+                  Puntos por fase: columnas A, B y C y máximos por partido y por fase
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Fase</th>
+                    <th scope="col" class="num"><abbr title="Ganador o empate">A</abbr></th>
+                    <th scope="col" class="num"><abbr title="Goles por equipo (cada uno)">B</abbr></th>
+                    <th scope="col" class="num"><abbr title="Marcador exacto">C</abbr></th>
+                    <th scope="col" class="num"><abbr title="Máximo por partido">∑ partido</abbr></th>
+                    <th scope="col" class="num"><abbr title="Máximo en la fase">∑ fase</abbr></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Grupos <span class="td-muted">(72 part.)</span></td>
+                    <td class="num">+1</td>
+                    <td class="num">+1</td>
+                    <td class="num">+1</td>
+                    <td class="num"><strong>4</strong></td>
+                    <td class="num">288</td>
+                  </tr>
+                  <tr>
+                    <td>Dieciseisavos <span class="td-muted">(16 part.)</span></td>
+                    <td class="num">+2</td>
+                    <td class="num">+1</td>
+                    <td class="num">+1</td>
+                    <td class="num"><strong>5</strong></td>
+                    <td class="num">80</td>
+                  </tr>
+                  <tr>
+                    <td>Octavos <span class="td-muted">(8 part.)</span></td>
+                    <td class="num">+2</td>
+                    <td class="num">+1</td>
+                    <td class="num">+2</td>
+                    <td class="num"><strong>6</strong></td>
+                    <td class="num">48</td>
+                  </tr>
+                  <tr>
+                    <td>Cuartos <span class="td-muted">(4 part.)</span></td>
+                    <td class="num">+3</td>
+                    <td class="num">+1</td>
+                    <td class="num">+2</td>
+                    <td class="num"><strong>7</strong></td>
+                    <td class="num">28</td>
+                  </tr>
+                  <tr>
+                    <td>Semifinales <span class="td-muted">(2 part.)</span></td>
+                    <td class="num">+3</td>
+                    <td class="num">+1</td>
+                    <td class="num">+3</td>
+                    <td class="num"><strong>8</strong></td>
+                    <td class="num">16</td>
+                  </tr>
+                  <tr>
+                    <td>3.º puesto y final <span class="td-muted">(2 part.)</span></td>
+                    <td class="num">+3</td>
+                    <td class="num">+1</td>
+                    <td class="num">+4</td>
+                    <td class="num"><strong>9</strong></td>
+                    <td class="num">18</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="rule-key muted">
+              <strong>A</strong> = ganador o empate · <strong>B</strong> = goles por equipo · <strong>C</strong> = marcador
+              exacto · <strong>∑ partido</strong> = techo por partido · <strong>∑ fase</strong> = techo de la ronda
+            </p>
+          </section>
+
+          <section id="reglas-improbable" class="rule-block rule-block--accent">
+            <header class="rule-block__header">
+              <h2 class="rule-block__title">Bono «resultado improbable»</h2>
+              <span class="rule-badge rule-badge--soft">+1 por acierto</span>
+            </header>
+            <p class="rule-lead">
+              Aplica al <strong>orden en grupos</strong> y a <strong>todos los partidos</strong>. Si aciertas y tu opción
+              era la <strong>menos votada</strong> entre las distintas alternativas, sumas <strong>+1</strong>.
+            </p>
+            <ul class="rule-list">
+              <li>
+                En partidos: se comparan por separado local, visitante y empate. En grupos: la posición concreta de cada
+                equipo.
+              </li>
+              <li>
+                <strong>Minoría clara:</strong> si 5 eligen A, 4 eligen B y nadie empate, B es minoría frente a A; si gana
+                B, esos 4 llevan el bono.
+              </li>
+              <li>
+                Varios con la <strong>misma</strong> opción minoritaria: si acierta, <strong>todos</strong> reciben +1.
+              </li>
+              <li>
+                <strong>Sin bono</strong> si hay empate entre “bandos” en el recuento (p. ej. 2 empate, 2 A, 4 B: 2 y 2
+                empatan como segunda fuerza y no hay minoría única clara frente a 4).
+              </li>
+            </ul>
+            <p class="muted">No hay tope global: depende de cuántos aciertos minoritarios logres.</p>
+          </section>
+        </div>
+      </section>
+
+      <section id="panel-generales" class="panel is-active" data-panel="generales" tabindex="-1">
+        <h1 class="panel-title">Predicciones generales</h1>
+        <p class="panel-intro">Podio final, mejor jugador, mejor portero y goleador.</p>
+        <div class="stack generales-stack">
+          <article class="card card--generales">
+            <h2 class="card-title">Tu predicción</h2>
+            <form id="form-generales" class="form-grid form-grid--generales"></form>
+          </article>
+          <div id="generales-official-admin" class="generales-official-admin" hidden></div>
+          <div id="generales-preds-host" class="group-preds-host"></div>
+        </div>
+      </section>
+
+      <section id="panel-grupos" class="panel" data-panel="grupos" hidden tabindex="-1">
+        <h1 class="panel-title">Fase de grupos</h1>
+        <p class="panel-intro">
+          Elige un grupo para ordenar equipos y comparar tu prediccion con la de los demas.
+        </p>
+        <p id="group-third-limit-msg" class="form-error" hidden></p>
+        <div class="field fase-grupos-toolbar">
+          <label class="field-label" for="fase-grupos-filter">Grupo a mostrar</label>
+          <select id="fase-grupos-filter" class="input input-sm" style="max-width: 12rem"></select>
+        </div>
+        <div id="grupos-wrap" class="stack"></div>
+      </section>
+
+      <section id="panel-brackets" class="panel" data-panel="brackets" hidden tabindex="-1">
+        <h1 class="panel-title">Llave (dieciseisavos → final)</h1>
+        <p class="panel-intro">
+          Sigue la llave de eliminacion por rondas y revisa las predicciones de cada cruce.
+        </p>
+        <div id="brackets-wrap" class="stack"></div>
+      </section>
+
+      <section id="panel-team-stats" class="panel" data-panel="team-stats" hidden tabindex="-1">
+        <h1 class="panel-title">Tabla de equipos</h1>
+        <p class="panel-intro" id="team-stats-intro"></p>
+        <div class="field team-stats-source-wrap field--inline">
+          <label class="field-label" for="team-stats-left-source">Tabla izquierda</label>
+          <select id="team-stats-left-source" class="input input-sm" style="max-width: 18rem"></select>
+          <label class="field-label" for="team-stats-right-source">Tabla derecha</label>
+          <select id="team-stats-right-source" class="input input-sm" style="max-width: 18rem"></select>
+        </div>
+        <div class="field team-stats-view-wrap field--inline">
+          <span class="field-label">Vista de tabla</span>
+          <div class="radio-segment" role="radiogroup" aria-label="Vista de tabla">
+            <label class="radio-segment__option">
+              <input type="radio" name="team-stats-view" value="full" checked />
+              <span>Completa</span>
+            </label>
+            <label class="radio-segment__option">
+              <input type="radio" name="team-stats-view" value="simple" />
+              <span>Simplificada</span>
+            </label>
+          </div>
+        </div>
+        <div id="team-stats-compare" class="team-stats-compare">
+          <section class="team-stats-col">
+            <h2 class="subsection-title" id="team-stats-subtitle-official">Fase de grupos · Resultado oficial</h2>
+            <div class="table-scroll">
+              <table class="table table-compact" aria-describedby="team-stats-intro">
+                <thead>
+                  <tr>
+                    <th>Pos.</th>
+                    <th>Equipo</th>
+                    <th class="team-stats-extra-col">PJ</th>
+                    <th class="team-stats-extra-col">PG</th>
+                    <th class="team-stats-extra-col">PE</th>
+                    <th class="team-stats-extra-col">PP</th>
+                    <th>Pts</th>
+                  </tr>
+                </thead>
+                <tbody id="table-team-stats-official-body"></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="team-stats-col">
+            <h2 class="subsection-title" id="team-stats-subtitle-pred">Fase de grupos · Tu predicción</h2>
+            <div class="table-scroll">
+              <table class="table table-compact" aria-describedby="team-stats-intro">
+                <thead>
+                  <tr>
+                    <th>Pos.</th>
+                    <th>Equipo</th>
+                    <th class="team-stats-extra-col">PJ</th>
+                    <th class="team-stats-extra-col">PG</th>
+                    <th class="team-stats-extra-col">PE</th>
+                    <th class="team-stats-extra-col">PP</th>
+                    <th>Pts</th>
+                  </tr>
+                </thead>
+                <tbody id="table-team-stats-pred-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+        <p class="muted" style="margin-top: 0.85rem;">
+          Compara dos tablas lado a lado con la fuente que elijas en cada columna.
+        </p>
+      </section>
+
+      <section id="panel-team-order" class="panel" data-panel="team-order" hidden tabindex="-1">
+        <h1 class="panel-title">Tabla de grupos (orden simplificado)</h1>
+        <p class="panel-intro" id="team-order-intro">
+          Compara el orden de grupos entre la tabla oficial, tu prediccion y otros participantes.
+        </p>
+        <div class="field team-stats-source-wrap field--inline">
+          <label class="field-label" for="team-order-left-source">Tabla izquierda</label>
+          <select id="team-order-left-source" class="input input-sm" style="max-width: 18rem"></select>
+          <label class="field-label" for="team-order-right-source">Tabla derecha</label>
+          <select id="team-order-right-source" class="input input-sm" style="max-width: 18rem"></select>
+        </div>
+        <div id="team-order-compare" class="team-stats-compare">
+          <section class="team-stats-col team-stats-col--official">
+            <h2 class="subsection-title" id="team-order-subtitle-official">Fase de grupos · Orden oficial</h2>
+            <div class="table-scroll">
+              <table class="table table-compact" aria-describedby="team-order-intro">
+                <thead>
+                  <tr>
+                    <th>Pos.</th>
+                    <th>Equipo</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="table-team-order-official-body"></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="team-stats-col team-stats-col--pred">
+            <h2 class="subsection-title" id="team-order-subtitle-pred">Fase de grupos · Tu orden</h2>
+            <div class="table-scroll">
+              <table class="table table-compact" aria-describedby="team-order-intro">
+                <thead>
+                  <tr>
+                    <th>Pos.</th>
+                    <th>Equipo</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="table-team-order-pred-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="panel-team-order-ranking" class="panel" data-panel="team-order-ranking" hidden tabindex="-1">
+        <h1 class="panel-title">Ranking de jugadores (fase de grupos)</h1>
+        <p class="panel-intro" id="team-order-ranking-intro"></p>
+        <div class="table-scroll">
+          <table class="table table-compact table-group-order-ranking" aria-describedby="team-order-ranking-intro">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Jugador</th>
+                <th>BIEN</th>
+                <th>PERFECTO</th>
+                <th>bonus</th>
+                <th>Puntos totales</th>
+              </tr>
+            </thead>
+            <tbody id="table-team-order-ranking-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="panel-match-ranking" class="panel" data-panel="match-ranking" hidden tabindex="-1">
+        <h1 class="panel-title">Ranking de partidos</h1>
+        <p class="panel-intro" id="match-ranking-intro"></p>
+        <div class="field team-stats-source-wrap field--inline">
+          <label class="field-label" for="match-ranking-scope-filter">Vista</label>
+          <select id="match-ranking-scope-filter" class="input input-sm" style="max-width: 14rem"></select>
+          <span id="match-ranking-group-wrap" hidden>
+            <label class="field-label" for="match-ranking-group-filter">Grupo</label>
+            <select id="match-ranking-group-filter" class="input input-sm" style="max-width: 12rem"></select>
+          </span>
+        </div>
+        <div class="table-scroll">
+          <table class="table table-compact table-match-ranking" aria-describedby="match-ranking-intro">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Jugador</th>
+                <th>PERFECTO</th>
+                <th>bonus</th>
+                <th>Puntos totales</th>
+              </tr>
+            </thead>
+            <tbody id="table-match-ranking-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="panel-match-history" class="panel" data-panel="match-history" hidden tabindex="-1">
+        <h1 class="panel-title">Historial de partidos</h1>
+        <p class="panel-intro" id="match-history-intro"></p>
+        <div class="table-scroll">
+          <table class="table table-compact table-match-history" aria-describedby="match-history-intro">
+            <thead>
+              <tr>
+                <th>Fase</th>
+                <th>Partido</th>
+                <th>Tu predicción</th>
+                <th>Estado</th>
+                <th>Resultado oficial</th>
+                <th>Puntos</th>
+              </tr>
+            </thead>
+            <tbody id="table-match-history-body"></tbody>
+          </table>
+        </div>
+        <p class="muted match-history-totals" id="match-history-totals"></p>
+      </section>
+
+      <section id="panel-partidos" class="panel" data-panel="partidos" hidden tabindex="-1">
+        <h1 class="panel-title">Partidos</h1>
+        <p class="panel-intro" id="partidos-intro"></p>
+        <p class="muted" style="margin-bottom: 1rem">
+          Elige si quieres ver fase de grupos o eliminatoria.
+        </p>
+        <div class="quiniela-toolbar field partidos-toolbar-row">
+          <label class="field-label" for="partidos-scope-filter">Vista</label>
+          <select id="partidos-scope-filter" class="input input-sm" style="max-width: 14rem"></select>
+        </div>
+        <div id="partidos-group-toolbar" class="quiniela-toolbar field" hidden>
+          <label class="field-label" for="quiniela-group-filter">Grupo</label>
+          <select id="quiniela-group-filter" class="input input-sm" style="max-width: 12rem"></select>
+        </div>
+        <div id="quiniela-wrap" class="stack quiniela-stack"></div>
+      </section>
+
+      <section id="panel-stats" class="panel" data-panel="stats" hidden tabindex="-1">
+        <h1 class="panel-title">Estadísticas</h1>
+        <p class="panel-intro" id="stats-intro"></p>
+        <h2 class="subsection-title">Podio global</h2>
+        <div id="stats-podium" class="stats-podium"></div>
+        <h2 class="subsection-title">Resto del ranking</h2>
+        <div class="table-scroll">
+          <table class="table" id="table-leaderboard" aria-describedby="stats-intro">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Participante</th>
+                <th>Puntos</th>
+              </tr>
+            </thead>
+            <tbody id="table-leaderboard-body"></tbody>
+          </table>
+        </div>
+        <h2 class="subsection-title">Más estadísticas</h2>
+        <div class="table-scroll">
+          <table class="table" id="table-aciertos">
+            <thead>
+              <tr>
+                <th>Participante</th>
+                <th>0 pts en partidos</th>
+                <th>Partidos acertados (marcador)</th>
+                <th>Signo acertado</th>
+                <th>Bonus en partidos</th>
+                <th>Promedio pts/partido</th>
+              </tr>
+            </thead>
+            <tbody id="table-aciertos-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="panel-final-ranking" class="panel" data-panel="final-ranking" hidden tabindex="-1">
+        <h1 class="panel-title">Ranking final global</h1>
+        <p class="panel-intro" id="final-ranking-intro"></p>
+        <div class="table-scroll">
+          <table class="table table-compact table-final-ranking" aria-describedby="final-ranking-intro">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Jugador</th>
+                <th>bonus totales</th>
+                <th>perfectos totales</th>
+                <th>bien totales</th>
+                <th>excelentes totales</th>
+                <th>puntos totales</th>
+              </tr>
+            </thead>
+            <tbody id="table-final-ranking-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <div id="floating-ranking" class="floating-ranking" aria-live="polite">
+      <button
+        type="button"
+        id="floating-ranking-toggle"
+        class="floating-ranking-toggle"
+        aria-expanded="false"
+        aria-controls="floating-ranking-card"
+        title="Ranking en tiempo real"
+      >
+        🏆
+      </button>
+      <section id="floating-ranking-card" class="floating-ranking-card" hidden>
+        <div class="floating-ranking-card-head">
+          <h2 class="floating-ranking-title">Ranking en vivo</h2>
+          <button type="button" id="floating-ranking-close" class="floating-ranking-close" aria-label="Cerrar">×</button>
+        </div>
+        <div id="floating-ranking-body" class="floating-ranking-body"></div>
+      </section>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

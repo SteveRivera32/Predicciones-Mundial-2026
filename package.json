@@ -1,0 +1,21 @@
+{
+  "name": "predicciones-mundial-2026",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "server": "node server/index.mjs",
+    "start": "npm run build && node server/index.mjs",
+    "reset-predictions": "node scripts/reset-predictions.mjs"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "vite": "^6.2.0"
+  }
+}
