@@ -25,6 +25,8 @@ export function emptyPredictions() {
       bestGk: "",
       topScorer: "",
     },
+    /** @type {boolean} predicciones generales confirmadas por el usuario */
+    generalConfirmed: false,
     groupOrder: {},
     /** @type {Record<string, boolean>} grupo -> orden confirmado por usuario */
     groupOrderConfirmed: {},
@@ -51,6 +53,7 @@ export function normalizePredictionsData(data) {
     ...base,
     ...d,
     general: { ...base.general, ...(d.general ?? {}) },
+    generalConfirmed: d.generalConfirmed === true,
     groupOrderConfirmed: { ...base.groupOrderConfirmed, ...(d.groupOrderConfirmed ?? {}) },
     groupThirdAdvances: { ...base.groupThirdAdvances, ...(d.groupThirdAdvances ?? {}) },
     groupScoresConfirmed: { ...base.groupScoresConfirmed, ...(d.groupScoresConfirmed ?? {}) },

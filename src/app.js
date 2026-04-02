@@ -29,10 +29,12 @@ import {
   computeGroupMatchPointsBreakdown,
   isExactGroupPrediction,
   predictionOutcomeSign,
+  PENALTY_WINNER_BONUS,
 } from "./group-match-points.js";
 import {
   computeGeneralPredictionsScore,
   computeGroupOrderPoints,
+  GROUP_PERFECTO_ORDER_AND_THIRD_BONUS,
   GROUP_PERFECT_ORDER_BONUS,
   GROUP_QUALIFIERS_ORDER_BONUS,
   INDIVIDUAL_AWARD_POINTS,
@@ -51,12 +53,24 @@ import {
   getKnockoutMatchesFlat,
   BRACKET_SIDE_MATCH_INDICES,
   KNOCKOUT_PHASE_ROUND_INDEX,
+  knockoutRoundRequiresPenaltyPickOnDraw,
 } from "./tournament.js";
 import { isLockedAtKickoff } from "./locks.js";
+import {
+  formatKickoffShortSpanish,
+  countdownLabelSpanish,
+  getNextMatchDayHighlightIds,
+  daysUntilKickoffLocal,
+  isMatchOfficiallyClosed,
+} from "./match-calendar.js";
 
 const TAB_KEY = "pm26-active-tab";
 const BRACKET_FOCUS_KEY = "pm26-bracket-focus";
 const PARTIDOS_SCOPE_KEY = "pm26-partidos-scope";
+/** sessionStorage: al entrar por el atajo del header, mostrar solo la jornada próxima hasta que cambie «Vista». */
+const PARTIDOS_NAV_PROXIMOS_SESSION_KEY = "pm26-partidos-nav-proximos";
+/** Valor del &lt;select&gt; Vista cuando está activo el filtro «solo jornada próxima» (amarillo). La fase real sigue en PARTIDOS_SCOPE_KEY. */
+const PARTIDOS_VISTA_SIGUIENTES_VALUE = "proximos-nav";
 const MATCH_RANK_SCOPE_KEY = "pm26-match-rank-scope";
 const MATCH_RANK_GROUP_KEY = "pm26-match-rank-group";
 const TEAM_STATS_LEFT_SOURCE_KEY = "pm26-team-stats-left-source";
@@ -71,8 +85,24 @@ const MAX_BEST_THIRD_TEAMS = 8;
 let tabsController = null;
 let floatingRankingReady = false;
 
+/** Abre la pestaña Partidos en vista «SIGUIENTES» (mismo atajo que el botón amarillo). */
+function navigateToSiguientesPartidosTab() {
+  try {
+    sessionStorage.setItem(PARTIDOS_NAV_PROXIMOS_SESSION_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+  tabsController?.setTab("partidos");
+  document.dispatchEvent(new CustomEvent("pm26-nav-drawer-close"));
+}
+
 /** Nombres de equipo conocidos en fase de grupos (para banderas en la llave). */
 const BRACKET_KNOWN_TEAMS = new Set(GROUPS.flatMap((g) => g.teams));
+
+/** Equipo conocido y ya definido (no placeholder «Por determinar»). */
+function isQuinielaTeamSlotDecided(teamName) {
+  return BRACKET_KNOWN_TEAMS.has(teamName) && !isPlaceholderTeam(teamName);
+}
 
 /** Evita listeners duplicados al refrescar el formulario de generales (mismo elemento form del DOM). */
 let generalesUserAwardChangeHandler = null;
@@ -187,24 +217,149 @@ function $(sel, root = document) {
   return root.querySelector(sel);
 }
 
-function ensureFaseGruposFilter() {
-  const sel = $("#fase-grupos-filter");
-  if (!sel) return;
-  if (sel.dataset.ready !== "1") {
-    sel.innerHTML =
-      `<option value="">— Elige grupo —</option>` +
-      GROUPS.map((g) => `<option value="${g.id}">Grupo ${g.id}</option>`).join("");
-    sel.addEventListener("change", () => {
-      localStorage.setItem(FASE_GRUPOS_FILTER_KEY, sel.value);
-      refreshAll(loadSession());
-    });
-    sel.dataset.ready = "1";
-  }
-  const saved = localStorage.getItem(FASE_GRUPOS_FILTER_KEY);
-  if (saved != null && [...sel.options].some((o) => o.value === saved)) {
-    sel.value = saved;
+/**
+ * @param {{ groupOrderConfirmed?: Record<string, boolean> } | null | undefined} predictions
+ */
+function syncFaseGruposConfirmStatus(predictions) {
+  const el = $("#fase-grupos-confirm-status");
+  if (!el) return;
+  const total = GROUPS.length;
+  const confirmed = GROUPS.filter((g) => predictions?.groupOrderConfirmed?.[g.id] === true).length;
+  el.classList.remove("fase-grupos-confirm-status--complete");
+  if (confirmed >= total) {
+    el.textContent = "Todas las predicciones confirmadas.";
+    el.classList.add("fase-grupos-confirm-status--complete");
+  } else {
+    el.textContent = `Has confirmado ${confirmed}/${total} grupos.`;
   }
 }
+
+function closeFaseGruposComboList() {
+  const list = $("#fase-grupos-filter-list");
+  const trigger = $("#fase-grupos-filter-trigger");
+  if (list) list.hidden = true;
+  if (trigger) trigger.setAttribute("aria-expanded", "false");
+}
+
+/**
+ * @param {{ groupOrderConfirmed?: Record<string, boolean> } | null | undefined} predictions
+ */
+function updateFaseGruposFilterTriggerHtml(predictions) {
+  const wrap = $(".fase-grupos-filter-trigger__text");
+  const sel = $("#fase-grupos-filter");
+  if (!wrap || !sel) return;
+  const v = sel.value;
+  if (!v) {
+    wrap.innerHTML = `<span class="fase-grupos-filter-option__label">— Elige grupo —</span>`;
+    return;
+  }
+  const conf = predictions?.groupOrderConfirmed ?? {};
+  const done = conf[v] === true;
+  const mark = done
+    ? `<span class="fase-grupos-filter-mark fase-grupos-filter-mark--ok" aria-hidden="true">✓</span>`
+    : `<span class="fase-grupos-filter-mark fase-grupos-filter-mark--no" aria-hidden="true">✗</span>`;
+  wrap.innerHTML = `<span class="fase-grupos-filter-option__label">Grupo ${escapeHtml(v)}</span>${mark}`;
+}
+
+function setFaseGruposFilterValue(value) {
+  const sel = $("#fase-grupos-filter");
+  if (!sel || ![...sel.options].some((o) => o.value === value)) return;
+  sel.value = value;
+  localStorage.setItem(FASE_GRUPOS_FILTER_KEY, value);
+  closeFaseGruposComboList();
+  refreshAll(loadSession());
+}
+
+function ensureFaseGruposFilter() {
+  const combo = $("#fase-grupos-combobox");
+  const sel = $("#fase-grupos-filter");
+  const trigger = $("#fase-grupos-filter-trigger");
+  const list = $("#fase-grupos-filter-list");
+  if (!combo || !sel || !trigger || !list) return;
+  if (combo.dataset.ready === "1") return;
+
+  sel.innerHTML = `<option value="">— Elige grupo —</option>`;
+
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (list.hidden) {
+      list.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+    } else {
+      closeFaseGruposComboList();
+    }
+  });
+
+  list.addEventListener("click", (e) => {
+    const li = e.target.closest(".fase-grupos-filter-option");
+    if (!li) return;
+    e.stopPropagation();
+    setFaseGruposFilterValue(li.dataset.value ?? "");
+  });
+
+  combo.addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("click", closeFaseGruposComboList);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeFaseGruposComboList();
+  });
+
+  combo.dataset.ready = "1";
+  sel.dataset.ready = "1";
+}
+
+/**
+ * Lista personalizada: texto «Grupo X» normal, solo ✓ (verde) / ✗ (rojo) coloreados.
+ * El &lt;select&gt; oculto conserva el valor para el resto de la app.
+ * @param {{ groupOrderConfirmed?: Record<string, boolean> } | null | undefined} predictions
+ */
+function syncFaseGruposFilterOptions(predictions) {
+  const sel = $("#fase-grupos-filter");
+  const list = $("#fase-grupos-filter-list");
+  if (!sel || sel.dataset.ready !== "1" || !list) return;
+
+  const saved = localStorage.getItem(FASE_GRUPOS_FILTER_KEY);
+  const prev = sel.value;
+  sel.querySelectorAll("option:not([value=''])").forEach((o) => o.remove());
+
+  for (const g of GROUPS) {
+    const opt = document.createElement("option");
+    opt.value = g.id;
+    opt.textContent = `Grupo ${g.id}`;
+    sel.appendChild(opt);
+  }
+
+  const pick =
+    saved != null && [...sel.options].some((o) => o.value === saved)
+      ? saved
+      : [...sel.options].some((o) => o.value === prev)
+        ? prev
+        : "";
+  if ([...sel.options].some((o) => o.value === pick)) sel.value = pick;
+
+  const conf = predictions?.groupOrderConfirmed ?? {};
+  const markHtml = (done) =>
+    done
+      ? `<span class="fase-grupos-filter-mark fase-grupos-filter-mark--ok" aria-hidden="true">✓</span>`
+      : `<span class="fase-grupos-filter-mark fase-grupos-filter-mark--no" aria-hidden="true">✗</span>`;
+
+  const rows = [
+    `<li role="option" class="fase-grupos-filter-option" data-value="" tabindex="-1">
+      <span class="fase-grupos-filter-option__label">— Elige grupo —</span>
+    </li>`,
+    ...GROUPS.map((g) => {
+      const done = conf[g.id] === true;
+      const title = done ? "Orden de este grupo confirmado" : "Falta confirmar el orden de este grupo";
+      return `<li role="option" class="fase-grupos-filter-option" data-value="${escapeHtml(g.id)}" tabindex="-1" title="${escapeHtml(title)}">
+        <span class="fase-grupos-filter-option__label">Grupo ${escapeHtml(g.id)}</span>
+        ${markHtml(done)}
+      </li>`;
+    }),
+  ];
+  list.innerHTML = rows.join("");
+
+  updateFaseGruposFilterTriggerHtml(predictions);
+}
+
 
 /**
  * @param {Record<string, { home: string|number|"", away: string|number|"" }>} groupScores
@@ -532,7 +687,7 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
             return acc;
           }, 0)
         : 0;
-      /** Solo puntos del bloque «orden del grupo» (máx. 6); la quiniela por partido se ve en su pestaña. */
+      /** Solo puntos del bloque «orden del grupo» (máx. 8); la quiniela por partido se ve en su pestaña. */
       const groupPts = groupOrderPts + minorityBonusPts;
 
       return {
@@ -560,6 +715,11 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
         orderBonusUnderName = `<div class="quiniela-perfect-inline group-preds-order-bonus-inline" role="status" aria-label="Orden 1.º a 4.º exacto"><span class="group-preds-perfecto-label">Perfecto</span>${pointsBadgeHtml(perfectOrderPts, {
           title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden de 1.º y 2.º y +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo`,
         })}</div>`;
+        if (thirdHit) {
+          orderBonusUnderName += `<div class="quiniela-perfect-inline group-preds-order-bonus-inline" role="status" aria-label="Orden completo y acierto 3.º pasa"><span class="group-preds-perfecto-label">Perfecto</span>${pointsBadgeHtml(GROUP_PERFECTO_ORDER_AND_THIRD_BONUS, {
+            title: `+${GROUP_PERFECTO_ORDER_AND_THIRD_BONUS} por orden 1.º a 4.º exacto y acierto si el 3.º pasa`,
+          })}</div>`;
+        }
       } else if (hasOfficialData && top2InExactOrder) {
         orderBonusUnderName = `<div class="quiniela-perfect-inline group-preds-order-bonus-inline" role="status" aria-label="Orden de 1.º y 2.º correcto"><span class="group-preds-bien-label">Bien</span>${pointsBadgeHtml(GROUP_QUALIFIERS_ORDER_BONUS, {
           title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden correcto de 1.º y 2.º`,
@@ -589,13 +749,9 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
     .join("");
 
   return `
-    <h2 class="subsection-title group-preds-table-title">Predicciones de todos · orden y puntos en vivo del grupo</h2>
-    <p class="muted group-preds-legend"><span class="group-preds-legend-swatch group-preds-legend-swatch--cell"></span> Posición correcta
-      · <span class="group-preds-legend-swatch group-preds-legend-swatch--qual"></span> Clasifica, pero en otra posición
-      · <strong class="group-preds-bien-intro">Bien</strong> y <strong class="quiniela-perfect-intro-gold">Perfecto</strong> indican aciertos de orden
-      · <span class="group-preds-legend-swatch group-preds-legend-swatch--pts-lead"></span> <strong>Pts</strong> dorado = líder del grupo</p>
+    <h2 class="subsection-title group-preds-table-title">Predicciones de todos</h2>
     <div class="table-scroll table-scroll--group-preds">
-      <table class="table table-compact table-group-preds" aria-label="Orden predicho en el grupo ${escapeHtml(grp.id)}">
+      <table class="table table-compact table-group-preds" aria-label="Predicciones de todos en el grupo ${escapeHtml(grp.id)}">
         <thead>
           <tr>
             <th scope="col">Participante</th>
@@ -642,8 +798,10 @@ function scoreStepperHtml(matchId, side, value, opts = {}) {
  * @param {HTMLElement} wrap
  * @param {"knockout"|"grupos"} mode
  * @param {(scores: Record<string, { home: string|number|"", away: string|number|"" }>) => void} onCommit
+ * @param {{ collectOnInput?: boolean }} [wireOpts] si true, también en `input` (marcador oficial en vivo al teclear)
  */
-function wireScoreSteppers(wrap, mode, onCommit) {
+function wireScoreSteppers(wrap, mode, onCommit, wireOpts = {}) {
+  const { collectOnInput = false } = wireOpts;
   const isKo = mode === "knockout";
   const inputSel = isKo ? ".score-stepper__input[data-kid]" : ".score-stepper__input[data-mid]";
 
@@ -680,6 +838,9 @@ function wireScoreSteppers(wrap, mode, onCommit) {
       inp.value = n === "" ? "" : String(n);
       collect();
     });
+    if (collectOnInput) {
+      inp.addEventListener("input", () => collect());
+    }
   });
 }
 
@@ -778,14 +939,85 @@ function bracketTeamLineHtml(label, opts = {}) {
   return `<div class="bracket-team-line bracket-team-line--seed${winCls}"><span class="bracket-slot-txt">${escapeHtml(label || "—")}</span></div>`;
 }
 
+function initNavDrawer() {
+  const drawer = /** @type {HTMLElement | null} */ (document.getElementById("nav-drawer"));
+  const inner = /** @type {HTMLElement | null} */ (drawer?.querySelector(".nav-drawer-inner"));
+  const backdrop = document.getElementById("nav-drawer-backdrop");
+  const railBtn = document.getElementById("btn-nav-drawer-rail");
+  if (!drawer || !inner || !backdrop || !railBtn) return;
+
+  /**
+   * @param {boolean} open
+   * @param {{ focusRail?: boolean }} [opts]
+   */
+  function setOpen(open, opts = {}) {
+    const { focusRail = false } = opts;
+    drawer.classList.toggle("is-open", open);
+    backdrop.classList.toggle("is-open", open);
+    document.body.classList.toggle("nav-drawer-open", open);
+    railBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    railBtn.setAttribute("aria-label", open ? "Cerrar menú de secciones" : "Abrir menú de secciones");
+    backdrop.setAttribute("aria-hidden", open ? "false" : "true");
+    if (open) {
+      inner.removeAttribute("inert");
+      drawer.querySelector(".tab")?.focus();
+    } else {
+      inner.setAttribute("inert", "");
+      if (focusRail) railBtn.focus();
+    }
+  }
+
+  backdrop.addEventListener("click", () => setOpen(false, { focusRail: true }));
+
+  document.addEventListener("pm26-nav-drawer-close", () => {
+    if (drawer?.classList.contains("is-open")) setOpen(false, { focusRail: false });
+  });
+
+  railBtn.addEventListener("click", () => {
+    const open = drawer.classList.contains("is-open");
+    if (open) setOpen(false, { focusRail: true });
+    else setOpen(true);
+  });
+
+  inner.addEventListener("click", (e) => {
+    const el = e.target instanceof Element ? e.target : null;
+    if (!el) return;
+    const bannerEl = /** @type {HTMLButtonElement | null} */ (document.getElementById("nav-drawer-pending-banner"));
+    if (el.closest("#nav-drawer-pending-banner") && bannerEl && !bannerEl.disabled && !bannerEl.hidden) {
+      navigateToSiguientesPartidosTab();
+      return;
+    }
+    if (el.closest(".tab")) {
+      setOpen(false, { focusRail: false });
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && drawer.classList.contains("is-open")) {
+      setOpen(false, { focusRail: true });
+    }
+  });
+}
+
+/** Al cambiar de sección, el scroll del documento no se reinicia solo: subir para ver el inicio del panel nuevo. */
+function scrollAppMainToTop() {
+  window.scrollTo(0, 0);
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+  document.getElementById("contenido-principal")?.scrollTo?.(0, 0);
+}
+
 /**
  * @param {(tabId: string) => void} [onTabChange]
  */
 function initTabs(onTabChange) {
   const tabs = document.querySelectorAll(".tab");
   const panels = document.querySelectorAll(".panel");
+  let activeTabId = /** @type {string | null} */ (null);
 
   function setTab(id) {
+    const switched = activeTabId !== id;
+    activeTabId = id;
     tabs.forEach((t) => {
       const active = t.dataset.tab === id;
       t.classList.toggle("is-active", active);
@@ -798,6 +1030,7 @@ function initTabs(onTabChange) {
     });
     localStorage.setItem(TAB_KEY, id);
     onTabChange?.(id);
+    if (switched) scrollAppMainToTop();
   }
 
   tabs.forEach((t) => {
@@ -809,6 +1042,71 @@ function initTabs(onTabChange) {
   if (initial === "quiniela") initial = "partidos";
   setTab(initial);
   return { setTab };
+}
+
+function isGeneralPredictionsComplete(predictions) {
+  return predictions?.generalConfirmed === true;
+}
+
+function isGroupStagePredictionsComplete(predictions) {
+  const confirmed = predictions?.groupOrderConfirmed ?? {};
+  return GROUPS.every((grp) => confirmed[grp.id] === true);
+}
+
+/**
+ * Partidos con equipos/cruce listos y aún editables: falta confirmar predicción del usuario.
+ * @param {string} participantId
+ * @param {ReturnType<typeof loadOfficialResults>} official
+ */
+function isPartidosPredictionsCompleteForUser(participantId, official) {
+  const pStore = loadPredictions(participantId);
+  for (const m of GROUP_MATCHES) {
+    const teamsDecided = isQuinielaTeamSlotDecided(m.home) && isQuinielaTeamSlotDecided(m.away);
+    if (!teamsDecided) continue;
+    const matchStage = official.groupMatchState?.[m.id] ?? "ready";
+    const predictionsLocked =
+      matchStage !== "ready" || official.groupPredictionsBlockedForAll === true;
+    const predCommitted = pStore.groupScoresConfirmed?.[m.id] === true;
+    if (!predictionsLocked && !predCommitted) return false;
+  }
+  const labelScoresKo = allFilledOfficialKnockoutScores(official);
+  for (const m of getKnockoutMatchesFlat()) {
+    const officialConfirmed = official.knockoutScoresConfirmed?.[m.id] === true;
+    const predictionsLocked = officialConfirmed;
+    const { ri, mi } = getKoRoundMatchIndex(m.id);
+    const koOfficialHome = resolveKnockoutSlotLabel(ri, mi, "home", labelScoresKo);
+    const koOfficialAway = resolveKnockoutSlotLabel(ri, mi, "away", labelScoresKo);
+    const koOfficialSlotsDecided =
+      isQuinielaTeamSlotDecided(koOfficialHome) && isQuinielaTeamSlotDecided(koOfficialAway);
+    if (!koOfficialSlotsDecided) continue;
+    const predCommitted = pStore.knockoutScoresConfirmed?.[m.id] === true;
+    if (!predictionsLocked && !predCommitted) return false;
+  }
+  return true;
+}
+
+function updatePredictionTabsProgress(session, predictions) {
+  const gruposTab = /** @type {HTMLButtonElement | null} */ (document.querySelector('.tab[data-tab="grupos"]'));
+  const generalesTab = /** @type {HTMLButtonElement | null} */ (document.querySelector('.tab[data-tab="generales"]'));
+  const partidosTab = /** @type {HTMLButtonElement | null} */ (document.querySelector('.tab[data-tab="partidos"]'));
+
+  const applyState = (el, isDone) => {
+    if (!el) return;
+    el.classList.toggle("tab-predictions", !isDone);
+    el.classList.toggle("tab-predictions--done", isDone);
+  };
+
+  if (!session || !predictions) {
+    applyState(gruposTab, false);
+    applyState(generalesTab, false);
+    applyState(partidosTab, false);
+    return;
+  }
+
+  const official = loadOfficialResults();
+  applyState(gruposTab, isGroupStagePredictionsComplete(predictions));
+  applyState(generalesTab, isGeneralPredictionsComplete(predictions));
+  applyState(partidosTab, isPartidosPredictionsCompleteForUser(session.participantId, official));
 }
 
 function fillParticipantSelect(select) {
@@ -875,7 +1173,23 @@ function showOnboarding(onComplete) {
   select.focus();
 }
 
+function updateSyncLiveBadge() {
+  const wrap = $("#sync-live-badge");
+  const textEl = $("#sync-live-text");
+  if (!wrap || !textEl) return;
+  const on = isRemoteSyncActive();
+  wrap.classList.toggle("sync-live-badge--on", on);
+  wrap.classList.toggle("sync-live-badge--off", !on);
+  textEl.textContent = on
+    ? "En vivo · servidor compartido"
+    : "Sin servidor (solo este navegador)";
+  wrap.title = on
+    ? "Lista de participantes, predicciones de todos y resultados oficiales se guardan en el servidor y se actualizan entre dispositivos."
+    : "No responde /api. Arranca el backend: npm run dev:all o npm run server junto a Vite, o npm start en producción.";
+}
+
 function updateSessionBar(session) {
+  updateSyncLiveBadge();
   const chip = $("#session-chip");
   const nameEl = $("#session-name");
   const btn = $("#btn-cambiar-sesion");
@@ -936,7 +1250,9 @@ function renderAdminSettingsList() {
       if (!person) return;
       if (
         !confirm(
-          `¿Eliminar a ${person.name} (${id})? Se borrarán sus predicciones guardadas en este navegador.`,
+          isRemoteSyncActive()
+            ? `¿Eliminar a ${person.name} (${id})? Se borrarán sus predicciones en el servidor para todos.`
+            : `¿Eliminar a ${person.name} (${id})? Se borrarán sus predicciones guardadas en este navegador.`,
         )
       ) {
         return;
@@ -1103,9 +1419,18 @@ function bindSessionChange(handler) {
 
 function bindRulesQuickButton() {
   const btn = $("#btn-open-rules");
-  if (!btn) return;
-  btn.addEventListener("click", () => {
-    tabsController?.setTab("reglas");
+  if (btn) {
+    btn.addEventListener("click", () => {
+      tabsController?.setTab("reglas");
+    });
+  }
+  document.querySelectorAll("[data-pm26-tab]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const tab = el.getAttribute("data-pm26-tab");
+      if (!tab || !tabsController) return;
+      tabsController.setTab(tab);
+      document.dispatchEvent(new CustomEvent("pm26-nav-drawer-close"));
+    });
   });
 }
 
@@ -1247,6 +1572,12 @@ function readGeneralFormPayload(form) {
     bestGk: String(fd.get("bestGk") ?? ""),
     topScorer: String(fd.get("topScorer") ?? ""),
   };
+}
+
+function isGeneralPayloadComplete(general) {
+  return ["first", "second", "third", "bestPlayer", "bestGk", "topScorer"].every(
+    (k) => String(general?.[k] ?? "").trim() !== "",
+  );
 }
 
 /**
@@ -1430,12 +1761,7 @@ function buildGeneralesPredictionsTableHtml(currentParticipantId) {
     .join("");
 
   return `
-    <h2 class="subsection-title group-preds-table-title">Predicciones de todos · generales</h2>
-    <p class="muted group-preds-legend generales-preds-legend"><span class="group-preds-legend-swatch group-preds-legend-swatch--cell"></span> En cada casilla del podio: botón <span class="group-preds-pt-badge">+5</span> / <span class="group-preds-pt-badge">+2</span> / <span class="group-preds-pt-badge">+3</span> según 1.º, 2.º y 3.er país acertado en el podio real (en cualquier puesto, en orden de tus columnas)
-      · Bajo el nombre solo aparece <strong class="group-preds-bien-intro">Bien</strong> (+2), <strong class="generales-legend-excelente">Excelente</strong> (+4) o <strong class="quiniela-perfect-intro-gold">Perfecto</strong> (+6) por 1, 2 o 3 posiciones exactas
-      · <span class="group-preds-legend-swatch group-preds-legend-swatch--qual"></span> País en el podio pero en otra casilla (sin posición exacta)
-      · Premios individuales: <span class="group-preds-pt-badge">+3</span> por acierto
-      · <span class="group-preds-legend-swatch group-preds-legend-swatch--pts-lead"></span> <strong>Pts</strong> dorado = líder(es) en esta sección</p>
+    <h2 class="subsection-title group-preds-table-title">Predicciones de todos</h2>
     <div class="table-scroll table-scroll--group-preds">
       <table class="table table-compact table-group-preds table-generales-preds" aria-label="Predicciones generales: todas las personas">
         <thead>
@@ -1563,6 +1889,113 @@ function renderGeneralesOfficialAdmin(participantId) {
 /**
  * Un solo listener en el contenedor admin: los botones se recrean en cada render y la delegación evita fallos al confirmar / desconfirmar.
  */
+function bindGeneralesPointsHelpOverlay() {
+  const overlay = $("#overlay-generales-points");
+  const closeBtn = $("#generales-points-help-close");
+  if (!overlay || !closeBtn) return;
+  function close() {
+    overlay.hidden = true;
+  }
+  function open() {
+    overlay.hidden = false;
+    closeBtn.focus();
+  }
+  document.body.addEventListener("click", (e) => {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    if (t.closest("[data-generales-points-help]")) {
+      e.preventDefault();
+      open();
+    }
+  });
+  closeBtn.addEventListener("click", close);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) close();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || overlay.hidden) return;
+    close();
+  });
+}
+
+function bindGruposOrderHelpOverlay() {
+  const overlay = $("#overlay-grupos-order");
+  const closeBtn = $("#grupos-order-help-close");
+  if (!overlay || !closeBtn) return;
+  function close() {
+    overlay.hidden = true;
+  }
+  function open() {
+    overlay.hidden = false;
+    closeBtn.focus();
+  }
+  document.body.addEventListener("click", (e) => {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    if (t.closest("[data-grupos-order-help]")) {
+      e.preventDefault();
+      open();
+    }
+  });
+  closeBtn.addEventListener("click", close);
+  overlay.addEventListener("click", (e) => {
+    const t = e.target;
+    if (t instanceof Element && t.closest("[data-grupos-goto-rules-improbable]")) {
+      e.preventDefault();
+      close();
+      tabsController?.setTab("reglas");
+      window.setTimeout(() => {
+        document.getElementById("reglas-improbable")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 80);
+      return;
+    }
+    if (e.target === overlay) close();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || overlay.hidden) return;
+    close();
+  });
+}
+
+function bindPartidosPointsHelpOverlay() {
+  const overlay = $("#overlay-partidos-points");
+  const closeBtn = $("#partidos-points-help-close");
+  if (!overlay || !closeBtn) return;
+  function close() {
+    overlay.hidden = true;
+  }
+  function open() {
+    overlay.hidden = false;
+    closeBtn.focus();
+  }
+  document.body.addEventListener("click", (e) => {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    if (t.closest("[data-partidos-points-help]")) {
+      e.preventDefault();
+      open();
+    }
+  });
+  closeBtn.addEventListener("click", close);
+  overlay.addEventListener("click", (e) => {
+    const t = e.target;
+    if (t instanceof Element && t.closest("[data-partidos-goto-rules-improbable]")) {
+      e.preventDefault();
+      close();
+      tabsController?.setTab("reglas");
+      window.setTimeout(() => {
+        document.getElementById("reglas-improbable")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 80);
+      return;
+    }
+    if (e.target === overlay) close();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || overlay.hidden) return;
+    close();
+  });
+}
+
 function bindGeneralesOfficialAdminActions() {
   const wrap = $("#generales-official-admin");
   if (!wrap || wrap.dataset.genOfficialActionsBound) return;
@@ -1634,10 +2067,11 @@ function refreshGeneralesAfterOfficialUnlock(participantId) {
 function renderGenerales(participantId, predictions, disabled) {
   const form = $("#form-generales");
   const g = predictions.general;
+  const userGeneralConfirmed = predictions.generalConfirmed === true;
   const official = loadOfficialResults();
   const officialLocked = official.generalOfficialConfirmed === true;
   const isAdmin = canEditOfficialResults(participantId);
-  const formDisabled = disabled || officialLocked || generalesPredictionsFormLocked();
+  const formDisabled = disabled || officialLocked || generalesPredictionsFormLocked() || userGeneralConfirmed;
   const teams = [...new Set(GROUPS.flatMap((x) => x.teams))].filter((t) => !isPlaceholderTeam(t));
   const teamOptions = teams
     .map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`)
@@ -1651,8 +2085,23 @@ function renderGenerales(participantId, predictions, disabled) {
         : `<p class="generales-locked-banner muted" role="status">Un administrador ha <strong>bloqueado</strong> esta pestaña: no puedes cambiar el podio ni los premios individuales hasta que lo desbloqueen.</p>`
       : "";
 
+  const canToggleUserConfirm = !disabled && !officialLocked && !generalesPredictionsFormLocked();
+  const isUserGeneralComplete = isGeneralPayloadComplete(g);
+  const userConfirmActionsHtml = canToggleUserConfirm
+    ? `<div class="group-pred-actions">
+        ${
+          userGeneralConfirmed
+            ? '<button type="button" class="btn btn-sm" data-general-user-action="unconfirm">Desconfirmar predicción</button>'
+            : '<button type="button" class="btn btn-primary btn-sm" data-general-user-action="confirm" disabled>Confirmar predicción</button>'
+        }
+        <span class="pill ${userGeneralConfirmed ? "pill-confirmed" : "pill-locked"}" role="status">${
+          userGeneralConfirmed ? "Confirmada" : "Sin confirmar"
+        }</span>
+      </div>`
+    : "";
   form.innerHTML = `${lockBanner}
-    ${generalesFullFormInnerHtml(teamOptions, g, formDisabled)}`;
+    ${generalesFullFormInnerHtml(teamOptions, g, formDisabled)}
+    ${userConfirmActionsHtml}`;
 
   for (const key of ["first", "second", "third", "bestPlayer", "bestGk", "topScorer"]) {
     const el = form.querySelector(`[name="${key}"]`);
@@ -1665,7 +2114,13 @@ function renderGenerales(participantId, predictions, disabled) {
   }
   if (!formDisabled) {
     function commitUserGenerales() {
-      savePredictions(participantId, { general: readGeneralFormPayload(form) });
+      const payload = readGeneralFormPayload(form);
+      savePredictions(participantId, { general: payload, generalConfirmed: false });
+      const liveConfirmBtn = /** @type {HTMLButtonElement | null} */ (
+        form.querySelector('[data-general-user-action="confirm"]')
+      );
+      if (liveConfirmBtn) liveConfirmBtn.disabled = !isGeneralPayloadComplete(payload);
+      updatePredictionTabsProgress(loadSession(), loadPredictions(participantId));
       renderGeneralesComparisonTable(participantId);
       renderStats(loadSession());
     }
@@ -1677,6 +2132,32 @@ function renderGenerales(participantId, predictions, disabled) {
       commitUserGenerales();
     };
     form.addEventListener("change", generalesUserAwardChangeHandler);
+
+    const confirmBtn = /** @type {HTMLButtonElement | null} */ (
+      form.querySelector('[data-general-user-action="confirm"]')
+    );
+    if (confirmBtn) {
+      confirmBtn.disabled = !isUserGeneralComplete;
+      confirmBtn.addEventListener("click", () => {
+        const payload = readGeneralFormPayload(form);
+        if (!isGeneralPayloadComplete(payload)) {
+          alert("Completa podio y premios antes de confirmar.");
+          return;
+        }
+        savePredictions(participantId, { general: payload, generalConfirmed: true });
+        refreshAll(loadSession());
+      });
+    }
+  }
+
+  const unconfirmBtn = /** @type {HTMLButtonElement | null} */ (
+    form.querySelector('[data-general-user-action="unconfirm"]')
+  );
+  if (unconfirmBtn && canToggleUserConfirm) {
+    unconfirmBtn.addEventListener("click", () => {
+      savePredictions(participantId, { generalConfirmed: false });
+      refreshAll(loadSession());
+    });
   }
 
   renderGeneralesOfficialAdmin(participantId);
@@ -1765,12 +2246,14 @@ function renderGrupos(participantId, predictions) {
   const groupsBlocked = groupPredictionsFormLocked();
 
   ensureFaseGruposFilter();
+  syncFaseGruposFilterOptions(predictions);
+  syncFaseGruposConfirmStatus(predictions);
   const filterEl = $("#fase-grupos-filter");
   const selectedGid = filterEl?.value ?? "";
   if (!selectedGid) {
     const hint = document.createElement("p");
     hint.className = "muted";
-    hint.textContent = "Elige un grupo para ver tu orden y compararlo con el resto.";
+    hint.textContent = "Elige un grupo para ver tu predicción y la de los demás.";
     wrap.appendChild(hint);
     appendBestThirdSummaryEl(wrap, predictions);
     syncThirdLimitRibbon(predictions);
@@ -1820,7 +2303,7 @@ function renderGrupos(participantId, predictions) {
   }
 
   const card = document.createElement("article");
-  card.className = "card";
+  card.className = "card card--grupos";
   const savedOrder = predictions.groupOrder[grp.id];
     const order =
       Array.isArray(savedOrder) && savedOrder.length === 4
@@ -1833,7 +2316,11 @@ function renderGrupos(participantId, predictions) {
     );
     const orderLocked = groupsBlocked || orderKickoffLocked || groupConfirmed;
 
-    card.innerHTML = `<h2 class="card-title">Grupo ${grp.id}</h2>`;
+    card.innerHTML = `<header class="generales-user-pred-header">
+      <h2 class="generales-user-pred-title">Tu predicción</h2>
+      <p class="generales-user-pred-hint">Ordena los cuatro equipos, marca si el 3.º pasa como mejor tercero y confirma cuando esté listo.</p>
+    </header>
+    <p class="grupos-card-group-label"><strong>Grupo ${escapeHtml(grp.id)}</strong></p>`;
 
     if (isAdmin) {
       const adminLock = document.createElement("div");
@@ -1873,23 +2360,25 @@ function renderGrupos(participantId, predictions) {
 
     const orderWrap = document.createElement("div");
     orderWrap.className = "group-order";
-    orderWrap.innerHTML = `<p class="field-label">Tu orden predicho (1.º arriba)</p>`;
 
     const thirdChecked = predictions.groupThirdAdvances?.[grp.id] === true;
     if (orderLocked) {
-      orderWrap.innerHTML += `<ol class="order-readonly">${order
+      orderWrap.innerHTML = `<ul class="order-readonly">${order
         .map((t, idx) => {
+          const pos = `${idx + 1}°`;
           const thirdBadge =
             idx === 2
-              ? `<span class="third-inline-lock ${thirdChecked ? "is-on" : ""}">${thirdChecked ? "3.º pasa ✓" : "3.º no pasa ✕"}</span>`
+              ? `<span class="third-inline-lock ${thirdChecked ? "is-on" : ""}" role="status">${thirdChecked ? "3.º pasa ✓" : "3.º no pasa ✕"}</span>`
               : "";
-          return `<li>${t ? teamLabelHtml(t) : '<span class="muted">Sin elegir</span>'}${thirdBadge}</li>`;
+          const teamCell = t ? teamLabelHtml(t) : '<span class="muted">Sin elegir</span>';
+          return `<li class="order-row"><span class="order-pos">${pos}</span><span class="order-readonly__team">${teamCell}</span>${thirdBadge}</li>`;
         })
-        .join("")}</ol>`;
+        .join("")}</ul>`;
       if (groupConfirmed && !orderKickoffLocked) {
         orderWrap.innerHTML += `
           <div class="group-order-actions">
             <button type="button" class="btn btn-sm group-order-unlock" data-group="${grp.id}">Cambiar orden</button>
+            <span class="pill pill-confirmed" role="status">Confirmada</span>
           </div>
         `;
       } else if (groupsBlocked) {
@@ -2034,6 +2523,11 @@ function renderGrupos(participantId, predictions) {
       confirmBtn.textContent = "Confirmar orden";
       confirmBtn.disabled = !canConfirm;
       actions.appendChild(confirmBtn);
+      const pendingPill = document.createElement("span");
+      pendingPill.className = "pill pill-locked";
+      pendingPill.setAttribute("role", "status");
+      pendingPill.textContent = "Sin confirmar";
+      actions.appendChild(pendingPill);
       orderWrap.appendChild(actions);
     }
 
@@ -2288,7 +2782,7 @@ function renderBrackets(participantId, _predictions) {
 }
 
 function computeLiveParticipantRows(currentParticipantId) {
-  const offScores = getOfficialConfirmedGroupScores();
+  const offScores = getOfficialGroupScoresForLiveQuinielaPoints();
   const officialStore = loadOfficialResults();
   const liveOfficial = getLiveOfficialGroupSnapshot();
   const officialGen = officialStore.generalOfficial ?? {};
@@ -2300,6 +2794,7 @@ function computeLiveParticipantRows(currentParticipantId) {
 
   return getParticipants().map((p) => {
     let total = 0;
+    let matchPointsTotal = 0;
     let exact = 0;
     let outcome = 0;
     let zeroPointMatches = 0;
@@ -2370,6 +2865,7 @@ function computeLiveParticipantRows(currentParticipantId) {
       const pts = computeGroupMatchPoints(off, pred, improb, matchScoring);
       if (pts === null) continue;
       total += pts;
+      matchPointsTotal += pts;
       countedMatches += 1;
       if (pts === 0) zeroPointMatches += 1;
       if (isExactGroupPrediction(off, pred)) exact += 1;
@@ -2398,13 +2894,15 @@ function computeLiveParticipantRows(currentParticipantId) {
       const pred = pStore.knockoutScores?.[m.id] ?? { home: "", away: "" };
       const improb = getImprobableOutcomeSignForKoMatch(m.id, off);
       const matchScoring = getMatchScoringForQuiniela(m);
-      const pts = computeGroupMatchPoints(off, pred, improb, matchScoring);
+      const koPenPh = knockoutRoundRequiresPenaltyPickOnDraw(m.roundId);
+      const pts = computeGroupMatchPoints(off, pred, improb, matchScoring, koPenPh);
       if (pts === null) continue;
       total += pts;
+      matchPointsTotal += pts;
       countedMatches += 1;
       if (pts === 0) zeroPointMatches += 1;
       if (isExactGroupPrediction(off, pred)) exact += 1;
-      const breakdown = computeGroupMatchPointsBreakdown(off, pred, improb, matchScoring);
+      const breakdown = computeGroupMatchPointsBreakdown(off, pred, improb, matchScoring, koPenPh);
       if ((breakdown?.improbablePts ?? 0) > 0) matchBonusCount += 1;
       const oh = parseInt(String(off.home), 10);
       const oa = parseInt(String(off.away), 10);
@@ -2425,7 +2923,7 @@ function computeLiveParticipantRows(currentParticipantId) {
     const totalPerfect = exact + groupOrderPerfectCount + generalPerfectCount;
     const totalBien = groupOrderBienCount + generalBienCount;
     const totalExcelente = generalExcelenteCount;
-    const avgPtsPerMatch = countedMatches > 0 ? total / countedMatches : 0;
+    const avgPtsPerMatch = countedMatches > 0 ? matchPointsTotal / countedMatches : 0;
     return {
       p,
       pts: total,
@@ -2787,6 +3285,286 @@ function escapeHtml(s) {
     .replaceAll('"', "&quot;");
 }
 
+function allMatchesForPartidosCalendar() {
+  return [...GROUP_MATCHES, ...getKnockoutMatchesFlat()];
+}
+
+/**
+ * Partidos «próxima jornada» (resaltados en amarillo) sin predicción confirmada por el participante.
+ * Cuenta todos los IDs en amarillo, tengan o no equipos/cruces ya definidos.
+ * @param {string} participantId
+ * @param {Set<string>} nextHighlightIds
+ */
+function countPendingProximosForUser(participantId, nextHighlightIds) {
+  if (nextHighlightIds.size === 0) return 0;
+  const pStore = loadPredictions(participantId);
+  const byId = new Map(allMatchesForPartidosCalendar().map((m) => [m.id, m]));
+  let n = 0;
+  for (const id of nextHighlightIds) {
+    const m = byId.get(id);
+    if (!m) continue;
+    if (m.groupId != null) {
+      if (pStore.groupScoresConfirmed?.[id] === true) continue;
+      n++;
+    } else if (m.roundId != null) {
+      if (pStore.knockoutScoresConfirmed?.[id] === true) continue;
+      n++;
+    }
+  }
+  return n;
+}
+
+function partidosSiguientesVistaActiva() {
+  try {
+    return sessionStorage.getItem(PARTIDOS_NAV_PROXIMOS_SESSION_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Fase/torneo real (grupos, all-ko, r32…), independiente del ítem decorativo «SIGUIENTES PARTIDOS». */
+function getPartidosUnderlyingScope() {
+  return localStorage.getItem(PARTIDOS_SCOPE_KEY) ?? "grupos";
+}
+
+/** Filtro Grupo solo en fase de grupos y con listado completo (no en «SIGUIENTES PARTIDOS» ni shortcut). */
+function shouldShowPartidosGroupToolbar() {
+  return getPartidosUnderlyingScope() === "grupos" && !partidosSiguientesVistaActiva();
+}
+
+function syncPartidosScopeSelectUi() {
+  const sel = $("#partidos-scope-filter");
+  if (!sel) return;
+  const underlying = getPartidosUnderlyingScope();
+  if (partidosSiguientesVistaActiva()) {
+    if ([...sel.options].some((o) => o.value === PARTIDOS_VISTA_SIGUIENTES_VALUE)) {
+      sel.value = PARTIDOS_VISTA_SIGUIENTES_VALUE;
+    }
+  } else if ([...sel.options].some((o) => o.value === underlying)) {
+    sel.value = underlying;
+  }
+  sel.classList.toggle("partidos-scope-filter--siguientes", partidosSiguientesVistaActiva());
+}
+
+/**
+ * @param {{ participantId: string } | null} session
+ */
+function updateProximosNavShortcutButton(session) {
+  const banner = /** @type {HTMLButtonElement | null} */ (document.getElementById("nav-drawer-pending-banner"));
+  const btnTitle =
+    "Abre Partidos mostrando solo la jornada próxima (amarilla). Al cambiar Vista vuelves al listado completo.";
+
+  const setBannerLines = (mainText, variantClass, extraClass, showTapHint) => {
+    if (!banner) return;
+    const tap =
+      showTapHint === true
+        ? `<span class="nav-drawer-pending-banner__hint">${escapeHtml("Toca para ir a verlos")}</span>`
+        : "";
+    banner.innerHTML = `<span class="nav-drawer-pending-banner__main">${escapeHtml(mainText)}</span>${tap}`;
+    banner.className = ["nav-drawer-pending-banner", variantClass, extraClass].filter(Boolean).join(" ");
+    banner.setAttribute(
+      "aria-label",
+      showTapHint === true ? `${mainText}. Toca para ir a verlos` : mainText,
+    );
+  };
+
+  const clearBanner = () => {
+    if (!banner) return;
+    banner.hidden = true;
+    banner.innerHTML = "";
+    banner.className = "nav-drawer-pending-banner";
+    banner.disabled = true;
+    banner.title = "";
+    banner.removeAttribute("aria-label");
+  };
+
+  if (!session) {
+    clearBanner();
+    return;
+  }
+
+  const official = loadOfficialResults();
+  const nextIds = getNextMatchDayHighlightIds(official, allMatchesForPartidosCalendar());
+
+  if (nextIds.size === 0) {
+    if (banner) {
+      banner.hidden = false;
+      setBannerLines("Sin jornada próxima en el calendario", "nav-drawer-pending-banner--muted", "", false);
+      banner.disabled = true;
+      banner.title = "No hay partidos destacados como próxima jornada.";
+    }
+    return;
+  }
+
+  const pending = countPendingProximosForUser(session.participantId, nextIds);
+
+  if (banner) {
+    banner.hidden = false;
+    banner.disabled = false;
+    banner.title = btnTitle;
+    if (pending <= 0) {
+      setBannerLines("Todo al día en la jornada próxima", "nav-drawer-pending-banner--ok", "", false);
+    } else if (pending === 1) {
+      setBannerLines("Falta 1 partido por predecir", "nav-drawer-pending-banner--warn", "nav-drawer-pending-banner--pulse", true);
+    } else {
+      setBannerLines(
+        `Faltan ${pending} partidos por predecir`,
+        "nav-drawer-pending-banner--warn",
+        "nav-drawer-pending-banner--pulse",
+        true,
+      );
+    }
+  }
+}
+
+/**
+ * @param {boolean} confirmed
+ * @param {"corner"|"inline"} variant corner = columna derecha con fecha (compacta); inline = sin kickoff
+ * @param {boolean} [matchOfficiallyClosed] si true, sustituye confirmada/sin confirmar por «Partido terminado»
+ */
+function partidosUserPredPillHtml(confirmed, variant, matchOfficiallyClosed = false) {
+  const place = variant === "corner" ? "partidos-user-pred-pill--corner" : "partidos-user-pred-pill--inline";
+  if (matchOfficiallyClosed) {
+    return `<span class="partidos-user-pred-pill partidos-user-pred-pill--ended ${place}" role="status">${escapeHtml("Partido terminado")}</span>`;
+  }
+  const tone = confirmed ? "partidos-user-pred-pill--ok" : "partidos-user-pred-pill--warn";
+  const label = confirmed ? "Predicción confirmada" : "Predicción sin confirmar";
+  return `<span class="partidos-user-pred-pill ${tone} ${place}" role="status">${escapeHtml(label)}</span>`;
+}
+
+/**
+ * Columna superior derecha: fecha, jornada próxima y pastilla de predicción (compacta, sin hueco al pie).
+ * @param {{ kickoff?: string | null, id: string }} m
+ * @param {Set<string>} nextJornadaIds ids de `getNextMatchDayHighlightIds`
+ * @param {boolean} userPredConfirmed
+ * @param {boolean} matchOfficiallyClosed
+ * @param {boolean} [matchInProgress] admin marcó el partido como iniciado (grupos) o marcador KO sin confirmar
+ */
+function partidosMatchCornerHtml(m, nextJornadaIds, userPredConfirmed, matchOfficiallyClosed, matchInProgress = false) {
+  if (!m.kickoff) return "";
+  const isJornadaProxima = nextJornadaIds.has(m.id);
+  const dateS = formatKickoffShortSpanish(m.kickoff);
+  const eta = countdownLabelSpanish(m.kickoff);
+  const meta = `<div class="partidos-match-corner__meta">
+    <div class="partidos-match-corner__date-line">${escapeHtml(dateS)}</div>
+    <div class="partidos-match-corner__eta">${escapeHtml(eta)}</div>
+  </div>`;
+  const badge = matchInProgress
+    ? `<span class="partidos-corner-badge partidos-corner-badge--en-juego" role="status">EN JUEGO</span>`
+    : isJornadaProxima
+      ? `<span class="partidos-corner-badge" role="status">${escapeHtml("SIGUIENTE PARTIDO")}</span>`
+      : "";
+  const predHtml = partidosUserPredPillHtml(userPredConfirmed, "corner", matchOfficiallyClosed);
+  return `<aside class="partidos-match-corner" aria-label="Fecha, jornada y estado de tu predicción">
+    <div class="partidos-match-corner__stack">
+      <div class="partidos-match-corner__row">
+        ${meta}
+        ${badge}
+      </div>
+      <div class="partidos-match-corner__pred">${predHtml}</div>
+    </div>
+  </aside>`;
+}
+
+/** @param {{ kickoff?: string | null }} m */
+function partidosAccNoKickoffHintHtml(m) {
+  if (m.kickoff) return "";
+  return `<p class="partidos-acc__no-kick muted" role="note">Sin fecha de inicio</p>`;
+}
+
+/**
+ * @param {typeof GROUP_MATCHES[number]} m
+ * @param {ReturnType<typeof loadOfficialResults>} official
+ */
+function partidosOfficialPreviewLineGroup(m, official) {
+  const off = official.groupScores[m.id] ?? { home: "", away: "" };
+  const matchStage = official.groupMatchState?.[m.id] ?? "ready";
+  const officialConfirmed = matchStage === "finished" && official.groupScoresConfirmed?.[m.id] === true;
+  const bothFilled = off.home !== "" && off.away !== "";
+  if (officialConfirmed && bothFilled) {
+    return `Resultado oficial: <strong>${escapeHtml(String(off.home))} — ${escapeHtml(String(off.away))}</strong>`;
+  }
+  if (matchStage === "started" && bothFilled) {
+    return `En juego: <strong>${escapeHtml(String(off.home))} — ${escapeHtml(String(off.away))}</strong> <span class="muted">(provisional)</span>`;
+  }
+  return `<span class="muted">Resultado oficial: pendiente</span>`;
+}
+
+/**
+ * @param {ReturnType<typeof getKnockoutMatchesFlat>[number]} m
+ * @param {ReturnType<typeof loadOfficialResults>} official
+ * @param {boolean} officialSlotsDecided
+ */
+function partidosOfficialPreviewLineKo(m, official, officialSlotsDecided) {
+  const off = official.knockoutScores?.[m.id] ?? { home: "", away: "" };
+  const offOk = official.knockoutScoresConfirmed?.[m.id] === true;
+  if (offOk && off.home !== "" && off.away !== "") {
+    let line = `Resultado oficial: <strong>${escapeHtml(String(off.home))} — ${escapeHtml(String(off.away))}</strong>`;
+    if (knockoutRoundRequiresPenaltyPickOnDraw(m.roundId) && isKnockoutScoreDrawNumbers(off.home, off.away)) {
+      const pw = off.penaltyWinner;
+      if (pw === "home" || pw === "away") {
+        const { ri, mi } = getKoRoundMatchIndex(m.id);
+        const lab = allFilledOfficialKnockoutScores(official);
+        const hn = resolveKnockoutSlotLabel(ri, mi, "home", lab);
+        const an = resolveKnockoutSlotLabel(ri, mi, "away", lab);
+        const nm = pw === "home" ? hn : an;
+        line += ` <span class="muted">(penales: ${escapeHtml(nm)})</span>`;
+      }
+    }
+    return line;
+  }
+  if (!officialSlotsDecided) {
+    return `<span class="muted">Equipos por definir — oficial pendiente</span>`;
+  }
+  if (off.home !== "" && off.away !== "") {
+    return `Marcador cargado: <strong>${escapeHtml(String(off.home))} — ${escapeHtml(String(off.away))}</strong> <span class="muted">(sin confirmar)</span>`;
+  }
+  return `<span class="muted">Resultado oficial: pendiente</span>`;
+}
+
+/**
+ * @param {ReturnType<typeof loadPredictions>} pStore
+ * @param {{ id: string, groupId?: string, roundId?: string }} m
+ */
+function isUserPredictionConfirmedStore(pStore, m) {
+  if (m.groupId != null) return pStore.groupScoresConfirmed?.[m.id] === true;
+  if (m.roundId != null) return pStore.knockoutScoresConfirmed?.[m.id] === true;
+  return false;
+}
+
+/**
+ * Primero los partidos de la jornada «SIGUIENTES» (`nextJornadaIds`); luego el resto. En cada bloque, por kickoff.
+ * Así un partido reiniciado que vuelve a ser «siguiente» no cae al final por haber confirmado predicción en otros.
+ * @param {Array<{ id: string, kickoff?: string | null }>} list
+ * @param {Set<string>} nextJornadaIds
+ */
+function sortPartidosBySiguientesThenKickoff(list, nextJornadaIds) {
+  return [...list].sort((a, b) => {
+    const ia = nextJornadaIds.has(a.id) ? 0 : 1;
+    const ib = nextJornadaIds.has(b.id) ? 0 : 1;
+    if (ia !== ib) return ia - ib;
+    const ta = a.kickoff ? Date.parse(a.kickoff) : Number.POSITIVE_INFINITY;
+    const tb = b.kickoff ? Date.parse(b.kickoff) : Number.POSITIVE_INFINITY;
+    if (ta !== tb) return ta - tb;
+    return String(a.id).localeCompare(String(b.id));
+  });
+}
+
+/**
+ * @param {string|number} homeVal
+ * @param {string|number} awayVal
+ * @param {"home"|"away"} side
+ * @returns {string}
+ */
+function officialScoreOutcomeClass(homeVal, awayVal, side) {
+  const h = Number(String(homeVal).trim());
+  const a = Number(String(awayVal).trim());
+  if (!Number.isFinite(h) || !Number.isFinite(a)) return "";
+  if (h === a) return " quiniela-cell--score-draw";
+  if (side === "home") return h > a ? " quiniela-cell--score-win" : " quiniela-cell--score-loss";
+  return a > h ? " quiniela-cell--score-win" : " quiniela-cell--score-loss";
+}
+
 function teamLabelHtml(teamName) {
   const isTbd = isPlaceholderTeam(teamName);
   const cls = `team-label${isTbd ? " is-tbd" : ""}`;
@@ -2821,6 +3599,52 @@ function quinielaGanadorPickLabel(m, pred) {
   return '<span class="quiniela-ganador-draw">Empate</span>';
 }
 
+function isKnockoutScoreDrawNumbers(homeVal, awayVal) {
+  const h = typeof homeVal === "number" ? homeVal : parseInt(String(homeVal), 10);
+  const a = typeof awayVal === "number" ? awayVal : parseInt(String(awayVal), 10);
+  return Number.isFinite(h) && Number.isFinite(a) && h === a;
+}
+
+/**
+ * Columna «Ganador» en eliminatoria: empate + ganador en penales (misma celda).
+ * @param {{ home: string, away: string }} vm equipos resueltos para la fila
+ * @param {{ home: unknown, away: unknown, penaltyWinner?: string }} pred
+ */
+function quinielaKoGanadorCellHtml(vm, pred, roundId, opts = {}) {
+  const { hideDraft = false, selfEditing = false, matchId = "" } = opts;
+  if (hideDraft) return '<span class="muted">—</span>';
+  const s = predictionOutcomeSign(pred);
+  if (!s) return '<span class="muted">—</span>';
+  let main;
+  if (s === "h") main = `<span class="quiniela-ganador-name">${escapeHtml(vm.home)}</span>`;
+  else if (s === "a") main = `<span class="quiniela-ganador-name">${escapeHtml(vm.away)}</span>`;
+  else main = '<span class="quiniela-ganador-draw">Empate</span>';
+
+  const penPhase = knockoutRoundRequiresPenaltyPickOnDraw(roundId);
+  if (!penPhase || s !== "d") return main;
+
+  if (selfEditing && matchId) {
+    const cur = pred.penaltyWinner === "home" || pred.penaltyWinner === "away" ? pred.penaltyWinner : "";
+    const hCls = cur === "home" ? " btn-primary" : "";
+    const aCls = cur === "away" ? " btn-primary" : "";
+    return `<div class="ko-ganador-stack">
+      <div class="ko-ganador-stack__main">${main}</div>
+      <div class="ko-penalty-pick-actions" role="group" aria-label="Ganador en penales">
+        <span class="ko-penalty-pick-actions__l muted">Penales</span>
+        <button type="button" class="btn btn-sm ko-user-pen-pick${hCls}" data-kid-pen="${escapeHtml(matchId)}" data-pen-pick="home">${escapeHtml(vm.home)}</button>
+        <button type="button" class="btn btn-sm ko-user-pen-pick${aCls}" data-kid-pen="${escapeHtml(matchId)}" data-pen-pick="away">${escapeHtml(vm.away)}</button>
+      </div>
+    </div>`;
+  }
+
+  const pw = pred.penaltyWinner;
+  if (pw !== "home" && pw !== "away") {
+    return `${main}<div class="ko-pen-pick-inline muted">Penales: —</div>`;
+  }
+  const nm = pw === "home" ? vm.home : vm.away;
+  return `${main}<div class="ko-pen-pick-inline">Penales: <span class="quiniela-ganador-name">${escapeHtml(nm)}</span></div>`;
+}
+
 /**
  * Filas HTML del tbody de predicciones de un partido (quiniela).
  * @param {typeof GROUP_MATCHES[number]} m
@@ -2830,6 +3654,7 @@ function quinielaGanadorPickLabel(m, pred) {
  */
 function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
   const matchScoring = getMatchScoringForQuiniela(m);
+  const teamsDecided = isQuinielaTeamSlotDecided(m.home) && isQuinielaTeamSlotDecided(m.away);
   const off = official.groupScores[m.id] ?? { home: "", away: "" };
   const matchStage = official.groupMatchState?.[m.id] ?? "ready";
   const officialConfirmed = matchStage === "finished" && official.groupScoresConfirmed?.[m.id] === true;
@@ -2866,13 +3691,18 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
     return { ...r, pts, breakdown, exact };
   });
 
+  const scoredPts = rows.filter(
+    (d) => officialCompleteForScoring && d.predCommitted && d.pts !== null,
+  );
+  const maxPtsThisMatch = scoredPts.length ? Math.max(...scoredPts.map((d) => d.pts)) : 0;
+
   return rows
     .map((d) => {
       let cls = "quiniela-pred-row";
       if (d.p.id === session.participantId) cls += " quiniela-pred-row--self";
 
       const isSelf = d.p.id === session.participantId;
-      const selfCanEdit = isSelf && !predictionsLocked && !d.predCommitted;
+      const selfCanEdit = isSelf && !predictionsLocked && !d.predCommitted && teamsDecided;
       /** Borrador no confirmado: otros no ven marcador ni ganador hasta «Confirmar». */
       const hideDraftScoresFromOthers = !isSelf && !d.predCommitted;
       const scoreCellPlain = (side) => {
@@ -2884,6 +3714,9 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
       let pa;
       if (isSelf) {
         if (d.predCommitted || predictionsLocked) {
+          ph = scoreCellPlain("home");
+          pa = scoreCellPlain("away");
+        } else if (!teamsDecided) {
           ph = scoreCellPlain("home");
           pa = scoreCellPlain("away");
         } else {
@@ -2945,7 +3778,7 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
       }
       const phCell = quinielaCellWithBadges(ph, homeBadge);
       const paCell = quinielaCellWithBadges(pa, awayBadge);
-      const pcCell = escapeHtml(pcRaw);
+      const pcCell = quinielaPtsCellContentHtml(pcRaw, d, officialCompleteForScoring);
       const selfNote = isSelf ? ' <span class="td-muted">(tú)</span>' : "";
       const editableClass = selfCanEdit ? " quiniela-self-edit" : "";
       let actionsTd = '<td class="quiniela-pred-actions"></td>';
@@ -2955,6 +3788,8 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
           actionsTd = '<td class="quiniela-pred-actions"><span class="muted">Bloqueado</span></td>';
         } else if (d.predCommitted) {
           actionsTd = `<td class="quiniela-pred-actions"><button type="button" class="btn btn-sm quiniela-pred-unlock-user" data-mid="${escapeHtml(m.id)}">Cambiar</button></td>`;
+        } else if (!teamsDecided) {
+          actionsTd = '<td class="quiniela-pred-actions"><span class="muted">Equipos por definir</span></td>';
         } else {
           actionsTd = `<td class="quiniela-pred-actions"><button type="button" class="btn btn-primary btn-sm quiniela-pred-confirm-user" data-mid="${escapeHtml(m.id)}" ${bothPred ? "" : "disabled"}>Confirmar</button></td>`;
         }
@@ -2965,9 +3800,10 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
       const ganadorTdCls = ["quiniela-num", "quiniela-ganador-col", ganadorHit ? "quiniela-cell--hit" : ""]
         .filter(Boolean)
         .join(" ");
-      const ptsTdCls = ["quiniela-num", "quiniela-pts", d.exact ? "quiniela-pts--exact" : ""]
-        .filter(Boolean)
-        .join(" ");
+      const ptsTdCls = quinielaPtsTdClassList(d, {
+        officialCompleteForScoring,
+        maxPtsThisMatch,
+      });
 
       const selfMidAttr = selfCanEdit ? ` data-quiniela-self-mid="${escapeHtml(m.id)}"` : "";
       const participantTd = `<td><div class="quiniela-participant-cell"><div class="quiniela-participant-line">${escapeHtml(d.p.name)}${selfNote}</div>${perfectExtra}</div></td>`;
@@ -2977,11 +3813,51 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
 }
 
 /**
+ * HTML del contenido de la celda «Pts» (número con texto multicolor si hay bono improbable; la celda queda normal).
+ * @param {string} pcRaw «—» o el número en texto
+ * @param {{ predCommitted: boolean, pts: unknown, breakdown?: { improbablePts?: number } | null }} d
+ * @param {boolean} officialCompleteForScoring
+ */
+function quinielaPtsCellContentHtml(pcRaw, d, officialCompleteForScoring) {
+  const plain = escapeHtml(pcRaw);
+  const bonus =
+    officialCompleteForScoring &&
+    d.predCommitted &&
+    (d.breakdown?.improbablePts ?? 0) > 0 &&
+    d.pts !== null &&
+    typeof d.pts === "number";
+  if (!bonus) return plain;
+  return `<span class="quiniela-pts__bonus-num">${plain}</span>`;
+}
+
+/**
+ * Clases para la celda «Pts» de la quiniela (cero en rojo; bono: número multicolor; si empatan el máximo y el máximo es mayor que 0: celda dorada, combinable con bono).
+ * @param {{ predCommitted: boolean, pts: number|null, breakdown?: { improbablePts?: number } | null }} d
+ * @param {{ officialCompleteForScoring: boolean, maxPtsThisMatch: number }} ctx
+ */
+function quinielaPtsTdClassList(d, ctx) {
+  const { officialCompleteForScoring, maxPtsThisMatch } = ctx;
+  const parts = ["quiniela-num", "quiniela-pts"];
+  const hasScore =
+    officialCompleteForScoring && d.predCommitted && d.pts !== null && typeof d.pts === "number";
+  if (!hasScore) return parts.join(" ");
+  const hasImprobableBonus = (d.breakdown?.improbablePts ?? 0) > 0;
+  if (hasImprobableBonus) parts.push("quiniela-pts--bonus-rainbow");
+  if (d.pts === 0) parts.push("quiniela-pts--zero");
+  const isTop = maxPtsThisMatch > 0 && d.pts === maxPtsThisMatch;
+  if (isTop) {
+    parts.push("quiniela-pts--lead", "quiniela-pts--lead-winner");
+  }
+  return parts.join(" ");
+}
+
+/**
  * @param {ReturnType<typeof getKnockoutMatchesFlat>[number]} m
  */
 function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
   void isAdmin;
   const matchScoring = getMatchScoringForQuiniela(m);
+  const koPenaltyPhase = knockoutRoundRequiresPenaltyPickOnDraw(m.roundId);
   const off = official.knockoutScores?.[m.id] ?? { home: "", away: "" };
   const officialConfirmed = official.knockoutScoresConfirmed?.[m.id] === true;
   const bothFilled = off.home !== "" && off.away !== "";
@@ -2989,6 +3865,11 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
   const predictionsLocked = officialConfirmed;
 
   const { ri, mi } = getKoRoundMatchIndex(m.id);
+  const labelScoresKo = allFilledOfficialKnockoutScores(official);
+  const koOfficialHome = resolveKnockoutSlotLabel(ri, mi, "home", labelScoresKo);
+  const koOfficialAway = resolveKnockoutSlotLabel(ri, mi, "away", labelScoresKo);
+  const koOfficialSlotsDecided =
+    isQuinielaTeamSlotDecided(koOfficialHome) && isQuinielaTeamSlotDecided(koOfficialAway);
   const preliminary = [...getParticipants()]
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((p) => {
@@ -3008,11 +3889,11 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
   const rows = preliminary.map((r) => {
     const pts =
       officialCompleteForScoring && r.predCommitted
-        ? computeGroupMatchPoints(off, r.pred, improbableSign, matchScoring)
+        ? computeGroupMatchPoints(off, r.pred, improbableSign, matchScoring, koPenaltyPhase)
         : null;
     const breakdown =
       officialCompleteForScoring && r.predCommitted
-        ? computeGroupMatchPointsBreakdown(off, r.pred, improbableSign, matchScoring)
+        ? computeGroupMatchPointsBreakdown(off, r.pred, improbableSign, matchScoring, koPenaltyPhase)
         : null;
     const exact =
       officialCompleteForScoring &&
@@ -3023,6 +3904,11 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
     return { ...r, pts, breakdown, exact };
   });
 
+  const scoredPtsKo = rows.filter(
+    (d) => officialCompleteForScoring && d.predCommitted && d.pts !== null,
+  );
+  const maxPtsThisMatchKo = scoredPtsKo.length ? Math.max(...scoredPtsKo.map((d) => d.pts)) : 0;
+
   return rows
     .map((d) => {
       let cls = "quiniela-pred-row partidos-ko-pred-row";
@@ -3030,7 +3916,7 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
 
       const vm = d.virtualM;
       const isSelf = d.p.id === session.participantId;
-      const selfCanEdit = isSelf && !predictionsLocked && !d.predCommitted;
+      const selfCanEdit = isSelf && !predictionsLocked && !d.predCommitted && koOfficialSlotsDecided;
       const hideDraftScoresFromOthers = !isSelf && !d.predCommitted;
       const scoreCellPlain = (side) => {
         const v = side === "home" ? d.pred.home : d.pred.away;
@@ -3041,6 +3927,9 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
       let pa;
       if (isSelf) {
         if (d.predCommitted || predictionsLocked) {
+          ph = scoreCellPlain("home");
+          pa = scoreCellPlain("away");
+        } else if (!koOfficialSlotsDecided) {
           ph = scoreCellPlain("home");
           pa = scoreCellPlain("away");
         } else {
@@ -3067,12 +3956,16 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
           : "";
       const homeHit = Boolean(officialCompleteForScoring && d.breakdown && d.breakdown.homeGoalsPts > 0);
       const awayHit = Boolean(officialCompleteForScoring && d.breakdown && d.breakdown.awayGoalsPts > 0);
-      const ganadorHit = Boolean(officialCompleteForScoring && d.breakdown && d.breakdown.outcomePts > 0);
+      const penHit = Boolean(officialCompleteForScoring && d.breakdown && (d.breakdown.penaltyPts ?? 0) > 0);
+      const ganadorHit = Boolean(
+        officialCompleteForScoring && d.breakdown && (d.breakdown.outcomePts > 0 || penHit),
+      );
 
       let ganadorBadges = "";
       if (d.breakdown && officialCompleteForScoring && d.predCommitted) {
         const o = d.breakdown.outcomePts;
         const imp = d.breakdown.improbablePts;
+        const pen = d.breakdown.penaltyPts ?? 0;
         if (imp > 0 && o > 0) {
           ganadorBadges = pointsBadgeHtml(o + imp, {
             bonus: true,
@@ -3086,10 +3979,19 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
             title: "Bono resultado improbable (minoría acertada)",
           });
         }
+        if (pen > 0) {
+          const penBadge = pointsBadgeHtml(pen, { title: "Acierto del ganador en penales" });
+          ganadorBadges = ganadorBadges ? `${ganadorBadges}${penBadge}` : penBadge;
+        }
       }
+      const showPenControls =
+        isSelf && selfCanEdit && koPenaltyPhase && predictionOutcomeSign(d.pred) === "d";
       const ganadorInner = hideDraftScoresFromOthers
         ? '<span class="muted">—</span>'
-        : quinielaGanadorPickLabel(vm, d.pred);
+        : quinielaKoGanadorCellHtml(vm, d.pred, m.roundId, {
+            selfEditing: showPenControls,
+            matchId: showPenControls ? m.id : "",
+          });
       const ganadorCellInner =
         ganadorBadges !== ""
           ? `<div class="quiniela-cell-badges-wrap quiniela-cell-badges-wrap--ganador"><div class="quiniela-cell-badges-main"><span class="quiniela-ganador-pick">${ganadorInner}</span></div>${ganadorBadges}</div>`
@@ -3104,16 +4006,22 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
       }
       const phCell = quinielaCellWithBadges(ph, homeBadge);
       const paCell = quinielaCellWithBadges(pa, awayBadge);
-      const pcCell = escapeHtml(pcRaw);
+      const pcCell = quinielaPtsCellContentHtml(pcRaw, d, officialCompleteForScoring);
       const selfNote = isSelf ? ' <span class="td-muted">(tú)</span>' : "";
       const editableClass = selfCanEdit ? " partidos-ko-self-edit" : "";
       let actionsTd = '<td class="quiniela-pred-actions"></td>';
       if (isSelf) {
-        const bothPred = d.pred.home !== "" && d.pred.away !== "";
+        const scoresOk = d.pred.home !== "" && d.pred.away !== "";
+        const drawPred = predictionOutcomeSign(d.pred) === "d";
+        const penOk =
+          !koPenaltyPhase || !drawPred || d.pred.penaltyWinner === "home" || d.pred.penaltyWinner === "away";
+        const bothPred = scoresOk && penOk;
         if (predictionsLocked) {
           actionsTd = '<td class="quiniela-pred-actions"><span class="muted">Bloqueado</span></td>';
         } else if (d.predCommitted) {
           actionsTd = `<td class="quiniela-pred-actions"><button type="button" class="btn btn-sm partidos-ko-pred-unlock-user" data-kid="${escapeHtml(m.id)}">Cambiar</button></td>`;
+        } else if (!koOfficialSlotsDecided) {
+          actionsTd = '<td class="quiniela-pred-actions"><span class="muted">Equipos por definir</span></td>';
         } else {
           actionsTd = `<td class="quiniela-pred-actions"><button type="button" class="btn btn-primary btn-sm partidos-ko-pred-confirm-user" data-kid="${escapeHtml(m.id)}" ${bothPred ? "" : "disabled"}>Confirmar</button></td>`;
         }
@@ -3124,9 +4032,10 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
       const ganadorTdCls = ["quiniela-num", "quiniela-ganador-col", ganadorHit ? "quiniela-cell--hit" : ""]
         .filter(Boolean)
         .join(" ");
-      const ptsTdCls = ["quiniela-num", "quiniela-pts", d.exact ? "quiniela-pts--exact" : ""]
-        .filter(Boolean)
-        .join(" ");
+      const ptsTdCls = quinielaPtsTdClassList(d, {
+        officialCompleteForScoring,
+        maxPtsThisMatch: maxPtsThisMatchKo,
+      });
 
       const selfKidAttr = selfCanEdit ? ` data-partidos-ko-self-kid="${escapeHtml(m.id)}"` : "";
       const participantTd = `<td><div class="quiniela-participant-cell"><div class="quiniela-participant-line">${escapeHtml(d.p.name)}${selfNote}</div>${perfectExtra}</div></td>`;
@@ -3150,16 +4059,35 @@ function knockoutPhaseTitle(roundId) {
 /**
  * @param {ReturnType<typeof getKnockoutMatchesFlat>[number]} m
  */
-function renderQuinielaMatchCardKo(m, session, official, isAdmin) {
+function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds) {
   const { ri, mi } = getKoRoundMatchIndex(m.id);
   const labelScores = allFilledOfficialKnockoutScores(official);
   const homeLab = resolveKnockoutSlotLabel(ri, mi, "home", labelScores);
   const awayLab = resolveKnockoutSlotLabel(ri, mi, "away", labelScores);
+  const officialSlotsDecided = isQuinielaTeamSlotDecided(homeLab) && isQuinielaTeamSlotDecided(awayLab);
   const off = official.knockoutScores?.[m.id] ?? { home: "", away: "" };
   const offOk = official.knockoutScoresConfirmed?.[m.id] === true;
   const vh = off.home === "" ? "—" : escapeHtml(String(off.home));
   const va = off.away === "" ? "—" : escapeHtml(String(off.away));
+  const koOutcomeStyled = offOk && off.home !== "" && off.away !== "";
+  const koOffHomeCls = koOutcomeStyled ? officialScoreOutcomeClass(off.home, off.away, "home") : "";
+  const koOffAwayCls = koOutcomeStyled ? officialScoreOutcomeClass(off.home, off.away, "away") : "";
   const body = buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin);
+  const pStoreKo = loadPredictions(session.participantId);
+  const userPredConfirmedKo = isUserPredictionConfirmedStore(pStoreKo, m);
+  const matchClosedKo = isMatchOfficiallyClosed(official, m);
+  const koInPlay =
+    officialSlotsDecided &&
+    !offOk &&
+    off.home !== "" &&
+    off.away !== "";
+  const cornerHtmlKo = partidosMatchCornerHtml(m, nextJornadaIds, userPredConfirmedKo, matchClosedKo, koInPlay);
+  const noKickHtmlKo = partidosAccNoKickoffHintHtml(m);
+  const officialPreviewKo = partidosOfficialPreviewLineKo(m, official, officialSlotsDecided);
+  const predInlineKo = !m.kickoff
+    ? `<div class="partidos-acc__pred-row">${partidosUserPredPillHtml(userPredConfirmedKo, "inline", matchClosedKo)}</div>`
+    : "";
+  const kickClsKo = m.kickoff ? " partidos-match-card--has-kickoff" : "";
 
   const myPred = loadPredictions(session.participantId).knockoutScores ?? {};
   const colHomeFull = escapeHtml(resolveKnockoutSlotLabel(ri, mi, "home", myPred));
@@ -3171,9 +4099,17 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin) {
 
   const statusBanner = offOk
     ? `<p class="quiniela-match-status quiniela-match-status--done" role="status"><strong>Resultado oficial confirmado.</strong></p>`
+    : !officialSlotsDecided
+      ? `<p class="quiniela-match-status quiniela-match-status--pending" role="status"><strong>Equipos por definir.</strong> Las predicciones y el marcador oficial quedan bloqueados hasta que los dos equipos estén fijados según los cruces anteriores.</p>`
     : off.home !== "" && off.away !== ""
       ? `<p class="quiniela-match-status quiniela-match-status--pending" role="status"><strong>Marcador cargado.</strong> Falta confirmación.</p>`
       : `<p class="quiniela-match-status quiniela-match-status--ready" role="status">Sin resultado oficial todavía. Puedes <strong>confirmar tu predicción</strong> cuando el marcador esté listo.</p>`;
+
+  const koPenNeeded =
+    knockoutRoundRequiresPenaltyPickOnDraw(m.roundId) && isKnockoutScoreDrawNumbers(off.home, off.away);
+  const koPenReady = off.penaltyWinner === "home" || off.penaltyWinner === "away";
+  const canConfirmOfficialKo =
+    off.home !== "" && off.away !== "" && officialSlotsDecided && (!koPenNeeded || koPenReady);
 
   const officialMini = isAdmin
     ? `
@@ -3184,50 +4120,88 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin) {
         </div>
         <div class="quiniela-official-grid ${offOk ? "quiniela-official-grid--readonly" : "quiniela-official-grid--edit"}">
           <div class="quiniela-cell quiniela-cell--team">${bracketTeamLineHtml(homeLab)}</div>
-          <div class="quiniela-cell quiniela-cell--score">${offOk ? vh : scoreStepperHtml(m.id, "home", off.home, { disabled: false, idAttr: "data-okid", extraClass: "quiniela-official-stepper" })}</div>
-          <div class="quiniela-cell quiniela-cell--score">${offOk ? va : scoreStepperHtml(m.id, "away", off.away, { disabled: false, idAttr: "data-okid", extraClass: "quiniela-official-stepper" })}</div>
+          <div class="quiniela-cell quiniela-cell--score${offOk ? koOffHomeCls : ""}">${offOk ? vh : scoreStepperHtml(m.id, "home", off.home, { disabled: !officialSlotsDecided, idAttr: "data-okid", extraClass: "quiniela-official-stepper" })}</div>
+          <div class="quiniela-cell quiniela-cell--score${offOk ? koOffAwayCls : ""}">${offOk ? va : scoreStepperHtml(m.id, "away", off.away, { disabled: !officialSlotsDecided, idAttr: "data-okid", extraClass: "quiniela-official-stepper" })}</div>
           <div class="quiniela-cell quiniela-cell--team">${bracketTeamLineHtml(awayLab)}</div>
         </div>
+        ${
+          !offOk && officialSlotsDecided && koPenNeeded
+            ? `<div class="partidos-ko-official-penalty" role="group" aria-label="Ganador en penales">
+          <p class="muted partidos-ko-official-penalty__hint">Marcador empatado: indica el ganador en penales.</p>
+          <div class="partidos-ko-official-penalty-btns">
+            <button type="button" class="btn btn-sm ko-official-pen-pick${off.penaltyWinner === "home" ? " btn-primary" : ""}" data-okid-pen="${escapeHtml(m.id)}" data-pen-side="home">${bracketTeamLineHtml(homeLab)}</button>
+            <button type="button" class="btn btn-sm ko-official-pen-pick${off.penaltyWinner === "away" ? " btn-primary" : ""}" data-okid-pen="${escapeHtml(m.id)}" data-pen-side="away">${bracketTeamLineHtml(awayLab)}</button>
+          </div>
+        </div>`
+            : ""
+        }
         <div class="quiniela-official-actions">
           ${
             offOk
               ? `<button type="button" class="btn btn-sm partidos-ko-btn-unconfirm" data-kid="${escapeHtml(m.id)}">Desconfirmar</button>`
-              : `<button type="button" class="btn btn-primary btn-sm partidos-ko-btn-confirm" data-kid="${escapeHtml(m.id)}" ${(off.home !== "" && off.away !== "") ? "" : "disabled"}>Confirmar resultado</button>`
+              : `<button type="button" class="btn btn-primary btn-sm partidos-ko-btn-confirm" data-kid="${escapeHtml(m.id)}" ${canConfirmOfficialKo ? "" : "disabled"}>Confirmar resultado</button>`
           }
         </div>
+        ${
+          !offOk && !officialSlotsDecided
+            ? `<p class="quiniela-official-hint muted">Completa los cruces previos en el resultado oficial para conocer ambos equipos antes de cargar el marcador.</p>`
+            : ""
+        }
       </div>`
     : `
       <div class="quiniela-official">
         <div class="quiniela-official-head">Resultado oficial</div>
         <div class="quiniela-official-grid quiniela-official-grid--readonly">
           <div class="quiniela-cell quiniela-cell--team">${bracketTeamLineHtml(homeLab)}</div>
-          <div class="quiniela-cell quiniela-cell--score">${vh}</div>
-          <div class="quiniela-cell quiniela-cell--score">${va}</div>
+          <div class="quiniela-cell quiniela-cell--score${koOffHomeCls}">${vh}</div>
+          <div class="quiniela-cell quiniela-cell--score${koOffAwayCls}">${va}</div>
           <div class="quiniela-cell quiniela-cell--team">${bracketTeamLineHtml(awayLab)}</div>
         </div>
+        ${
+          offOk && koPenNeeded && koPenReady
+            ? `<p class="muted quiniela-official-penalty-readonly">Penales: <strong>${escapeHtml(off.penaltyWinner === "home" ? homeLab : awayLab)}</strong></p>`
+            : ""
+        }
       </div>`;
 
+  const sigKo = nextJornadaIds.has(m.id) && !koInPlay ? " partidos-card--siguiente" : "";
+  const enJuegoKoCls = koInPlay ? " partidos-card--en-juego" : "";
+  const oficialPendienteClsKo = !matchClosedKo ? " partidos-card--oficial-pendiente" : "";
+  const oficialCerradoClsKo = matchClosedKo ? " partidos-card--oficial-cerrado" : "";
   return `
-    <article class="card quiniela-match partidos-ko-card" data-ko-round="${escapeHtml(m.roundId)}" data-quiniela-mid="${escapeHtml(m.id)}">
-      <h2 class="quiniela-match-title">${escapeHtml(knockoutPhaseTitle(m.roundId))} · ${bracketTeamLineHtml(homeLab)} <span class="vs">vs</span> ${bracketTeamLineHtml(awayLab)}</h2>
-      ${statusBanner}
-      ${officialMini}
-      <div class="quiniela-preds-head">Predicciones</div>
-      <div class="table-scroll quiniela-table-wrap">
-        <table class="table table-compact quiniela-preds">
-          <thead>
-            <tr>
-              <th>Participante</th>
-              <th class="quiniela-num" title="${colHomeFull}">${colHome}</th>
-              <th class="quiniela-num" title="${colAwayFull}">${colAway}</th>
-              <th class="quiniela-num quiniela-ganador-col" scope="col">Ganador</th>
-              <th class="quiniela-num">Pts</th>
-              <th class="quiniela-actions-col" scope="col"><span class="visually-hidden">Acción</span></th>
-            </tr>
-          </thead>
-          <tbody>${body}</tbody>
-        </table>
-      </div>
+    <article class="card quiniela-match partidos-match-card partidos-ko-card${kickClsKo}${sigKo}${enJuegoKoCls}${oficialPendienteClsKo}${oficialCerradoClsKo}" data-ko-round="${escapeHtml(m.roundId)}" data-quiniela-mid="${escapeHtml(m.id)}">
+      ${cornerHtmlKo}
+      <details class="partidos-acc">
+        <summary class="partidos-acc__summary">
+          <span class="partidos-acc__chev" aria-hidden="true"></span>
+          <div class="partidos-acc__summary-main">
+            <h2 class="partidos-acc__title quiniela-match-title">${escapeHtml(knockoutPhaseTitle(m.roundId))} · ${bracketTeamLineHtml(homeLab)} <span class="vs">vs</span> ${bracketTeamLineHtml(awayLab)}</h2>
+            ${noKickHtmlKo}
+            ${predInlineKo}
+            <div class="partidos-acc__official-preview">${officialPreviewKo}</div>
+          </div>
+        </summary>
+        <div class="partidos-acc__body">
+          ${statusBanner}
+          ${officialMini}
+          <div class="quiniela-preds-head">Predicciones</div>
+          <div class="table-scroll quiniela-table-wrap">
+            <table class="table table-compact quiniela-preds">
+              <thead>
+                <tr>
+                  <th>Participante</th>
+                  <th class="quiniela-num" title="${colHomeFull}">${colHome}</th>
+                  <th class="quiniela-num" title="${colAwayFull}">${colAway}</th>
+                  <th class="quiniela-num quiniela-ganador-col" scope="col">Ganador</th>
+                  <th class="quiniela-num">Pts</th>
+                  <th class="quiniela-actions-col" scope="col"><span class="visually-hidden">Acción</span></th>
+                </tr>
+              </thead>
+              <tbody>${body}</tbody>
+            </table>
+          </div>
+        </div>
+      </details>
     </article>`;
 }
 
@@ -3273,6 +4247,14 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
     btn.addEventListener("click", () => {
       const mid = btn.dataset.mid;
       if (!mid) return;
+      const gm = GROUP_MATCHES.find((x) => x.id === mid);
+      if (
+        !gm ||
+        !isQuinielaTeamSlotDecided(gm.home) ||
+        !isQuinielaTeamSlotDecided(gm.away)
+      ) {
+        return;
+      }
       const offNow = loadOfficialResults();
       if ((offNow.groupMatchState?.[mid] ?? "ready") !== "ready") return;
       const latest = loadPredictions(session.participantId);
@@ -3310,10 +4292,42 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const kid = row.dataset.partidosKoSelfKid;
       if (!kid || !partial[kid]) return;
       const latest = loadPredictions(session.participantId);
+      const prevSc = latest.knockoutScores?.[kid] ?? {};
+      const mKo = getKnockoutMatchesFlat().find((x) => x.id === kid);
+      const penPh = mKo ? knockoutRoundRequiresPenaltyPickOnDraw(mKo.roundId) : false;
+      const home = partial[kid].home;
+      const away = partial[kid].away;
+      const merged = { ...prevSc, home, away };
+      if (!penPh) {
+        merged.penaltyWinner = "";
+      } else if (!isKnockoutScoreDrawNumbers(home, away)) {
+        merged.penaltyWinner = "";
+      } else {
+        merged.penaltyWinner = prevSc.penaltyWinner === "home" || prevSc.penaltyWinner === "away" ? prevSc.penaltyWinner : "";
+      }
       savePredictions(session.participantId, {
         knockoutScores: {
           ...latest.knockoutScores,
-          [kid]: { home: partial[kid].home, away: partial[kid].away },
+          [kid]: merged,
+        },
+      });
+      redrawQuiniela();
+      renderStats(loadSession());
+      refreshAll(loadSession());
+    });
+  });
+
+  scope.querySelectorAll(".ko-user-pen-pick").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const kid = btn.dataset.kidPen;
+      const pick = btn.dataset.penPick;
+      if (!kid || (pick !== "home" && pick !== "away")) return;
+      const latest = loadPredictions(session.participantId);
+      const prev = latest.knockoutScores?.[kid] ?? { home: "", away: "" };
+      savePredictions(session.participantId, {
+        knockoutScores: {
+          ...latest.knockoutScores,
+          [kid]: { ...prev, penaltyWinner: pick },
         },
       });
       redrawQuiniela();
@@ -3326,10 +4340,26 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
     btn.addEventListener("click", () => {
       const kid = btn.dataset.kid;
       if (!kid) return;
-      if (loadOfficialResults().knockoutScoresConfirmed?.[kid] === true) return;
+      const offPred = loadOfficialResults();
+      if (offPred.knockoutScoresConfirmed?.[kid] === true) return;
+      const { ri, mi } = getKoRoundMatchIndex(kid);
+      const labelPred = allFilledOfficialKnockoutScores(offPred);
+      const kh = resolveKnockoutSlotLabel(ri, mi, "home", labelPred);
+      const ka = resolveKnockoutSlotLabel(ri, mi, "away", labelPred);
+      if (!isQuinielaTeamSlotDecided(kh) || !isQuinielaTeamSlotDecided(ka)) return;
       const latest = loadPredictions(session.participantId);
       const sc = latest.knockoutScores?.[kid] ?? { home: "", away: "" };
       if (sc.home === "" || sc.away === "") return;
+      const mR = getKnockoutMatchesFlat().find((x) => x.id === kid);
+      const koPen = mR ? knockoutRoundRequiresPenaltyPickOnDraw(mR.roundId) : false;
+      if (
+        koPen &&
+        predictionOutcomeSign(sc) === "d" &&
+        sc.penaltyWinner !== "home" &&
+        sc.penaltyWinner !== "away"
+      ) {
+        return;
+      }
       savePredictions(session.participantId, { knockoutScoresConfirmed: { [kid]: true } });
       redrawQuiniela();
       renderStats(loadSession());
@@ -3356,7 +4386,14 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
 }
 
 function redrawQuiniela() {
-  renderQuiniela(loadSession(), loadOfficialResults());
+  const session = loadSession();
+  renderQuiniela(session, loadOfficialResults());
+  updateProximosNavShortcutButton(session);
+  if (session) {
+    updatePredictionTabsProgress(session, loadPredictions(session.participantId));
+  } else {
+    updatePredictionTabsProgress(null, null);
+  }
 }
 
 function setMatchRankingGroupFilterVisible(visible) {
@@ -3491,8 +4528,9 @@ function computeMatchRankingRows(scope, groupId, sessionParticipantId) {
       const pred = pStore.knockoutScores?.[m.id] ?? { home: "", away: "" };
       const scoring = getMatchScoringForQuiniela(m);
       const improbableSign = koImprobableByMatch[m.id] ?? null;
-      const pts = computeGroupMatchPoints(off, pred, improbableSign, scoring);
-      const breakdown = computeGroupMatchPointsBreakdown(off, pred, improbableSign, scoring);
+      const koPenPh = knockoutRoundRequiresPenaltyPickOnDraw(m.roundId);
+      const pts = computeGroupMatchPoints(off, pred, improbableSign, scoring, koPenPh);
+      const breakdown = computeGroupMatchPointsBreakdown(off, pred, improbableSign, scoring, koPenPh);
       const exact = isExactGroupPrediction(off, pred);
       if (pts != null) totalPoints += pts;
       if (exact) perfectCount += 1;
@@ -3560,130 +4598,267 @@ function redrawMatchRanking() {
   body.innerHTML = computeMatchRankingRows(scope, groupId, session.participantId);
 }
 
-function formatPredScoreCell(pred) {
+function formatPredScoreCell(pred, roundId) {
   const h = pred?.home === "" || pred?.home == null ? "—" : escapeHtml(String(pred.home));
   const a = pred?.away === "" || pred?.away == null ? "—" : escapeHtml(String(pred.away));
-  return `${h} - ${a}`;
+  let out = `${h} - ${a}`;
+  if (
+    roundId &&
+    knockoutRoundRequiresPenaltyPickOnDraw(roundId) &&
+    predictionOutcomeSign(pred) === "d" &&
+    (pred?.penaltyWinner === "home" || pred?.penaltyWinner === "away")
+  ) {
+    out +=
+      pred.penaltyWinner === "home"
+        ? ' <span class="muted">(pen. L)</span>'
+        : ' <span class="muted">(pen. V)</span>';
+  }
+  return out;
 }
 
-function formatOfficialScoreCell(off, show) {
+function formatOfficialScoreCell(off, show, roundId) {
   if (!show) return '<span class="muted">—</span>';
   const h = off?.home === "" || off?.home == null ? "—" : escapeHtml(String(off.home));
   const a = off?.away === "" || off?.away == null ? "—" : escapeHtml(String(off.away));
-  return `${h} - ${a}`;
+  let out = `${h} - ${a}`;
+  if (
+    roundId &&
+    knockoutRoundRequiresPenaltyPickOnDraw(roundId) &&
+    isKnockoutScoreDrawNumbers(off.home, off.away) &&
+    (off?.penaltyWinner === "home" || off?.penaltyWinner === "away")
+  ) {
+    out +=
+      off.penaltyWinner === "home"
+        ? ' <span class="muted">(pen. L)</span>'
+        : ' <span class="muted">(pen. V)</span>';
+  }
+  return out;
+}
+
+/**
+ * Estado del partido oficial: terminado, calendario (es hoy / en X días) o transitorios.
+ * @param {ReturnType<typeof loadOfficialResults>} official
+ * @param {{ id: string, kickoff?: string | null, groupId?: string, roundId?: string }} m
+ */
+function matchHistoryEstadoPartidoHtml(official, m) {
+  if (isMatchOfficiallyClosed(official, m)) {
+    return '<span class="match-history-estado match-history-estado--done">Terminado</span>';
+  }
+  if (!m.kickoff) return '<span class="muted">Sin fecha</span>';
+
+  const enJuegoHtml = () =>
+    '<span class="match-history-estado match-history-estado--live">EN JUEGO</span>';
+
+  /* Antes del contador: si ya está en vivo, no mostrar «En X días» aunque el kickoff sea futuro. */
+  if (m.groupId != null) {
+    const stage = official.groupMatchState?.[m.id] ?? "ready";
+    if (stage === "started") {
+      return enJuegoHtml();
+    }
+    if (stage === "finished" && official.groupScoresConfirmed?.[m.id] !== true) {
+      return '<span class="match-history-estado match-history-estado--wait">Pendiente confirmación</span>';
+    }
+  }
+  if (m.roundId != null) {
+    const offKo = official.knockoutScores?.[m.id] ?? { home: "", away: "" };
+    const koOk = official.knockoutScoresConfirmed?.[m.id] === true;
+    const koBoth = offKo.home !== "" && offKo.away !== "";
+    if (koBoth && !koOk) {
+      const { ri, mi } = getKoRoundMatchIndex(m.id);
+      const lab = allFilledOfficialKnockoutScores(official);
+      const kh = resolveKnockoutSlotLabel(ri, mi, "home", lab);
+      const ka = resolveKnockoutSlotLabel(ri, mi, "away", lab);
+      if (isQuinielaTeamSlotDecided(kh) && isQuinielaTeamSlotDecided(ka)) {
+        return enJuegoHtml();
+      }
+    }
+  }
+
+  const d = daysUntilKickoffLocal(m.kickoff);
+  if (d === null) return '<span class="muted">—</span>';
+  if (d === 0) return '<span class="match-history-estado match-history-estado--today">Es hoy</span>';
+  if (d > 0) {
+    return `<span class="match-history-estado match-history-estado--future">En ${d} día${d === 1 ? "" : "s"}</span>`;
+  }
+  return '<span class="muted">Pendiente</span>';
+}
+
+function matchHistoryPrediccionEnviadaHtml(predConfirmed) {
+  return predConfirmed
+    ? '<span class="match-history-sent match-history-sent--ok">Enviada</span>'
+    : '<span class="match-history-sent">Faltante</span>';
+}
+
+/** Máximo de puntos entre todos los participantes con predicción confirmada (misma lógica que la quiniela). */
+function maxGroupMatchPtsAmongParticipants(m, official) {
+  const off = official.groupScores?.[m.id] ?? { home: "", away: "" };
+  const stage = official.groupMatchState?.[m.id] ?? "ready";
+  const officialConfirmed = stage === "finished" && official.groupScoresConfirmed?.[m.id] === true;
+  const bothFilled = off.home !== "" && off.away !== "";
+  const officialComplete = bothFilled && (stage === "started" || officialConfirmed);
+  if (!officialComplete) return 0;
+  const improbableSign = getImprobableOutcomeSignForMatch(m.id, off);
+  const scoring = getMatchScoringForQuiniela(m);
+  let max = 0;
+  for (const p of getParticipants()) {
+    const store = loadPredictions(p.id);
+    if (store.groupScoresConfirmed?.[m.id] !== true) continue;
+    const pred = store.groupScores[m.id] ?? { home: "", away: "" };
+    const pts = computeGroupMatchPoints(off, pred, improbableSign, scoring);
+    if (pts != null && pts > max) max = pts;
+  }
+  return max;
+}
+
+function maxKoMatchPtsAmongParticipants(m, official) {
+  const off = official.knockoutScores?.[m.id] ?? { home: "", away: "" };
+  const officialConfirmed = official.knockoutScoresConfirmed?.[m.id] === true;
+  const bothFilled = off.home !== "" && off.away !== "";
+  const officialComplete = bothFilled && officialConfirmed;
+  if (!officialComplete) return 0;
+  const improbableSign = getImprobableOutcomeSignForKoMatch(m.id, off);
+  const scoring = getMatchScoringForQuiniela(m);
+  const koPenPh = knockoutRoundRequiresPenaltyPickOnDraw(m.roundId);
+  let max = 0;
+  for (const p of getParticipants()) {
+    const store = loadPredictions(p.id);
+    if (store.knockoutScoresConfirmed?.[m.id] !== true) continue;
+    const pred = store.knockoutScores?.[m.id] ?? { home: "", away: "" };
+    const pts = computeGroupMatchPoints(off, pred, improbableSign, scoring, koPenPh);
+    if (pts != null && pts > max) max = pts;
+  }
+  return max;
+}
+
+/**
+ * Celda «Puntos» del historial: número siempre visible (no badge flotante), mismas clases que la quiniela.
+ * @param {number} pts
+ * @param {ReturnType<typeof computeGroupMatchPointsBreakdown> | null} breakdown
+ * @param {{ maxPerMatch: number }} scoring
+ * @param {boolean} officialComplete
+ * @param {boolean} predConfirmed
+ * @param {number} maxPtsAmongAll
+ */
+function matchHistoryPointsTdHtml(pts, breakdown, scoring, officialComplete, predConfirmed, maxPtsAmongAll) {
+  const dLike = { predCommitted: predConfirmed, pts, breakdown };
+  const ctx = { officialCompleteForScoring: officialComplete, maxPtsThisMatch: maxPtsAmongAll };
+  const cls = quinielaPtsTdClassList(dLike, ctx);
+  let inner = quinielaPtsCellContentHtml(String(pts), dLike, officialComplete);
+  if (pts > scoring.maxPerMatch) {
+    inner = `<strong class="team-order-total-value team-order-total-value--rainbow">${inner}</strong>`;
+  }
+  return `<td class="match-history-pts ${cls}">${inner}</td>`;
 }
 
 function buildMatchHistory(participantId) {
   const official = loadOfficialResults();
   const pStore = loadPredictions(participantId);
-  const rows = [];
   let total = 0;
   let totalPossible = 0;
 
-  for (const m of GROUP_MATCHES) {
-    const pred = pStore.groupScores?.[m.id] ?? { home: "", away: "" };
-    const predConfirmed = pStore.groupScoresConfirmed?.[m.id] === true;
-    const off = official.groupScores?.[m.id] ?? { home: "", away: "" };
-    const stage = official.groupMatchState?.[m.id] ?? "ready";
-    const officialConfirmed = stage === "finished" && official.groupScoresConfirmed?.[m.id] === true;
-    const bothFilled = off.home !== "" && off.away !== "";
-    const officialComplete = bothFilled && (stage === "started" || officialConfirmed);
-    const improbableSign = officialComplete ? getImprobableOutcomeSignForMatch(m.id, off) : null;
-    const scoring = getMatchScoringForQuiniela(m);
-    const pts =
-      officialComplete && predConfirmed
-        ? computeGroupMatchPoints(off, pred, improbableSign, scoring)
-        : null;
-    const breakdown =
-      officialComplete && predConfirmed
-        ? computeGroupMatchPointsBreakdown(off, pred, improbableSign, scoring)
-        : null;
-    if (pts != null) total += pts;
-    if (officialComplete && predConfirmed) totalPossible += scoring.maxPerMatch;
+  const groupMatchMaxPts = Object.fromEntries(
+    GROUP_MATCHES.map((m) => [m.id, maxGroupMatchPtsAmongParticipants(m, official)]),
+  );
+  const koMatchMaxPts = Object.fromEntries(
+    getKnockoutMatchesFlat().map((m) => [m.id, maxKoMatchPtsAmongParticipants(m, official)]),
+  );
 
-    const stateTxt =
-      pred.home === "" || pred.away === ""
-        ? '<span class="muted">Sin llenar</span>'
-        : predConfirmed
-          ? '<span class="match-history-state match-history-state--ok">Confirmado</span>'
-          : '<span class="match-history-state">No confirmado</span>';
-    const ptsTxt =
-      pts == null
-        ? '<span class="muted">—</span>'
-        : pts > scoring.maxPerMatch
-          ? `<strong class="team-order-total-value team-order-total-value--rainbow">${pts}</strong>`
-          : pts === scoring.maxPerMatch
-            ? `<strong class="match-history-pts-max">${pts}</strong>`
-            : breakdown?.improbablePts
-              ? pointsBadgeHtml(pts, {
-                  bonus: true,
-                  title: "Incluye bono de resultado improbable",
-                })
-              : String(pts);
+  /** @type {Array<{ m: (typeof GROUP_MATCHES)[number] | ReturnType<typeof getKnockoutMatchesFlat>[number], kind: "group" | "ko" }>} */
+  const items = [
+    ...GROUP_MATCHES.map((m) => ({ m, kind: /** @type {const} */ ("group") })),
+    ...getKnockoutMatchesFlat().map((m) => ({ m, kind: /** @type {const} */ ("ko") })),
+  ];
+  items.sort((a, b) => {
+    const ta = a.m.kickoff ? Date.parse(a.m.kickoff) : Number.POSITIVE_INFINITY;
+    const tb = b.m.kickoff ? Date.parse(b.m.kickoff) : Number.POSITIVE_INFINITY;
+    if (ta !== tb) return ta - tb;
+    return String(a.m.id).localeCompare(String(b.m.id));
+  });
 
-    rows.push(`<tr>
+  const rows = [];
+  for (const { m, kind } of items) {
+    const estadoPartido = matchHistoryEstadoPartidoHtml(official, m);
+    if (kind === "group") {
+      const pred = pStore.groupScores?.[m.id] ?? { home: "", away: "" };
+      const predConfirmed = pStore.groupScoresConfirmed?.[m.id] === true;
+      const off = official.groupScores?.[m.id] ?? { home: "", away: "" };
+      const stage = official.groupMatchState?.[m.id] ?? "ready";
+      const officialConfirmed = stage === "finished" && official.groupScoresConfirmed?.[m.id] === true;
+      const bothFilled = off.home !== "" && off.away !== "";
+      const officialComplete = bothFilled && (stage === "started" || officialConfirmed);
+      const improbableSign = officialComplete ? getImprobableOutcomeSignForMatch(m.id, off) : null;
+      const scoring = getMatchScoringForQuiniela(m);
+      const pts =
+        officialComplete && predConfirmed
+          ? computeGroupMatchPoints(off, pred, improbableSign, scoring)
+          : null;
+      const breakdown =
+        officialComplete && predConfirmed
+          ? computeGroupMatchPointsBreakdown(off, pred, improbableSign, scoring)
+          : null;
+      if (pts != null) total += pts;
+      if (officialComplete && predConfirmed) totalPossible += scoring.maxPerMatch;
+
+      const predEnviada = matchHistoryPrediccionEnviadaHtml(predConfirmed);
+      const ptsTd =
+        pts == null
+          ? '<td class="match-history-pts"><span class="muted">—</span></td>'
+          : matchHistoryPointsTdHtml(pts, breakdown, scoring, officialComplete, predConfirmed, groupMatchMaxPts[m.id] ?? 0);
+
+      rows.push(`<tr>
       <td>Grupo ${escapeHtml(m.groupId)}</td>
       <td>${teamLabelHtml(m.home)} <span class="vs">vs</span> ${teamLabelHtml(m.away)}</td>
+      <td>${estadoPartido}</td>
+      <td>${predEnviada}</td>
       <td>${formatPredScoreCell(pred)}</td>
-      <td>${stateTxt}</td>
       <td>${formatOfficialScoreCell(off, officialComplete)}</td>
-      <td class="match-history-pts">${ptsTxt}</td>
+      ${ptsTd}
     </tr>`);
-  }
-
-  for (const m of getKnockoutMatchesFlat()) {
-    const pred = pStore.knockoutScores?.[m.id] ?? { home: "", away: "" };
-    const predConfirmed = pStore.knockoutScoresConfirmed?.[m.id] === true;
-    const off = official.knockoutScores?.[m.id] ?? { home: "", away: "" };
-    const officialConfirmed = official.knockoutScoresConfirmed?.[m.id] === true;
-    const bothFilled = off.home !== "" && off.away !== "";
-    const officialComplete = bothFilled && officialConfirmed;
-    const improbableSign = officialComplete
-      ? getImprobableOutcomeSignForKoMatch(m.id, off)
-      : null;
-    const scoring = getMatchScoringForQuiniela(m);
-    const pts =
-      officialComplete && predConfirmed
-        ? computeGroupMatchPoints(off, pred, improbableSign, scoring)
+    } else {
+      const pred = pStore.knockoutScores?.[m.id] ?? { home: "", away: "" };
+      const predConfirmed = pStore.knockoutScoresConfirmed?.[m.id] === true;
+      const off = official.knockoutScores?.[m.id] ?? { home: "", away: "" };
+      const officialConfirmed = official.knockoutScoresConfirmed?.[m.id] === true;
+      const bothFilled = off.home !== "" && off.away !== "";
+      const officialComplete = bothFilled && officialConfirmed;
+      const improbableSign = officialComplete
+        ? getImprobableOutcomeSignForKoMatch(m.id, off)
         : null;
-    const breakdown =
-      officialComplete && predConfirmed
-        ? computeGroupMatchPointsBreakdown(off, pred, improbableSign, scoring)
-        : null;
-    if (pts != null) total += pts;
-    if (officialComplete && predConfirmed) totalPossible += scoring.maxPerMatch;
+      const scoring = getMatchScoringForQuiniela(m);
+      const koPenPh = knockoutRoundRequiresPenaltyPickOnDraw(m.roundId);
+      const pts =
+        officialComplete && predConfirmed
+          ? computeGroupMatchPoints(off, pred, improbableSign, scoring, koPenPh)
+          : null;
+      const breakdown =
+        officialComplete && predConfirmed
+          ? computeGroupMatchPointsBreakdown(off, pred, improbableSign, scoring, koPenPh)
+          : null;
+      if (pts != null) total += pts;
+      if (officialComplete && predConfirmed) {
+        totalPossible += scoring.maxPerMatch;
+        if (koPenPh) totalPossible += PENALTY_WINNER_BONUS;
+      }
 
-    const { ri, mi } = getKoRoundMatchIndex(m.id);
-    const homeLab = resolveKnockoutSlotLabel(ri, mi, "home", pStore.knockoutScores ?? {});
-    const awayLab = resolveKnockoutSlotLabel(ri, mi, "away", pStore.knockoutScores ?? {});
-    const stateTxt =
-      pred.home === "" || pred.away === ""
-        ? '<span class="muted">Sin llenar</span>'
-        : predConfirmed
-          ? '<span class="match-history-state match-history-state--ok">Confirmado</span>'
-          : '<span class="match-history-state">No confirmado</span>';
-    const ptsTxt =
-      pts == null
-        ? '<span class="muted">—</span>'
-        : pts > scoring.maxPerMatch
-          ? `<strong class="team-order-total-value team-order-total-value--rainbow">${pts}</strong>`
-          : pts === scoring.maxPerMatch
-            ? `<strong class="match-history-pts-max">${pts}</strong>`
-            : breakdown?.improbablePts
-              ? pointsBadgeHtml(pts, {
-                  bonus: true,
-                  title: "Incluye bono de resultado improbable",
-                })
-              : String(pts);
+      const { ri, mi } = getKoRoundMatchIndex(m.id);
+      const homeLab = resolveKnockoutSlotLabel(ri, mi, "home", pStore.knockoutScores ?? {});
+      const awayLab = resolveKnockoutSlotLabel(ri, mi, "away", pStore.knockoutScores ?? {});
+      const predEnviada = matchHistoryPrediccionEnviadaHtml(predConfirmed);
+      const ptsTd =
+        pts == null
+          ? '<td class="match-history-pts"><span class="muted">—</span></td>'
+          : matchHistoryPointsTdHtml(pts, breakdown, scoring, officialComplete, predConfirmed, koMatchMaxPts[m.id] ?? 0);
 
-    rows.push(`<tr>
+      rows.push(`<tr>
       <td>${escapeHtml(knockoutPhaseTitle(m.roundId))}</td>
       <td>${bracketTeamLineHtml(homeLab)} <span class="vs">vs</span> ${bracketTeamLineHtml(awayLab)}</td>
-      <td>${formatPredScoreCell(pred)}</td>
-      <td>${stateTxt}</td>
-      <td>${formatOfficialScoreCell(off, officialComplete)}</td>
-      <td class="match-history-pts">${ptsTxt}</td>
+      <td>${estadoPartido}</td>
+      <td>${predEnviada}</td>
+      <td>${formatPredScoreCell(pred, m.roundId)}</td>
+      <td>${formatOfficialScoreCell(off, officialComplete, m.roundId)}</td>
+      ${ptsTd}
     </tr>`);
+    }
   }
 
   return { rowsHtml: rows.join(""), total, totalPossible };
@@ -3701,7 +4876,8 @@ function redrawMatchHistory() {
     totals.textContent = "";
     return;
   }
-  intro.textContent = "Historial de tus partidos y puntos en grupos y eliminatoria.";
+  intro.textContent =
+    "Historial ordenado por fecha del partido: estado del encuentro, si enviaste predicción, marcador y puntos (grupos y eliminatoria).";
   const hist = buildMatchHistory(session.participantId);
   body.innerHTML = hist.rowsHtml;
   let totalClass = "team-order-total-value";
@@ -3732,7 +4908,9 @@ function ensureQuinielaFilter() {
 function ensurePartidosScopeFilter() {
   const sel = $("#partidos-scope-filter");
   if (!sel || sel.dataset.ready === "1") return;
+  sel.classList.add("partidos-scope-filter");
   sel.innerHTML = `
+    <option value="${PARTIDOS_VISTA_SIGUIENTES_VALUE}">SIGUIENTES PARTIDOS</option>
     <option value="grupos">Fase de grupos</option>
     <option value="all-ko">Eliminatoria (todas)</option>
     <option value="r32">16vos</option>
@@ -3743,23 +4921,42 @@ function ensurePartidosScopeFilter() {
     <option value="final">Final</option>
   `;
   sel.addEventListener("change", () => {
-    localStorage.setItem(PARTIDOS_SCOPE_KEY, sel.value);
-    setPartidosGroupToolbarVisible(sel.value === "grupos");
+    if (sel.value === PARTIDOS_VISTA_SIGUIENTES_VALUE) {
+      try {
+        sessionStorage.setItem(PARTIDOS_NAV_PROXIMOS_SESSION_KEY, "1");
+      } catch {
+        /* ignore */
+      }
+    } else {
+      try {
+        sessionStorage.removeItem(PARTIDOS_NAV_PROXIMOS_SESSION_KEY);
+      } catch {
+        /* ignore */
+      }
+      localStorage.setItem(PARTIDOS_SCOPE_KEY, sel.value);
+    }
+    syncPartidosScopeSelectUi();
+    setPartidosGroupToolbarVisible(shouldShowPartidosGroupToolbar());
     redrawQuiniela();
   });
   sel.dataset.ready = "1";
-  const saved = localStorage.getItem(PARTIDOS_SCOPE_KEY);
+  const saved = getPartidosUnderlyingScope();
   if (saved && [...sel.options].some((o) => o.value === saved)) sel.value = saved;
-  setPartidosGroupToolbarVisible(sel.value === "grupos");
+  syncPartidosScopeSelectUi();
+  setPartidosGroupToolbarVisible(shouldShowPartidosGroupToolbar());
 }
 
 /**
  * Estado del partido en la quiniela (visible para todos).
  * @param {"ready"|"started"|"finished"} matchStage
  * @param {boolean} officialConfirmed
+ * @param {boolean} [groupTeamsDecided=true]
  */
-function quinielaMatchStatusBanner(matchStage, officialConfirmed) {
+function quinielaMatchStatusBanner(matchStage, officialConfirmed, groupTeamsDecided = true) {
   if (matchStage === "ready") {
+    if (groupTeamsDecided === false) {
+      return `<p class="quiniela-match-status quiniela-match-status--pending" role="status"><strong>Equipos por definir.</strong> Las predicciones están bloqueadas hasta que ambos equipos del partido estén fijados (sin «Por determinar»).</p>`;
+    }
     return `<p class="quiniela-match-status quiniela-match-status--ready" role="status"><strong>No ha comenzado.</strong> Aquí puedes editar y confirmar tu predicción.</p>`;
   }
   if (matchStage === "started") {
@@ -3775,14 +4972,30 @@ function quinielaMatchStatusBanner(matchStage, officialConfirmed) {
  * @param {{ participantId: string } | null} session
  * @param {ReturnType<typeof loadOfficialResults>} official
  */
-function renderQuinielaMatchCard(m, session, official, isAdmin) {
+function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds) {
+  const groupTeamsDecided = isQuinielaTeamSlotDecided(m.home) && isQuinielaTeamSlotDecided(m.away);
   const off = official.groupScores[m.id] ?? { home: "", away: "" };
   const matchStage = official.groupMatchState?.[m.id] ?? "ready";
   const officialConfirmed = matchStage === "finished" && official.groupScoresConfirmed?.[m.id] === true;
   const bothFilled = off.home !== "" && off.away !== "";
-  const showPublicScore = officialConfirmed && bothFilled;
+  /** Marcador visible para todos cuando el partido está en juego o ya cerrado confirmado. */
+  const showPublicOfficialScore = bothFilled && (matchStage === "started" || officialConfirmed);
+  const officialScoresOutcomeStyled = officialConfirmed && bothFilled;
+  const offScoreHomeCls = officialScoresOutcomeStyled ? officialScoreOutcomeClass(off.home, off.away, "home") : "";
+  const offScoreAwayCls = officialScoresOutcomeStyled ? officialScoreOutcomeClass(off.home, off.away, "away") : "";
   const adminCanEditOfficial = matchStage === "started";
   const body = buildQuinielaPredRowsHtml(m, session, official, isAdmin);
+  const pStorePrev = loadPredictions(session.participantId);
+  const userPredConfirmed = isUserPredictionConfirmedStore(pStorePrev, m);
+  const matchClosed = isMatchOfficiallyClosed(official, m);
+  const matchInProgress = matchStage === "started";
+  const cornerHtml = partidosMatchCornerHtml(m, nextJornadaIds, userPredConfirmed, matchClosed, matchInProgress);
+  const noKickHtml = partidosAccNoKickoffHintHtml(m);
+  const officialPreview = partidosOfficialPreviewLineGroup(m, official);
+  const predInlineHtml = !m.kickoff
+    ? `<div class="partidos-acc__pred-row">${partidosUserPredPillHtml(userPredConfirmed, "inline", matchClosed)}</div>`
+    : "";
+  const kickCls = m.kickoff ? " partidos-match-card--has-kickoff" : "";
 
   const vh = off.home === "" ? "" : escapeHtml(String(off.home));
   const va = off.away === "" ? "" : escapeHtml(String(off.away));
@@ -3795,8 +5008,8 @@ function renderQuinielaMatchCard(m, session, official, isAdmin) {
         <div class="quiniela-official-head">Resultado oficial <span class="quiniela-badge-confirmed">Confirmado</span></div>
         <div class="quiniela-official-grid quiniela-official-grid--readonly">
           <div class="quiniela-cell quiniela-cell--team">${teamLabelHtml(m.home)}</div>
-          <div class="quiniela-cell quiniela-cell--score">${vh}</div>
-          <div class="quiniela-cell quiniela-cell--score">${va}</div>
+          <div class="quiniela-cell quiniela-cell--score${offScoreHomeCls}">${vh}</div>
+          <div class="quiniela-cell quiniela-cell--score${offScoreAwayCls}">${va}</div>
           <div class="quiniela-cell quiniela-cell--team">${teamLabelHtml(m.away)}</div>
         </div>
         <div class="quiniela-official-actions">
@@ -3832,9 +5045,13 @@ function renderQuinielaMatchCard(m, session, official, isAdmin) {
           <div class="quiniela-cell quiniela-cell--team">${teamLabelHtml(m.away)}</div>
         </div>
         <div class="quiniela-official-actions">
-          <button type="button" class="btn btn-primary btn-sm quiniela-btn-iniciar-partido" data-mid="${escapeHtml(m.id)}">Iniciar partido</button>
+          <button type="button" class="btn btn-primary btn-sm quiniela-btn-iniciar-partido" data-mid="${escapeHtml(m.id)}" ${groupTeamsDecided ? "" : "disabled"}>Iniciar partido</button>
         </div>
-        <p class="quiniela-official-hint muted">Antes de iniciar, todos pueden editar/confirmar su predicción. Tivo aún no puede cambiar el marcador oficial.</p>
+        <p class="quiniela-official-hint muted">${
+          groupTeamsDecided
+            ? "Antes de iniciar, todos pueden editar/confirmar su predicción. Tivo aún no puede cambiar el marcador oficial."
+            : "No se puede iniciar el partido oficial mientras falte definir alguno de los dos equipos del cruce."
+        }</p>
       </div>`;
     }
   } else {
@@ -3843,35 +5060,81 @@ function renderQuinielaMatchCard(m, session, official, isAdmin) {
         <div class="quiniela-official-head">Resultado oficial</div>
         <div class="quiniela-official-grid quiniela-official-grid--readonly">
           <div class="quiniela-cell quiniela-cell--team">${teamLabelHtml(m.home)}</div>
-          <div class="quiniela-cell quiniela-cell--score">${showPublicScore ? vh : "—"}</div>
-          <div class="quiniela-cell quiniela-cell--score">${showPublicScore ? va : "—"}</div>
+          <div class="quiniela-cell quiniela-cell--score${showPublicOfficialScore ? offScoreHomeCls : ""}">${showPublicOfficialScore ? vh : "—"}</div>
+          <div class="quiniela-cell quiniela-cell--score${showPublicOfficialScore ? offScoreAwayCls : ""}">${showPublicOfficialScore ? va : "—"}</div>
           <div class="quiniela-cell quiniela-cell--team">${teamLabelHtml(m.away)}</div>
         </div>
       </div>`;
   }
 
+  const sig = nextJornadaIds.has(m.id) && !matchInProgress ? " partidos-card--siguiente" : "";
+  const enJuegoCls = matchInProgress ? " partidos-card--en-juego" : "";
+  const oficialPendienteCls = !matchClosed ? " partidos-card--oficial-pendiente" : "";
+  const oficialCerradoCls = matchClosed ? " partidos-card--oficial-cerrado" : "";
   return `
-    <article class="card quiniela-match" data-group="${escapeHtml(m.groupId)}" data-quiniela-mid="${escapeHtml(m.id)}">
-      <h2 class="quiniela-match-title">Grupo ${escapeHtml(m.groupId)} · ${teamLabelHtml(m.home)} <span class="vs">vs</span> ${teamLabelHtml(m.away)}</h2>
-      ${quinielaMatchStatusBanner(matchStage, officialConfirmed)}
-      ${officialHtml}
-      <div class="quiniela-preds-head">Predicciones</div>
-      <div class="table-scroll quiniela-table-wrap">
-        <table class="table table-compact quiniela-preds">
-          <thead>
-            <tr>
-              <th>Participante</th>
-              <th class="quiniela-num">${escapeHtml(m.home)}</th>
-              <th class="quiniela-num">${escapeHtml(m.away)}</th>
-              <th class="quiniela-num quiniela-ganador-col" scope="col">Ganador</th>
-              <th class="quiniela-num">Pts</th>
-              <th class="quiniela-actions-col" scope="col"><span class="visually-hidden">Acción</span></th>
-            </tr>
-          </thead>
-          <tbody>${body}</tbody>
-        </table>
-      </div>
+    <article class="card quiniela-match partidos-match-card${kickCls}${sig}${enJuegoCls}${oficialPendienteCls}${oficialCerradoCls}" data-group="${escapeHtml(m.groupId)}" data-quiniela-mid="${escapeHtml(m.id)}">
+      ${cornerHtml}
+      <details class="partidos-acc">
+        <summary class="partidos-acc__summary">
+          <span class="partidos-acc__chev" aria-hidden="true"></span>
+          <div class="partidos-acc__summary-main">
+            <h2 class="partidos-acc__title quiniela-match-title">Grupo ${escapeHtml(m.groupId)} · ${teamLabelHtml(m.home)} <span class="vs">vs</span> ${teamLabelHtml(m.away)}</h2>
+            ${noKickHtml}
+            ${predInlineHtml}
+            <div class="partidos-acc__official-preview">${officialPreview}</div>
+          </div>
+        </summary>
+        <div class="partidos-acc__body">
+          ${quinielaMatchStatusBanner(matchStage, officialConfirmed, groupTeamsDecided)}
+          ${officialHtml}
+          <div class="quiniela-preds-head">Predicciones</div>
+          <div class="table-scroll quiniela-table-wrap">
+            <table class="table table-compact quiniela-preds">
+              <thead>
+                <tr>
+                  <th>Participante</th>
+                  <th class="quiniela-num">${escapeHtml(m.home)}</th>
+                  <th class="quiniela-num">${escapeHtml(m.away)}</th>
+                  <th class="quiniela-num quiniela-ganador-col" scope="col">Ganador</th>
+                  <th class="quiniela-num">Pts</th>
+                  <th class="quiniela-actions-col" scope="col"><span class="visually-hidden">Acción</span></th>
+                </tr>
+              </thead>
+              <tbody>${body}</tbody>
+            </table>
+          </div>
+        </div>
+      </details>
     </article>`;
+}
+
+/**
+ * @param {HTMLElement | null} wrap
+ * @returns {Set<string>}
+ */
+function collectOpenPartidosAccordionIds(wrap) {
+  const out = new Set();
+  if (!wrap) return out;
+  for (const art of wrap.querySelectorAll("article.quiniela-match[data-quiniela-mid]")) {
+    const det = art.querySelector("details.partidos-acc");
+    if (det instanceof HTMLDetailsElement && det.open && art.dataset.quinielaMid) {
+      out.add(art.dataset.quinielaMid);
+    }
+  }
+  return out;
+}
+
+/**
+ * @param {HTMLElement | null} wrap
+ * @param {Set<string>} ids
+ */
+function restoreOpenPartidosAccordions(wrap, ids) {
+  if (!wrap || ids.size === 0) return;
+  for (const mid of ids) {
+    const art = wrap.querySelector(`article.quiniela-match[data-quiniela-mid="${CSS.escape(mid)}"]`);
+    const det = art?.querySelector("details.partidos-acc");
+    if (det instanceof HTMLDetailsElement) det.open = true;
+  }
 }
 
 /**
@@ -3881,6 +5144,7 @@ function renderQuinielaMatchCard(m, session, official, isAdmin) {
 function renderQuiniela(session, official) {
   ensurePartidosScopeFilter();
   ensureQuinielaFilter();
+  syncPartidosScopeSelectUi();
   const wrap = $("#quiniela-wrap");
   const intro = $("#partidos-intro");
   if (!wrap || !intro) return;
@@ -3892,31 +5156,34 @@ function renderQuiniela(session, official) {
   }
 
   const isAdmin = canEditOfficialResults(session.participantId);
-  const scopeEl = $("#partidos-scope-filter");
-  const scope = scopeEl?.value ?? "grupos";
-  setPartidosGroupToolbarVisible(scope === "grupos");
+  const scope = getPartidosUnderlyingScope();
+  const allCal = allMatchesForPartidosCalendar();
+  const nextHighlightIds = getNextMatchDayHighlightIds(official, allCal);
+  const showOnlyProximosNav = partidosSiguientesVistaActiva();
+  setPartidosGroupToolbarVisible(shouldShowPartidosGroupToolbar());
 
-  if (scope === "grupos") {
-    intro.innerHTML = isAdmin
-      ? "Admin: inicia, termina o reinicia partidos para gestionar resultados oficiales."
-      : "Usa <strong>+ / −</strong> y <strong>Confirmar</strong> para tus marcadores. La tabla te mostrara tus aciertos y puntos.";
-  } else {
-    intro.innerHTML =
-      "En eliminatoria puedes editar y confirmar tu marcador. Los puntos se calculan con el resultado oficial confirmado.";
-  }
+  intro.textContent = "Predicción de todos los partidos.";
 
   const blocks = [];
   if (scope === "grupos") {
     const filterEl = $("#quiniela-group-filter");
     const groupFilter = filterEl?.value ?? "";
-    const matches = groupFilter ? GROUP_MATCHES.filter((m) => m.groupId === groupFilter) : GROUP_MATCHES;
-    blocks.push(...matches.map((m) => renderQuinielaMatchCard(m, session, official, isAdmin)));
+    let matches = groupFilter ? GROUP_MATCHES.filter((m) => m.groupId === groupFilter) : GROUP_MATCHES;
+    if (showOnlyProximosNav) matches = matches.filter((m) => nextHighlightIds.has(m.id));
+    matches = sortPartidosBySiguientesThenKickoff(matches, nextHighlightIds);
+    blocks.push(...matches.map((m) => renderQuinielaMatchCard(m, session, official, isAdmin, nextHighlightIds)));
   } else {
     let koList = getKnockoutMatchesFlat();
     if (scope !== "all-ko") koList = koList.filter((x) => x.roundId === scope);
-    blocks.push(...koList.map((m) => renderQuinielaMatchCardKo(m, session, official, isAdmin)));
+    if (showOnlyProximosNav) koList = koList.filter((m) => nextHighlightIds.has(m.id));
+    koList = sortPartidosBySiguientesThenKickoff(koList, nextHighlightIds);
+    blocks.push(...koList.map((m) => renderQuinielaMatchCardKo(m, session, official, isAdmin, nextHighlightIds)));
   }
-  wrap.innerHTML = blocks.join("");
+  const openAccordionMatchIds = collectOpenPartidosAccordionIds(wrap);
+  wrap.innerHTML =
+    blocks.length === 0 && showOnlyProximosNav
+      ? `<p class="muted partidos-proximos-empty">No hay partidos de la <strong>jornada próxima</strong> en esta vista. Cambia <strong>Vista</strong> o el grupo, o entra desde <strong>Partidos</strong> para ver el listado completo.</p>`
+      : blocks.join("");
 
   wireQuinielaPredictionHandlersInScope(wrap, session);
 
@@ -3925,27 +5192,49 @@ function renderQuiniela(session, official) {
       btn.addEventListener("click", () => {
         const mid = btn.dataset.mid;
         if (!mid) return;
-        saveOfficialResults({ groupMatchState: { [mid]: "started" } });
+        const gm = GROUP_MATCHES.find((x) => x.id === mid);
+        if (
+          !gm ||
+          !isQuinielaTeamSlotDecided(gm.home) ||
+          !isQuinielaTeamSlotDecided(gm.away)
+        ) {
+          return;
+        }
+        saveOfficialResults({
+          groupMatchState: { [mid]: "started" },
+          groupScores: { [mid]: { home: 0, away: 0 } },
+        });
         refreshAll(loadSession());
       });
     });
 
     wrap.querySelectorAll(".quiniela-official--editing").forEach((ed) => {
-      wireScoreSteppers(ed, "grupos", (partial) => {
-        const mid = ed.dataset.quinielaMid;
-        if (!mid || !partial[mid]) return;
-        const offNow = loadOfficialResults();
-        if ((offNow.groupMatchState?.[mid] ?? "ready") !== "started") return;
-        const cur = loadOfficialResults();
-        const gs = { ...cur.groupScores };
-        gs[mid] = { home: partial[mid].home, away: partial[mid].away };
-        saveOfficialResults({ groupScores: gs });
-        const termBtn = ed.querySelector(".quiniela-btn-terminar-partido");
-        if (termBtn) {
-          termBtn.disabled = partial[mid].home === "" || partial[mid].away === "";
-        }
-        patchQuinielaMatchPredRows(wrap, mid);
-      });
+      wireScoreSteppers(
+        ed,
+        "grupos",
+        (partial) => {
+          const mid = ed.dataset.quinielaMid;
+          if (!mid || !partial[mid]) return;
+          const offNow = loadOfficialResults();
+          if ((offNow.groupMatchState?.[mid] ?? "ready") !== "started") return;
+          const cur = loadOfficialResults();
+          const gs = { ...cur.groupScores };
+          gs[mid] = { home: partial[mid].home, away: partial[mid].away };
+          saveOfficialResults({ groupScores: gs });
+          const termBtn = ed.querySelector(".quiniela-btn-terminar-partido");
+          if (termBtn) {
+            termBtn.disabled = partial[mid].home === "" || partial[mid].away === "";
+          }
+          patchQuinielaMatchPredRows(wrap, mid);
+          const sess = loadSession();
+          renderFloatingRanking(sess);
+          redrawMatchRanking();
+          redrawMatchHistory();
+          renderStats(sess);
+          renderFinalRanking(sess);
+        },
+        { collectOnInput: true },
+      );
     });
 
     wrap.querySelectorAll(".quiniela-btn-terminar-partido").forEach((btn) => {
@@ -4000,16 +5289,45 @@ function renderQuiniela(session, official) {
         const kid = ed.dataset.koMid;
         if (!kid || !partial[kid]) return;
         const latest = loadOfficialResults();
-        const next = { ...latest.knockoutScores, [kid]: partial[kid] };
-        const prev = latest.knockoutScores?.[kid];
+        const prev = latest.knockoutScores?.[kid] ?? {};
+        const merged = { ...prev, ...partial[kid] };
+        const mKo = getKnockoutMatchesFlat().find((x) => x.id === kid);
+        const penPh = mKo ? knockoutRoundRequiresPenaltyPickOnDraw(mKo.roundId) : false;
+        if (!penPh) {
+          merged.penaltyWinner = "";
+        } else if (!isKnockoutScoreDrawNumbers(merged.home, merged.away)) {
+          merged.penaltyWinner = "";
+        }
+        const next = { ...latest.knockoutScores, [kid]: merged };
         const changed =
-          !prev ||
-          String(prev.home ?? "") !== String(partial[kid].home ?? "") ||
-          String(prev.away ?? "") !== String(partial[kid].away ?? "");
+          String(prev.home ?? "") !== String(merged.home ?? "") ||
+          String(prev.away ?? "") !== String(merged.away ?? "") ||
+          String(prev.penaltyWinner ?? "") !== String(merged.penaltyWinner ?? "");
         saveOfficialResults({
           knockoutScores: next,
           ...(changed && latest.knockoutScoresConfirmed?.[kid] === true
             ? { knockoutScoresConfirmed: { [kid]: false } }
+            : {}),
+        });
+        redrawQuiniela();
+        refreshAll(loadSession());
+      });
+    });
+
+    wrap.querySelectorAll(".ko-official-pen-pick").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.okidPen;
+        const side = btn.dataset.penSide;
+        if (!id || (side !== "home" && side !== "away")) return;
+        const latest = loadOfficialResults();
+        const prev = latest.knockoutScores?.[id] ?? { home: "", away: "" };
+        saveOfficialResults({
+          knockoutScores: {
+            ...latest.knockoutScores,
+            [id]: { ...prev, penaltyWinner: side },
+          },
+          ...(latest.knockoutScoresConfirmed?.[id] === true
+            ? { knockoutScoresConfirmed: { [id]: false } }
             : {}),
         });
         redrawQuiniela();
@@ -4022,8 +5340,19 @@ function renderQuiniela(session, official) {
         const kid = btn.dataset.kid;
         if (!kid) return;
         const o = loadOfficialResults();
+        const { ri, mi } = getKoRoundMatchIndex(kid);
+        const labelO = allFilledOfficialKnockoutScores(o);
+        const oh = resolveKnockoutSlotLabel(ri, mi, "home", labelO);
+        const oa = resolveKnockoutSlotLabel(ri, mi, "away", labelO);
+        if (!isQuinielaTeamSlotDecided(oh) || !isQuinielaTeamSlotDecided(oa)) return;
         const sc = o.knockoutScores?.[kid];
         if (!sc || sc.home === "" || sc.away === "") return;
+        const mKo = getKnockoutMatchesFlat().find((x) => x.id === kid);
+        const needPen =
+          mKo &&
+          knockoutRoundRequiresPenaltyPickOnDraw(mKo.roundId) &&
+          isKnockoutScoreDrawNumbers(sc.home, sc.away);
+        if (needPen && sc.penaltyWinner !== "home" && sc.penaltyWinner !== "away") return;
         saveOfficialResults({ knockoutScoresConfirmed: { [kid]: true } });
         redrawQuiniela();
         refreshAll(loadSession());
@@ -4040,6 +5369,8 @@ function renderQuiniela(session, official) {
       });
     });
   }
+
+  if (blocks.length > 0) restoreOpenPartidosAccordions(wrap, openAccordionMatchIds);
 
   redrawTeamStats();
 }
@@ -4087,6 +5418,23 @@ function getOfficialConfirmedGroupScores() {
     if (off.groupScoresConfirmed?.[m.id] !== true) continue;
     const sc = off.groupScores[m.id];
     if (sc && sc.home !== "" && sc.away !== "") scores[m.id] = { home: sc.home, away: sc.away };
+  }
+  return scores;
+}
+
+/** Marcadores que cuentan para puntos de quiniela: partido en juego o final con resultado confirmado. */
+function getOfficialGroupScoresForLiveQuinielaPoints() {
+  const off = loadOfficialResults();
+  /** @type {Record<string, { home: string|number|"", away: string|number|"" }>} */
+  const scores = {};
+  for (const m of GROUP_MATCHES) {
+    const sc = off.groupScores[m.id];
+    if (!sc || sc.home === "" || sc.away === "") continue;
+    const stage = off.groupMatchState?.[m.id] ?? "ready";
+    const confirmed = off.groupScoresConfirmed?.[m.id] === true;
+    if (stage === "started" || (stage === "finished" && confirmed)) {
+      scores[m.id] = { home: sc.home, away: sc.away };
+    }
   }
   return scores;
 }
@@ -4147,13 +5495,14 @@ function refreshTeamStatsSelectValues(defaultParticipantId) {
   const valid = (val) => [...left.options].some((o) => o.value === val);
   const savedLeft = localStorage.getItem(TEAM_STATS_LEFT_SOURCE_KEY);
   const savedRight = localStorage.getItem(TEAM_STATS_RIGHT_SOURCE_KEY);
-
-  if (savedLeft && valid(savedLeft)) left.value = savedLeft;
-  else left.value = "official";
-
-  if (savedRight && valid(savedRight)) right.value = savedRight;
-  else if (defaultParticipantId && valid(defaultParticipantId)) right.value = defaultParticipantId;
-  else right.value = left.options[0]?.value ?? "official";
+  left.value = savedLeft && valid(savedLeft) ? savedLeft : "official";
+  if (savedRight && valid(savedRight)) {
+    right.value = savedRight;
+  } else if (defaultParticipantId && valid(defaultParticipantId)) {
+    right.value = defaultParticipantId;
+  } else {
+    right.value = left.options[0]?.value ?? "official";
+  }
 }
 
 /** Actualiza opciones cuando el admin cambia la lista de participantes. */
@@ -4312,11 +5661,21 @@ function buildTeamOrderPredTableBody(orderByGroup, officialSnapshot, participant
           predOrder[i] === officialOrder[i],
       );
     const perfectOrderPts = GROUP_QUALIFIERS_ORDER_BONUS + GROUP_PERFECT_ORDER_BONUS;
+    const thirdAdvanceHit =
+      hasOfficialData &&
+      officialThirdDefined &&
+      (predThird === true || predThird === false) &&
+      predThird === officialThird;
     let groupBadge = "";
     if (fullOrderHit) {
       groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-perfecto-label">Perfecto</span>${pointsBadgeHtml(perfectOrderPts, {
         title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden de 1.º y 2.º y +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo`,
       })}</span>`;
+      if (thirdAdvanceHit) {
+        groupBadge += `<span class="team-order-inline-bonus"><span class="group-preds-perfecto-label">Perfecto</span>${pointsBadgeHtml(GROUP_PERFECTO_ORDER_AND_THIRD_BONUS, {
+          title: `+${GROUP_PERFECTO_ORDER_AND_THIRD_BONUS} por orden 1.º a 4.º exacto y acierto si el 3.º pasa`,
+        })}</span>`;
+      }
     } else if (top2InExactOrder) {
       groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-bien-label">Bien</span>${pointsBadgeHtml(GROUP_QUALIFIERS_ORDER_BONUS, {
         title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden correcto de 1.º y 2.º`,
@@ -4697,6 +6056,7 @@ function refreshAll(session) {
   renderFloatingRanking(session);
   ensureFaseGruposFilter();
   if (!session) {
+    syncFaseGruposFilterOptions(null);
     $("#form-generales").innerHTML =
       '<p class="muted">Elige participante arriba (menú o al cargar) para editar predicciones.</p>';
     const genPredHost = $("#generales-preds-host");
@@ -4719,9 +6079,12 @@ function refreshAll(session) {
     $("#table-match-history-body").innerHTML = "";
     $("#table-final-ranking-body").innerHTML = "";
     renderQuiniela(null, loadOfficialResults());
+    updateProximosNavShortcutButton(null);
+    updatePredictionTabsProgress(null, null);
     return;
   }
   const predictions = loadPredictions(session.participantId);
+  updatePredictionTabsProgress(session, predictions);
   renderGenerales(session.participantId, predictions, false);
   renderGrupos(session.participantId, predictions);
   renderBrackets(session.participantId, predictions);
@@ -4732,12 +6095,18 @@ function refreshAll(session) {
   redrawMatchHistory();
   renderFinalRanking(session);
   renderQuiniela(session, loadOfficialResults());
+  updateProximosNavShortcutButton(session);
   rebuildTeamStatsSelectOptions();
   rebuildTeamOrderSelectOptions();
 }
 
 export function initApp() {
+  updateSyncLiveBadge();
+  bindGeneralesPointsHelpOverlay();
+  bindGruposOrderHelpOverlay();
+  bindPartidosPointsHelpOverlay();
   bindGeneralesOfficialAdminActions();
+  initNavDrawer();
   initFloatingRanking();
   ensureFaseGruposFilter();
   tabsController = initTabs((tabId) => {
@@ -4751,13 +6120,26 @@ export function initApp() {
   });
   bindRulesQuickButton();
 
+  /** Evita solapar varios refreshAll (WS + pestañas); reentrancia rompe el DOM y bloquea la UI. */
+  let externalSyncRefreshChain = Promise.resolve();
+
+  function queueRefreshAfterExternalSync() {
+    externalSyncRefreshChain = externalSyncRefreshChain
+      .then(() => {
+        refreshAll(loadSession());
+      })
+      .catch((err) => {
+        console.error("[pm26] refresh tras sincronización externa", err);
+      });
+  }
+
   window.addEventListener("storage", (e) => {
     if (e.key !== "pm26-official-results") return;
-    refreshAll(loadSession());
+    queueRefreshAfterExternalSync();
   });
 
   window.addEventListener("pm26-remote-sync", () => {
-    refreshAll(loadSession());
+    queueRefreshAfterExternalSync();
   });
 
   function afterSessionReady() {

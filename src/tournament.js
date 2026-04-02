@@ -3,6 +3,8 @@
  * Equipos con nombres simples y placeholders únicos (“Por determinar (X)”).
  */
 
+import { GROUP_PAIR_KICKOFF_ISO, KO_OTHER_IDS_TO_KICKOFF, R32_ID_TO_KICKOFF } from "./fifa-2026-kickoffs.js";
+
 const GROUP_IDS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
 
 const TBD_PREFIX = "Por determinar";
@@ -123,12 +125,14 @@ export const GROUP_MATCHES = GROUPS.flatMap((g) =>
   PAIRS.map(([i, j], idx) => {
     const home = g.teams[i];
     const away = g.teams[j];
+    const sched = GROUP_PAIR_KICKOFF_ISO[g.id];
+    const kickoff = sched?.[idx] ?? null;
     return {
       id: `gg-${g.id}-${idx}`,
       groupId: g.id,
       home,
       away,
-      kickoff: null,
+      kickoff,
     };
   }),
 );
@@ -157,45 +161,55 @@ const R32_SLOTS = [
   ["1º Grupo J", "2º Grupo H"],
 ];
 
+function koKick(id) {
+  return R32_ID_TO_KICKOFF[id] ?? KO_OTHER_IDS_TO_KICKOFF[id] ?? null;
+}
+
 export const KNOCKOUT_ROUNDS = [
   {
     id: "r32",
     title: "Dieciseisavos de final",
-    matches: R32_SLOTS.map((pair, i) => ({
-      id: `ko-r32-${i + 1}`,
-      homeLabel: pair[0],
-      awayLabel: pair[1],
-      kickoff: null,
-      matchScoringKey: "r32",
-    })),
+    matches: R32_SLOTS.map((pair, i) => {
+      const id = `ko-r32-${i + 1}`;
+      return {
+        id,
+        homeLabel: pair[0],
+        awayLabel: pair[1],
+        kickoff: koKick(id),
+        matchScoringKey: "r32",
+      };
+    }),
   },
   {
     id: "r16",
     title: "Octavos de final",
-    matches: Array.from({ length: 8 }, (_, i) => ({
-      id: `ko-r16-${i + 1}`,
-      homeLabel: `Gana 32 · ${i * 2 + 1}`,
-      awayLabel: `Gana 32 · ${i * 2 + 2}`,
-      kickoff: null,
-      matchScoringKey: "r16",
-    })),
+    matches: Array.from({ length: 8 }, (_, i) => {
+      const id = `ko-r16-${i + 1}`;
+      return {
+        id,
+        homeLabel: `Gana 32 · ${i * 2 + 1}`,
+        awayLabel: `Gana 32 · ${i * 2 + 2}`,
+        kickoff: koKick(id),
+        matchScoringKey: "r16",
+      };
+    }),
   },
   {
     id: "qf",
     title: "Cuartos de final",
     matches: [
-      { id: "ko-qf-1", homeLabel: "Gana 16 · 1", awayLabel: "Gana 16 · 2", kickoff: null, matchScoringKey: "qf" },
-      { id: "ko-qf-2", homeLabel: "Gana 16 · 3", awayLabel: "Gana 16 · 4", kickoff: null, matchScoringKey: "qf" },
-      { id: "ko-qf-3", homeLabel: "Gana 16 · 5", awayLabel: "Gana 16 · 6", kickoff: null, matchScoringKey: "qf" },
-      { id: "ko-qf-4", homeLabel: "Gana 16 · 7", awayLabel: "Gana 16 · 8", kickoff: null, matchScoringKey: "qf" },
+      { id: "ko-qf-1", homeLabel: "Gana 16 · 1", awayLabel: "Gana 16 · 2", kickoff: koKick("ko-qf-1"), matchScoringKey: "qf" },
+      { id: "ko-qf-2", homeLabel: "Gana 16 · 3", awayLabel: "Gana 16 · 4", kickoff: koKick("ko-qf-2"), matchScoringKey: "qf" },
+      { id: "ko-qf-3", homeLabel: "Gana 16 · 5", awayLabel: "Gana 16 · 6", kickoff: koKick("ko-qf-3"), matchScoringKey: "qf" },
+      { id: "ko-qf-4", homeLabel: "Gana 16 · 7", awayLabel: "Gana 16 · 8", kickoff: koKick("ko-qf-4"), matchScoringKey: "qf" },
     ],
   },
   {
     id: "sf",
     title: "Semifinales",
     matches: [
-      { id: "ko-sf-1", homeLabel: "Gana CF · 1", awayLabel: "Gana CF · 2", kickoff: null, matchScoringKey: "sf" },
-      { id: "ko-sf-2", homeLabel: "Gana CF · 3", awayLabel: "Gana CF · 4", kickoff: null, matchScoringKey: "sf" },
+      { id: "ko-sf-1", homeLabel: "Gana CF · 1", awayLabel: "Gana CF · 2", kickoff: koKick("ko-sf-1"), matchScoringKey: "sf" },
+      { id: "ko-sf-2", homeLabel: "Gana CF · 3", awayLabel: "Gana CF · 4", kickoff: koKick("ko-sf-2"), matchScoringKey: "sf" },
     ],
   },
   {
@@ -206,7 +220,7 @@ export const KNOCKOUT_ROUNDS = [
         id: "ko-tp-1",
         homeLabel: "Perd. SF · 1",
         awayLabel: "Perd. SF · 2",
-        kickoff: null,
+        kickoff: koKick("ko-tp-1"),
         matchScoringKey: "finalPlacement",
       },
     ],
@@ -219,7 +233,7 @@ export const KNOCKOUT_ROUNDS = [
         id: "ko-fin-1",
         homeLabel: "Gana SF · 1",
         awayLabel: "Gana SF · 2",
-        kickoff: null,
+        kickoff: koKick("ko-fin-1"),
         matchScoringKey: "finalPlacement",
       },
     ],
@@ -229,6 +243,17 @@ export const KNOCKOUT_ROUNDS = [
 /** Índice de ronda por id (p. ej. «sf», «r32»). */
 export function getKnockoutRoundIndex(roundId) {
   return KNOCKOUT_ROUNDS.findIndex((r) => r.id === roundId);
+}
+
+/** Desde 16vos de final en adelante: si el marcador predicho/oficial es empate, hay que elegir ganador en penales. */
+const KO_ROUNDS_REQUIRING_PENALTY_ON_DRAW = new Set(["r32", "r16", "qf", "sf", "tp", "final"]);
+
+/**
+ * @param {string | undefined} roundId
+ * @returns {boolean}
+ */
+export function knockoutRoundRequiresPenaltyPickOnDraw(roundId) {
+  return typeof roundId === "string" && KO_ROUNDS_REQUIRING_PENALTY_ON_DRAW.has(roundId);
 }
 
 /**
@@ -350,7 +375,7 @@ function resolveFinalOrThirdSlot(kind, side, scoresById) {
 
 /**
  * @param {string} matchId
- * @param {{ home?: string|number|"", away?: string|number|"" }} [sc]
+ * @param {{ home?: string|number|"", away?: string|number|"", penaltyWinner?: "home"|"away"|"" }} [sc]
  * @returns {"home"|"away"|null}
  */
 export function winnerSideFromKnockoutScore(sc) {
@@ -358,6 +383,10 @@ export function winnerSideFromKnockoutScore(sc) {
   const h = typeof sc.home === "number" ? sc.home : parseInt(String(sc.home), 10);
   const a = typeof sc.away === "number" ? sc.away : parseInt(String(sc.away), 10);
   if (!Number.isFinite(h) || !Number.isFinite(a)) return null;
-  if (h === a) return null;
+  if (h === a) {
+    const pw = sc.penaltyWinner;
+    if (pw === "home" || pw === "away") return pw;
+    return null;
+  }
   return h > a ? "home" : "away";
 }

@@ -106,8 +106,8 @@ export function emptyOfficialResults() {
     generalPredictionsBlockedForParticipants: false,
     /** Fase de grupos: bloqueo global de predicciones para todos (incluido admin). */
     groupPredictionsBlockedForAll: false,
-    /** Marcadores reales de eliminatoria (admin). */
-    /** @type {Record<string, { home: number | "", away: number | "" }>} */
+    /** Marcadores reales de eliminatoria (admin). `penaltyWinner` si el marcador es empate en fases con penales. */
+    /** @type {Record<string, { home: number | "", away: number | "", penaltyWinner?: "home" | "away" | "" }>} */
     knockoutScores: {},
     /** Solo tras confirmar por partido (admin); alimenta la columna «Resultado real» en Brackets. */
     /** @type {Record<string, true>} */

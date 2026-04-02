@@ -20,13 +20,15 @@ export const MAX_PODIUM = 16;
 export const INDIVIDUAL_AWARD_POINTS = 3;
 export const MAX_INDIVIDUAL_AWARDS = 9;
 
-/** +1 por equipo acertado entre los dos clasificados; +1 extra si acierta el orden 1.º/2.º; +2 si el orden 1–4 es exacto; +1 si acierta si el 3.º pasa */
+/** +1 por equipo acertado entre los dos clasificados; +2 si acierta el orden 1.º/2.º (BIEN); +2 si el orden 1–4 es exacto (EXCELENTE); +1 si acierta si el 3.º pasa; +1 si orden 1–4 exacto y acierto 3.º (PERFECTO) */
 export const GROUP_PASS_POINTS = 1;
-export const GROUP_QUALIFIERS_ORDER_BONUS = 1;
+export const GROUP_QUALIFIERS_ORDER_BONUS = 2;
 export const GROUP_PERFECT_ORDER_BONUS = 2;
 export const GROUP_THIRD_ADVANCE_POINTS = 1;
-export const MAX_PER_GROUP = 6;
-export const MAX_GROUPS_TOTAL = 12 * MAX_PER_GROUP; // 72
+/** +1 cuando el orden 1–4 es exacto y además acierta si el 3.º pasa (suma con el +1 del acierto 3.º) */
+export const GROUP_PERFECTO_ORDER_AND_THIRD_BONUS = 1;
+export const MAX_PER_GROUP = 8;
+export const MAX_GROUPS_TOTAL = 12 * MAX_PER_GROUP; // 96
 
 /**
  * Calcula puntos de orden de grupo según reglas actuales.
@@ -59,23 +61,29 @@ export function computeGroupOrderPoints(
     officialOrder.length >= 4 &&
     [0, 1, 2, 3].every((i) => predictedOrder[i] === officialOrder[i]);
 
-  // +1 adicional si acierta el orden exacto de 1.º y 2.º.
+  // +2 (BIEN) si acierta el orden exacto de 1.º y 2.º.
   if (predTop2[0] === offTop2[0] && predTop2[1] === offTop2[1]) {
     points += GROUP_QUALIFIERS_ORDER_BONUS;
   }
 
-  // +2 por orden completo exacto del grupo.
+  // +2 (EXCELENTE) por orden completo exacto del grupo.
   if (fullOrderHit) {
     points += GROUP_PERFECT_ORDER_BONUS;
   }
 
-  // +1 por acertar si el 3.º predicho pasa como mejor tercero.
-  if (
+  const thirdAdvanceHit =
     (predictedThirdAdvances === true || predictedThirdAdvances === false) &&
     (officialThirdAdvances === true || officialThirdAdvances === false) &&
-    predictedThirdAdvances === officialThirdAdvances
-  ) {
+    predictedThirdAdvances === officialThirdAdvances;
+
+  // +1 por acertar si el 3.º predicho pasa como mejor tercero.
+  if (thirdAdvanceHit) {
     points += GROUP_THIRD_ADVANCE_POINTS;
+  }
+
+  // +1 (PERFECTO) si orden 1–4 exacto y acierto de si el 3.º pasa.
+  if (fullOrderHit && thirdAdvanceHit) {
+    points += GROUP_PERFECTO_ORDER_AND_THIRD_BONUS;
   }
 
   return Math.min(points, MAX_PER_GROUP);
@@ -87,16 +95,16 @@ export function computeGroupOrderPoints(
  */
 export const MATCH_SCORING = {
   group: { outcome: 1, goalsEach: 1, exact: 1, maxPerMatch: 4, matchCount: 72 },
-  /** Dieciseisavos (16 partidos) */
-  r32: { outcome: 2, goalsEach: 1, exact: 1, maxPerMatch: 5, matchCount: 16 },
+  /** Dieciseisavos (16 partidos); tope incluye +1 posible por penales en empate */
+  r32: { outcome: 2, goalsEach: 1, exact: 1, maxPerMatch: 6, matchCount: 16 },
   /** Octavos (8 partidos) */
-  r16: { outcome: 2, goalsEach: 1, exact: 2, maxPerMatch: 6, matchCount: 8 },
+  r16: { outcome: 2, goalsEach: 1, exact: 2, maxPerMatch: 7, matchCount: 8 },
   /** Cuartos (4 partidos) */
-  qf: { outcome: 3, goalsEach: 1, exact: 2, maxPerMatch: 7, matchCount: 4 },
+  qf: { outcome: 3, goalsEach: 1, exact: 2, maxPerMatch: 8, matchCount: 4 },
   /** Semifinales (2 partidos) */
-  sf: { outcome: 3, goalsEach: 1, exact: 3, maxPerMatch: 8, matchCount: 2 },
+  sf: { outcome: 3, goalsEach: 1, exact: 3, maxPerMatch: 9, matchCount: 2 },
   /** 3.er puesto + final (2 partidos) */
-  finalPlacement: { outcome: 3, goalsEach: 1, exact: 4, maxPerMatch: 9, matchCount: 2 },
+  finalPlacement: { outcome: 3, goalsEach: 1, exact: 4, maxPerMatch: 10, matchCount: 2 },
 };
 
 export const IMPROBABLE_BONUS = 1;
@@ -229,4 +237,4 @@ export function sumMatchPhaseMax() {
 }
 
 /** Máximo de puntos en partidos sin contar el bono «resultado improbable» */
-export const MAX_MATCH_SCORES_TOTAL = sumMatchPhaseMax(); // 288+80+48+28+16+18 = 478
+export const MAX_MATCH_SCORES_TOTAL = sumMatchPhaseMax(); // 288+96+56+32+18+20 = 510

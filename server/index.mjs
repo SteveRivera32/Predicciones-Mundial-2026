@@ -202,10 +202,10 @@ async function main() {
     console.log("[pm26] Estado cargado desde", STATE_PATH);
   }
 
-  server.listen(PORT, () => {
-    console.log(`[pm26] Servidor en http://localhost:${PORT}`);
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`[pm26] API en http://localhost:${PORT} (0.0.0.0 — accesible en LAN si abres el firewall)`);
     if (!fs.existsSync(DIST_DIR)) {
-      console.log("[pm26] Sin carpeta dist/: usa Vite en otro puerto con proxy al API (ver vite.config.js).");
+      console.log("[pm26] Desarrollo: en paralelo `npm run dev` (Vite 5173) con proxy /api y /ws hacia este puerto.");
     }
   });
 }

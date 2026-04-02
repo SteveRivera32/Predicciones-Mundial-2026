@@ -1,5 +1,8 @@
 import { MATCH_SCORING, IMPROBABLE_BONUS } from "./scoring-rules.js";
 
+/** +1 por acertar el ganador en penales cuando hubo empate (eliminatoria, fases configuradas en la app). */
+export const PENALTY_WINNER_BONUS = 1;
+
 /** @typedef {typeof MATCH_SCORING.group} MatchScoringSlice */
 
 function parseScore(v) {
@@ -58,9 +61,16 @@ export function getImprobableOutcomeSign(votes) {
  * @param {{ home: unknown, away: unknown }} pred
  * @param {"h"|"d"|"a"|null|undefined} improbableOutcomeSign
  * @param {MatchScoringSlice} [scoring]
- * @returns {{ total: number, outcomePts: number, homeGoalsPts: number, awayGoalsPts: number, exactPts: number, improbablePts: number } | null}
+ * @param {boolean} [knockoutPenaltyPhase] si true y el marcador es empate en ambos, puede sumarse bono por penales
+ * @returns {{ total: number, outcomePts: number, homeGoalsPts: number, awayGoalsPts: number, exactPts: number, improbablePts: number, penaltyPts: number } | null}
  */
-function computeGroupMatchPointsParts(official, pred, improbableOutcomeSign = null, scoring = MATCH_SCORING.group) {
+function computeGroupMatchPointsParts(
+  official,
+  pred,
+  improbableOutcomeSign = null,
+  scoring = MATCH_SCORING.group,
+  knockoutPenaltyPhase = false,
+) {
   const { outcome, goalsEach, exact, maxPerMatch } = scoring;
   const oh = parseScore(official.home);
   const oa = parseScore(official.away);
@@ -83,8 +93,16 @@ function computeGroupMatchPointsParts(official, pred, improbableOutcomeSign = nu
   ) {
     improbablePts = IMPROBABLE_BONUS;
   }
-  const total = Math.min(raw, maxPerMatch) + improbablePts;
-  return { total, outcomePts, homeGoalsPts, awayGoalsPts, exactPts, improbablePts };
+  let penaltyPts = 0;
+  if (knockoutPenaltyPhase && outcomeOfficial === "d" && outcomePred === "d") {
+    const ow = official.penaltyWinner;
+    const pw = pred.penaltyWinner;
+    if ((ow === "home" || ow === "away") && pw === ow) {
+      penaltyPts = PENALTY_WINNER_BONUS;
+    }
+  }
+  const total = Math.min(raw, maxPerMatch) + improbablePts + penaltyPts;
+  return { total, outcomePts, homeGoalsPts, awayGoalsPts, exactPts, improbablePts, penaltyPts };
 }
 
 /**
@@ -92,10 +110,17 @@ function computeGroupMatchPointsParts(official, pred, improbableOutcomeSign = nu
  * @param {{ home: unknown, away: unknown }} pred
  * @param {"h"|"d"|"a"|null|undefined} [improbableOutcomeSign]
  * @param {MatchScoringSlice} [scoring]
+ * @param {boolean} [knockoutPenaltyPhase]
  * @returns {number|null}
  */
-export function computeGroupMatchPoints(official, pred, improbableOutcomeSign = null, scoring = MATCH_SCORING.group) {
-  const p = computeGroupMatchPointsParts(official, pred, improbableOutcomeSign, scoring);
+export function computeGroupMatchPoints(
+  official,
+  pred,
+  improbableOutcomeSign = null,
+  scoring = MATCH_SCORING.group,
+  knockoutPenaltyPhase = false,
+) {
+  const p = computeGroupMatchPointsParts(official, pred, improbableOutcomeSign, scoring, knockoutPenaltyPhase);
   return p ? p.total : null;
 }
 
@@ -104,9 +129,16 @@ export function computeGroupMatchPoints(official, pred, improbableOutcomeSign = 
  * @param {{ home: unknown, away: unknown }} pred
  * @param {"h"|"d"|"a"|null|undefined} [improbableOutcomeSign]
  * @param {MatchScoringSlice} [scoring]
+ * @param {boolean} [knockoutPenaltyPhase]
  */
-export function computeGroupMatchPointsBreakdown(official, pred, improbableOutcomeSign = null, scoring = MATCH_SCORING.group) {
-  return computeGroupMatchPointsParts(official, pred, improbableOutcomeSign, scoring);
+export function computeGroupMatchPointsBreakdown(
+  official,
+  pred,
+  improbableOutcomeSign = null,
+  scoring = MATCH_SCORING.group,
+  knockoutPenaltyPhase = false,
+) {
+  return computeGroupMatchPointsParts(official, pred, improbableOutcomeSign, scoring, knockoutPenaltyPhase);
 }
 
 export function isExactGroupPrediction(official, pred) {
