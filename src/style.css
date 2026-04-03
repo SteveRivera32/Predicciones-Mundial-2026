@@ -1,3 +1,16 @@
+/* Texto/pastillas multicolor pastel: animar matiz 360° = bucle perfecto (Chrome 85+, Firefox 128+, Safari 15.4+) */
+@property --pm26-rainbow-h {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes pm26-rainbow-hue-cycle {
+  to {
+    --pm26-rainbow-h: 360deg;
+  }
+}
+
 :root {
   --bg: #0f1419;
   --surface: #1a222c;
@@ -639,7 +652,7 @@ code {
   bottom: 0;
   left: calc(env(safe-area-inset-left) + var(--nav-drawer-peek));
   z-index: 95;
-  width: max(15.5rem, calc(min(22.5rem, 94vw) - var(--nav-drawer-peek)));
+  width: max(17.5rem, calc(min(25.5rem, 94vw) - var(--nav-drawer-peek)));
   max-width: calc(94vw - var(--nav-drawer-peek) - env(safe-area-inset-left));
   height: 100vh;
   height: 100dvh;
@@ -829,6 +842,52 @@ code {
   align-items: stretch;
 }
 
+/* Grid: fila principal + opcional hint + submenú; <details> con display:contents para ancho completo del submenú */
+.tabs--drawer .drawer-nav-primary--with-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.35rem;
+  row-gap: 0.28rem;
+  align-items: stretch;
+}
+
+/* Solo el summary dentro de details: el submenú es hermano y se muestra con :has([open]) (evita display:contents en details). */
+.tabs--drawer .drawer-nav-primary--with-details > .drawer-nav-details {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: stretch;
+  margin: 0;
+  border: none;
+  padding: 0;
+}
+
+.tabs--drawer .drawer-nav-primary--with-details > .tab.drawer-nav-item {
+  grid-column: 1;
+  grid-row: 1;
+  width: 100%;
+  min-width: 0;
+}
+
+.tabs--drawer .drawer-nav-primary--with-details .drawer-nav-missing-hint {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.tabs--drawer .drawer-nav-primary--with-details .drawer-nav-submenu {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  margin-top: 0;
+  display: none;
+}
+
+.tabs--drawer .drawer-nav-primary--with-details:has(.drawer-nav-details[open]) .drawer-nav-submenu {
+  display: flex;
+}
+
+.tabs--drawer .drawer-nav-primary--with-details:not(:has(.drawer-nav-missing-hint)) .drawer-nav-submenu {
+  grid-row: 2;
+}
+
 .tabs--drawer .drawer-nav-missing-hint {
   display: none;
   margin: 0.28rem 0.2rem 0;
@@ -1008,6 +1067,58 @@ code {
   gap: 0.35rem;
 }
 
+.tabs--drawer .drawer-nav-expand-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  width: 2.65rem;
+  min-height: 2.85rem;
+  padding: 0;
+  border-radius: var(--drawer-item-radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  touch-action: manipulation;
+  list-style: none;
+}
+
+.tabs--drawer .drawer-nav-expand-btn::-webkit-details-marker {
+  display: none;
+}
+
+.tabs--drawer .drawer-nav-expand-btn:hover {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface-2));
+}
+
+.tabs--drawer .drawer-nav-expand-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tabs--drawer .drawer-nav-expand-btn__icon {
+  display: block;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  margin-top: -0.2rem;
+  opacity: 0.85;
+}
+
+.tabs--drawer .drawer-nav-details[open] .drawer-nav-expand-btn__icon {
+  margin-top: 0.15rem;
+  transform: rotate(-135deg);
+}
+
+.tabs--drawer .drawer-nav-submenu {
+  margin-top: 0.45rem;
+}
+
 .tabs--drawer .drawer-nav-chip {
   flex: 1 1 calc(50% - 0.2rem);
   min-width: 5.5rem;
@@ -1031,6 +1142,10 @@ code {
   border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
   background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
   color: var(--text);
+}
+
+.tabs--drawer .drawer-nav-chip.drawer-nav-chip--solo {
+  flex: 1 1 100%;
 }
 
 .tabs--drawer .tab[data-desc]:hover::after,
@@ -1105,9 +1220,10 @@ code {
 
 .floating-ranking {
   position: fixed;
-  right: 1rem;
-  bottom: 1rem;
-  z-index: 70;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  /* Por encima del rail/panel del menú (96/95) y del backdrop (90); por debajo de overlays modales (200). */
+  z-index: 98;
 }
 
 .floating-ranking-toggle {
@@ -1145,14 +1261,20 @@ code {
   position: absolute;
   left: 0;
   top: calc(100% + 0.45rem);
-  width: min(88vw, 304px);
-  max-height: min(62vh, 380px);
+  width: min(69vw, 255px);
+  max-height: min(68vh, 440px);
   overflow: auto;
-  padding: 0.65rem 0.7rem;
+  padding: 0.85rem 0.9rem;
   border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface) 92%, #10161e);
-  box-shadow: var(--shadow);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, #e6b422 15%);
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--surface) 94%, #1a1510),
+    color-mix(in srgb, var(--surface) 88%, #0d1218)
+  );
+  box-shadow:
+    var(--shadow),
+    0 0 0 1px color-mix(in srgb, rgba(230, 180, 34, 0.12), transparent);
   animation: floating-ranking-pop 0.18s ease-out;
   transform-origin: top left;
 }
@@ -1198,7 +1320,9 @@ code {
 
 .floating-ranking-title {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 1.08rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .floating-ranking-close {
@@ -1214,22 +1338,150 @@ code {
 .floating-ranking-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.83rem;
+  font-size: 1.02rem;
+  line-height: 1.4;
 }
 
-.floating-ranking-table th,
-.floating-ranking-table td {
-  padding: 0.28rem 0.2rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+.floating-ranking-table thead th {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.78rem;
+  font-weight: 750;
+  color: color-mix(in srgb, var(--muted) 92%, var(--text));
+  padding: 0.42rem 0.35rem 0.55rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  vertical-align: bottom;
 }
 
-.floating-ranking-table td:last-child,
-.floating-ranking-table th:last-child {
-  text-align: right;
+.floating-ranking-table tbody th,
+.floating-ranking-table tbody td {
+  padding: 0.4rem 0.35rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
 }
 
-.floating-ranking-row-self td,
-.floating-ranking-row-self th {
+.floating-ranking-th-num,
+.floating-ranking-th-pts,
+.floating-ranking-table tbody td:first-child,
+.floating-ranking-table tbody td:last-child {
+  text-align: center;
+}
+
+.floating-ranking-th-player,
+.floating-ranking-table tbody th[scope="row"] {
+  text-align: left;
+}
+
+.floating-ranking-table tbody td:first-child {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  width: 2.25rem;
+  color: color-mix(in srgb, var(--muted) 35%, var(--text));
+}
+
+.floating-ranking-table tbody td:last-child {
+  font-variant-numeric: tabular-nums;
+}
+
+.floating-ranking-table tbody td:last-child strong {
+  font-weight: 750;
+}
+
+/* Podio: mismas ideas que rankings principales */
+.floating-ranking-table tbody tr.floating-ranking-row--gold {
+  background: linear-gradient(
+    92deg,
+    color-mix(in srgb, #e6b422 28%, transparent) 0%,
+    color-mix(in srgb, #f5d04a 12%, transparent) 40%,
+    transparent 78%
+  );
+  box-shadow: inset 4px 0 0 rgba(230, 180, 34, 0.95);
+}
+
+.floating-ranking-table tbody tr.floating-ranking-row--gold td:first-child,
+.floating-ranking-table tbody tr.floating-ranking-row--gold th {
+  color: #f3cf5c;
+  text-shadow: 0 0 14px rgba(243, 207, 92, 0.22);
+}
+
+.floating-ranking-table tbody tr.floating-ranking-row--gold td:last-child strong {
+  color: #ffdf7a;
+}
+
+.floating-ranking-table tbody tr.floating-ranking-row--silver {
+  background: linear-gradient(
+    92deg,
+    color-mix(in srgb, #c5cdd8 24%, transparent) 0%,
+    color-mix(in srgb, #94a3b8 10%, transparent) 42%,
+    transparent 78%
+  );
+  box-shadow: inset 4px 0 0 rgba(186, 198, 212, 0.9);
+}
+
+.floating-ranking-table tbody tr.floating-ranking-row--silver td:first-child,
+.floating-ranking-table tbody tr.floating-ranking-row--silver th {
+  color: #d8dee8;
+}
+
+.floating-ranking-table tbody tr.floating-ranking-row--silver td:last-child strong {
+  color: #e8edf4;
+}
+
+.floating-ranking-table tbody tr.floating-ranking-row--bronze {
+  background: linear-gradient(
+    92deg,
+    color-mix(in srgb, #cd7f32 26%, transparent) 0%,
+    color-mix(in srgb, #b8722c 11%, transparent) 42%,
+    transparent 78%
+  );
+  box-shadow: inset 4px 0 0 rgba(184, 115, 51, 0.9);
+}
+
+.floating-ranking-table tbody tr.floating-ranking-row--bronze td:first-child,
+.floating-ranking-table tbody tr.floating-ranking-row--bronze th {
+  color: #e8a66e;
+}
+
+.floating-ranking-table tbody tr.floating-ranking-row--bronze td:last-child strong {
+  color: #f0bc8c;
+}
+
+.floating-ranking-table tbody tr.floating-ranking-row--gold.floating-ranking-row-self {
+  background: linear-gradient(
+    92deg,
+    color-mix(in srgb, #e6b422 26%, #8ab4f8 12%) 0%,
+    color-mix(in srgb, #f5d04a 9%, transparent) 38%,
+    color-mix(in srgb, #8ab4f8 10%, transparent) 100%
+  );
+}
+
+.floating-ranking-table tbody tr.floating-ranking-row--silver.floating-ranking-row-self {
+  background: linear-gradient(
+    92deg,
+    color-mix(in srgb, #c5cdd8 22%, #8ab4f8 11%) 0%,
+    color-mix(in srgb, #94a3b8 8%, transparent) 40%,
+    color-mix(in srgb, #8ab4f8 10%, transparent) 100%
+  );
+}
+
+.floating-ranking-table tbody tr.floating-ranking-row--bronze.floating-ranking-row-self {
+  background: linear-gradient(
+    92deg,
+    color-mix(in srgb, #cd7f32 24%, #8ab4f8 11%) 0%,
+    color-mix(in srgb, #b8722c 9%, transparent) 40%,
+    color-mix(in srgb, #8ab4f8 10%, transparent) 100%
+  );
+}
+
+.floating-ranking-row-self:not(.floating-ranking-row--gold):not(.floating-ranking-row--silver):not(.floating-ranking-row--bronze)
+  td:first-child,
+.floating-ranking-row-self:not(.floating-ranking-row--gold):not(.floating-ranking-row--silver):not(.floating-ranking-row--bronze)
+  th {
+  color: #8ec5ff;
+}
+
+.floating-ranking-row-self:not(.floating-ranking-row--gold):not(.floating-ranking-row--silver):not(.floating-ranking-row--bronze)
+  td:last-child
+  strong {
   color: #ffd77a;
 }
 
@@ -1257,6 +1509,57 @@ code {
   margin: 0 0 1.25rem;
   color: var(--muted);
   max-width: 65ch;
+}
+
+/* Rankings: el texto descriptivo usa el ancho del panel (evita salto prematuro por 65ch). */
+.panel-intro--ranking-full {
+  max-width: none;
+}
+
+#match-history-intro .match-history-intro-lead {
+  margin: 0;
+  line-height: 1.55;
+}
+
+#final-ranking-intro .panel-intro__p {
+  margin: 0 0 0.5rem;
+  line-height: 1.55;
+}
+
+#final-ranking-intro .panel-intro__p:last-child {
+  margin-bottom: 0;
+}
+
+/* Frase «También puedes ver las ESTADÍSTICAS.» sin cortes entre palabras y botón. */
+#final-ranking-intro .final-ranking-intro-stats-line {
+  white-space: nowrap;
+}
+
+#stats-intro .panel-intro__p {
+  margin: 0 0 0.5rem;
+  line-height: 1.55;
+}
+
+#stats-intro .panel-intro__p:last-child {
+  margin-bottom: 0;
+}
+
+/* Orden de grupos, tablas de orden / según partidos: ancho del panel (evita cortes de línea prematuros). */
+.panel-intro--team-order,
+.panel-intro--team-partidos {
+  max-width: none;
+  width: 100%;
+}
+
+.panel-intro--team-order .panel-intro__p,
+.panel-intro--team-partidos .panel-intro__p {
+  margin: 0 0 0.75rem;
+  line-height: 1.55;
+}
+
+.panel-intro--team-order .panel-intro__p:last-child,
+.panel-intro--team-partidos .panel-intro__p:last-child {
+  margin-bottom: 0;
 }
 
 /* Reglas: columna centrada (título e intro alineados como el resto de pestañas) */
@@ -1303,6 +1606,11 @@ code {
   font-size: 0.88em;
   line-height: 1.55;
   color: var(--text);
+}
+
+.prose-rules .rule-list li.rules-subline {
+  margin-left: 1rem;
+  list-style-type: circle;
 }
 
 .rules-uso-cierres-intro {
@@ -1599,28 +1907,29 @@ code {
 }
 
 .prose-rules h2.rule-block__title--rainbow {
-  background: linear-gradient(
+  background-image: linear-gradient(
     92deg,
-    #f0abfc,
-    #fda4af,
-    #fdba74,
-    #fde047,
-    #86efac,
-    #93c5fd,
-    #c4b5fd,
-    #f0abfc
+    hsl(calc(var(--pm26-rainbow-h) + 0deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 51.43deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 102.86deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 154.29deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 205.71deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 257.14deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 308.57deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 360deg), 84%, 72%)
   );
-  background-size: 200% 100%;
+  background-size: 100% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: quiniela-pts-bonus-rainbow 3s linear infinite;
+  -webkit-text-fill-color: transparent;
+  animation: pm26-rainbow-hue-cycle 3s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .prose-rules h2.rule-block__title--rainbow {
     animation: none;
-    background-position: 35% 50%;
+    --pm26-rainbow-h: 48deg;
   }
 }
 
@@ -1973,6 +2282,45 @@ button.rules-uso-label--nav:focus-visible {
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
 }
 
+/* Enlaces rápidos «Partidos» / tablas desde partidos (verde, distinto del morado de Reglas). */
+.rules-uso-label--verde {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.16);
+  border-color: rgba(34, 197, 94, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+button.rules-uso-label--verde.rules-uso-label--nav:focus-visible {
+  outline: 2px solid rgba(74, 222, 128, 0.85);
+  outline-offset: 2px;
+}
+
+/* Verde más oscuro que --verde (p. ej. enlace a Estadísticas desde ranking final). */
+.rules-uso-label--verde-oscuro {
+  color: #a7f3d0;
+  background: rgba(20, 83, 45, 0.42);
+  border-color: rgba(21, 128, 61, 0.65);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+button.rules-uso-label--verde-oscuro.rules-uso-label--nav:focus-visible {
+  outline: 2px solid rgba(52, 211, 153, 0.85);
+  outline-offset: 2px;
+}
+
+/* Eliminación (enlace a Partidos → Eliminatoria): rojo, distinto del ADMIN. */
+.rules-uso-label--elim {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+button.rules-uso-label--elim.rules-uso-label--nav:focus-visible {
+  outline: 2px solid rgba(252, 165, 165, 0.9);
+  outline-offset: 2px;
+}
+
 .rules-uso-label--admin {
   color: #fecaca;
   background: rgba(248, 113, 113, 0.16);
@@ -2054,31 +2402,38 @@ button.rules-uso-label--nav:focus-visible {
   letter-spacing: 0.03em;
 }
 
+.prose-rules .rules-bono-todos {
+  color: #60a5fa;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
 .prose-rules .rules-bonus-rainbow-text {
   font-weight: 800;
   text-transform: lowercase;
-  background: linear-gradient(
+  background-image: linear-gradient(
     92deg,
-    #f0abfc,
-    #fda4af,
-    #fdba74,
-    #fde047,
-    #86efac,
-    #93c5fd,
-    #c4b5fd,
-    #f0abfc
+    hsl(calc(var(--pm26-rainbow-h) + 0deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 51.43deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 102.86deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 154.29deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 205.71deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 257.14deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 308.57deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 360deg), 84%, 72%)
   );
-  background-size: 200% 100%;
+  background-size: 100% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: quiniela-pts-bonus-rainbow 3s linear infinite;
+  -webkit-text-fill-color: transparent;
+  animation: pm26-rainbow-hue-cycle 3s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .prose-rules .rules-bonus-rainbow-text {
     animation: none;
-    background-position: 35% 50%;
+    --pm26-rainbow-h: 48deg;
   }
 }
 
@@ -3155,6 +3510,29 @@ span.td-muted {
     0 1px 2px rgba(0, 0, 0, 0.7);
 }
 
+.group-preds-excelente-label {
+  font-size: 0.65rem;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  line-height: 1.25;
+  color: #c792ea;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.75),
+    0 0 10px rgba(199, 146, 234, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+.prose-rules .group-preds-bien-label,
+.prose-rules .group-preds-excelente-label,
+.generales-points-lines .group-preds-bien-label,
+.generales-points-lines .group-preds-excelente-label,
+.rule-list .group-preds-bien-label {
+  font-size: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+}
+
 .group-preds-bien-intro {
   color: #6ecbff;
 }
@@ -3198,6 +3576,12 @@ span.td-muted {
   position: absolute;
   top: -0.42rem;
   right: -0.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
   font-size: 0.64rem;
   line-height: 1;
   font-weight: 800;
@@ -3224,70 +3608,42 @@ span.td-muted {
   box-shadow:
     0 1px 4px rgba(0, 0, 0, 0.32),
     inset 0 1px 0 rgba(255, 255, 255, 0.22);
-  will-change: background-position;
+  background-color: transparent;
+  background-image: none;
+  overflow: hidden;
 }
 
-/* Verde: mismo desplazamiento diagonal que el arcoíris (sin parpadeo) */
-.group-preds-pt-badge:not(.group-preds-pt-badge--bonus) {
-  background-color: #1b5e20;
-  background-image: linear-gradient(
-    120deg,
-    #1b5e20 0%,
-    #2e7d32 8.333%,
-    #388e3c 16.666%,
-    #43a047 25%,
-    #66bb6a 33.333%,
-    #81c784 41.666%,
-    #1b5e20 50%,
-    #2e7d32 58.333%,
-    #388e3c 66.666%,
-    #43a047 75%,
-    #66bb6a 83.333%,
-    #81c784 91.666%,
-    #1b5e20 100%
-  );
-  background-size: 240% 240%;
-  background-position: 0% 0%;
-  animation: groupPtsBadgeGradientShift 4.5s linear infinite;
+/* Fondo animado: canvas + chroma-js (groupPtsBadgeCanvas.js) */
+.group-preds-pt-badge__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  z-index: 0;
+  pointer-events: none;
 }
 
-/*
- * Bono arcoíris: misma animación de desplazamiento que el verde.
- */
+.group-preds-pt-badge__txt {
+  position: relative;
+  z-index: 1;
+}
+
 .group-preds-pt-badge--bonus {
   border-color: rgba(0, 0, 0, 0.52);
   box-shadow:
     0 1px 4px rgba(0, 0, 0, 0.32),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 0 0 1px rgba(255, 255, 255, 0.22);
-  background-color: #ab47bc;
-  background-image: linear-gradient(
-    120deg,
-    #ff5252 0%,
-    #ff9800 8.333%,
-    #ffeb3b 16.666%,
-    #66bb6a 25%,
-    #42a5f5 33.333%,
-    #ab47bc 41.666%,
-    #ff5252 50%,
-    #ff9800 58.333%,
-    #ffeb3b 66.666%,
-    #66bb6a 75%,
-    #42a5f5 83.333%,
-    #ab47bc 91.666%,
-    #ff5252 100%
-  );
-  background-size: 240% 240%;
-  background-position: 0% 0%;
-  animation: groupPtsBadgeGradientShift 4.5s linear infinite;
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
+/* Patrón duplicado en el gradiente + 400%: un paso 0→33.333% cierra el bucle diagonal. */
 @keyframes groupPtsBadgeGradientShift {
   0% {
     background-position: 0% 0%;
   }
   100% {
-    background-position: 100% 100%;
+    background-position: 33.333% 33.333%;
   }
 }
 
@@ -3618,9 +3974,10 @@ span.td-muted {
 
 .team-order-inline-bonus .group-preds-pt-badge,
 .team-order-points-cell .group-preds-pt-badge {
-  position: static;
+  position: relative;
   top: auto;
   right: auto;
+  inset: auto;
   transform: none;
 }
 
@@ -3673,17 +4030,24 @@ span.td-muted {
 
 .team-order-total-value--rainbow {
   color: #fff;
+  /* Dos ciclos 0–50% / 50–100% como las pastillas, para el mismo desplazamiento sin costura. */
   background-image: linear-gradient(
     120deg,
     #ff5252 0%,
-    #ff9800 16.666%,
-    #ffeb3b 33.333%,
-    #66bb6a 50%,
-    #42a5f5 66.666%,
-    #ab47bc 83.333%,
+    #ff9800 8.333%,
+    #ffeb3b 16.666%,
+    #66bb6a 25%,
+    #42a5f5 33.333%,
+    #ab47bc 41.666%,
+    #ff5252 50%,
+    #ff9800 58.333%,
+    #ffeb3b 66.666%,
+    #66bb6a 75%,
+    #42a5f5 83.333%,
+    #ab47bc 91.666%,
     #ff5252 100%
   );
-  background-size: 240% 240%;
+  background-size: 400% 400%;
   background-position: 0% 0%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -3695,35 +4059,367 @@ span.td-muted {
 }
 
 .table-group-order-ranking .group-ranking-rank,
+.table-match-ranking .group-ranking-rank,
+.table-final-ranking .group-ranking-rank,
 .table-group-order-ranking .group-ranking-num {
   text-align: center;
 }
 
-.table-group-order-ranking .group-ranking-rank {
-  width: 3rem;
-  min-width: 3rem;
-}
-
-.table-group-order-ranking .group-ranking-name {
-  min-width: 12rem;
-}
-
+.table-group-order-ranking .group-ranking-rank,
 .table-match-ranking .group-ranking-rank,
-.table-match-ranking .group-ranking-num {
-  text-align: center;
-}
-
-.table-match-ranking .group-ranking-rank {
+.table-final-ranking .group-ranking-rank {
   width: 3rem;
   min-width: 3rem;
 }
 
-.table-match-ranking .group-ranking-name {
-  min-width: 12rem;
+.table-group-order-ranking .group-ranking-name,
+.table-match-ranking .group-ranking-name,
+.table-final-ranking .group-ranking-name {
+  min-width: 0;
+  max-width: 11rem;
+  padding-right: 0.35rem;
+  font-weight: 600;
+  white-space: normal;
+  word-break: break-word;
+  hyphens: auto;
 }
 
+.table-group-order-ranking th:nth-child(2),
+.table-match-ranking th:nth-child(2),
+.table-final-ranking th:nth-child(2) {
+  min-width: 0;
+  max-width: 11rem;
+  padding-right: 0.35rem;
+}
+
+.table-group-order-ranking th:nth-child(3),
+.table-group-order-ranking td:nth-child(3),
+.table-match-ranking th:nth-child(3),
+.table-match-ranking td:nth-child(3),
+.table-final-ranking th:nth-child(3),
+.table-final-ranking td:nth-child(3) {
+  padding-left: 0.25rem;
+}
+
+.group-ranking-th-stat {
+  text-align: center;
+  vertical-align: bottom;
+  font-weight: 600;
+  min-width: 4.25rem;
+  max-width: 5.5rem;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+}
+
+/* Nombre del badge en encabezado (texto coloreado, sin caja) */
+.group-ranking-label {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-size: 0.84rem;
+  font-weight: 800;
+  font-style: normal;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: help;
+}
+
+.group-ranking-label--bien {
+  color: #6ecbff;
+  text-shadow:
+    0 0 10px rgba(110, 203, 255, 0.45),
+    0 1px 2px rgba(0, 0, 0, 0.75);
+}
+
+.group-ranking-label--excelente {
+  font-size: 0.8rem;
+  color: #c792ea;
+  text-shadow:
+    0 0 10px rgba(199, 146, 234, 0.4),
+    0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.group-ranking-label--perfecto {
+  font-size: 0.8rem;
+  color: #eecf4a;
+  text-shadow:
+    0 0 10px rgba(238, 207, 74, 0.42),
+    0 1px 2px rgba(0, 0, 0, 0.75);
+}
+
+.group-ranking-label--muted {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  text-shadow:
+    0 0 8px rgba(148, 163, 184, 0.28),
+    0 1px 2px rgba(0, 0, 0, 0.75);
+}
+
+.group-ranking-label--bono {
+  background: linear-gradient(
+    120deg,
+    #ff5252 0%,
+    #ff9800 8.333%,
+    #ffeb3b 16.666%,
+    #66bb6a 25%,
+    #42a5f5 33.333%,
+    #ab47bc 41.666%,
+    #ff5252 50%,
+    #ff9800 58.333%,
+    #ffeb3b 66.666%,
+    #66bb6a 75%,
+    #42a5f5 83.333%,
+    #ab47bc 91.666%,
+    #ff5252 100%
+  );
+  background-size: 400% 400%;
+  background-position: 0% 0%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.65));
+  animation: groupPtsBadgeGradientShift 4.5s linear infinite;
+}
+
+.group-ranking-th-stat--pts {
+  min-width: 4rem;
+}
+
+.group-ranking-label--pts {
+  color: #fbc02d;
+  text-shadow:
+    0 0 10px rgba(251, 188, 4, 0.42),
+    0 1px 2px rgba(0, 0, 0, 0.72);
+}
+
+.table-group-order-ranking .group-ranking-stat,
+.table-match-ranking .group-ranking-stat,
+.table-final-ranking .group-ranking-stat {
+  text-align: center;
+  vertical-align: middle;
+  padding: 0.4rem 0.35rem;
+}
+
+.group-ranking-stat-num {
+  font-variant-numeric: tabular-nums;
+  font-size: 1rem;
+  font-weight: 650;
+  color: var(--foreground, #e8f0ff);
+}
+
+.table-group-order-ranking .group-ranking-stat--top .group-ranking-stat-num,
+.table-match-ranking .group-ranking-stat--top .group-ranking-stat-num,
+.table-final-ranking .group-ranking-stat--top .group-ranking-stat-num {
+  font-weight: 800;
+}
+
+.table-group-order-ranking .group-ranking-stat--top-bien .group-ranking-stat-num,
+.table-match-ranking .group-ranking-stat--top-bien .group-ranking-stat-num,
+.table-final-ranking .group-ranking-stat--top-bien .group-ranking-stat-num {
+  color: #6ecbff;
+  text-shadow:
+    0 0 8px rgba(110, 203, 255, 0.35),
+    0 0 14px rgba(110, 203, 255, 0.2);
+}
+
+.table-group-order-ranking .group-ranking-stat--top-excelente .group-ranking-stat-num,
+.table-match-ranking .group-ranking-stat--top-excelente .group-ranking-stat-num,
+.table-final-ranking .group-ranking-stat--top-excelente .group-ranking-stat-num {
+  color: #c792ea;
+  text-shadow:
+    0 0 8px rgba(199, 146, 234, 0.35),
+    0 0 14px rgba(199, 146, 234, 0.2);
+}
+
+.table-group-order-ranking .group-ranking-stat--top-perfecto .group-ranking-stat-num,
+.table-match-ranking .group-ranking-stat--top-perfecto .group-ranking-stat-num,
+.table-final-ranking .group-ranking-stat--top-perfecto .group-ranking-stat-num {
+  color: #eecf4a;
+  text-shadow:
+    0 0 8px rgba(238, 207, 74, 0.35),
+    0 0 14px rgba(238, 207, 74, 0.2);
+}
+
+/* Máximo en columna BONUS: mismo arcoíris en ciclo perfecto que el título BONUS */
+.table-group-order-ranking .group-ranking-stat--top-zero .group-ranking-stat-num,
+.table-match-ranking .group-ranking-stat--top-zero .group-ranking-stat-num,
+.table-final-ranking .group-ranking-stat--top-zero .group-ranking-stat-num {
+  color: #7fe8c3;
+  text-shadow:
+    0 0 8px rgba(127, 232, 195, 0.35),
+    0 0 14px rgba(127, 232, 195, 0.2);
+}
+
+.table-group-order-ranking .group-ranking-stat--top-bonus .group-ranking-stat-num,
+.table-match-ranking .group-ranking-stat--top-bonus .group-ranking-stat-num,
+.table-final-ranking .group-ranking-stat--top-bonus .group-ranking-stat-num {
+  background: linear-gradient(
+    120deg,
+    #ff5252 0%,
+    #ff9800 8.333%,
+    #ffeb3b 16.666%,
+    #66bb6a 25%,
+    #42a5f5 33.333%,
+    #ab47bc 41.666%,
+    #ff5252 50%,
+    #ff9800 58.333%,
+    #ffeb3b 66.666%,
+    #66bb6a 75%,
+    #42a5f5 83.333%,
+    #ab47bc 91.666%,
+    #ff5252 100%
+  );
+  background-size: 400% 400%;
+  background-position: 0% 0%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.65));
+  animation: groupPtsBadgeGradientShift 4.5s linear infinite;
+}
+
+.table-group-order-ranking .group-ranking-total,
+.table-match-ranking .group-ranking-total,
+.table-final-ranking .group-ranking-total {
+  vertical-align: middle;
+  position: relative;
+}
+
+.table-group-order-ranking .group-ranking-total::before,
+.table-match-ranking .group-ranking-total::before,
+.table-final-ranking .group-ranking-total::before {
+  content: "";
+  position: absolute;
+  inset: 0.22rem 0.2rem;
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  pointer-events: none;
+}
+
+.table-group-order-ranking .group-ranking-total strong,
+.table-match-ranking .group-ranking-total strong,
+.table-final-ranking .group-ranking-total strong {
+  font-weight: 800;
+}
+
+.table-group-order-ranking .group-ranking-total--top strong,
+.table-match-ranking .group-ranking-total--top strong,
+.table-final-ranking .group-ranking-total--top strong {
+  color: #fbc02d;
+  text-shadow:
+    0 0 6px rgba(251, 188, 4, 0.5),
+    0 0 12px rgba(251, 188, 4, 0.28);
+}
+
+/* Podio por puntos totales: 1.º oro, 2.º plata, 3.º bronce (mismo tratamiento en los tres rankings) */
+.table-group-order-ranking tbody tr.group-ranking-row--gold,
+.table-match-ranking tbody tr.group-ranking-row--gold,
+.table-final-ranking tbody tr.group-ranking-row--gold {
+  background: linear-gradient(
+    92deg,
+    color-mix(in srgb, #e6b422 42%, transparent) 0%,
+    color-mix(in srgb, #f5d04a 24%, transparent) 38%,
+    color-mix(in srgb, #e6b422 14%, transparent) 68%,
+    color-mix(in srgb, #f5d04a 6%, transparent) 92%,
+    transparent 100%
+  );
+  box-shadow:
+    inset 6px 0 0 rgba(230, 180, 34, 0.98),
+    inset 0 1px 0 rgba(255, 235, 190, 0.2);
+}
+
+.table-group-order-ranking tbody tr.group-ranking-row--silver,
+.table-match-ranking tbody tr.group-ranking-row--silver,
+.table-final-ranking tbody tr.group-ranking-row--silver {
+  background: linear-gradient(
+    92deg,
+    color-mix(in srgb, #c5cdd8 36%, transparent) 0%,
+    color-mix(in srgb, #e8eef5 20%, transparent) 40%,
+    color-mix(in srgb, #94a3b8 12%, transparent) 68%,
+    color-mix(in srgb, #c5cdd8 7%, transparent) 92%,
+    transparent 100%
+  );
+  box-shadow:
+    inset 6px 0 0 rgba(186, 198, 212, 0.96),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.table-group-order-ranking tbody tr.group-ranking-row--bronze,
+.table-match-ranking tbody tr.group-ranking-row--bronze,
+.table-final-ranking tbody tr.group-ranking-row--bronze {
+  background: linear-gradient(
+    92deg,
+    color-mix(in srgb, #cd7f32 40%, transparent) 0%,
+    color-mix(in srgb, #e8a15e 18%, transparent) 38%,
+    color-mix(in srgb, #b8722c 13%, transparent) 66%,
+    color-mix(in srgb, #cd7f32 7%, transparent) 92%,
+    transparent 100%
+  );
+  box-shadow:
+    inset 6px 0 0 rgba(184, 115, 51, 0.96),
+    inset 0 1px 0 rgba(255, 210, 170, 0.16);
+}
+
+.table-group-order-ranking tbody tr.group-ranking-row--gold.row-self,
+.table-match-ranking tbody tr.group-ranking-row--gold.row-self,
+.table-final-ranking tbody tr.group-ranking-row--gold.row-self {
+  background: linear-gradient(
+    92deg,
+    color-mix(in srgb, #e6b422 36%, #8ab4f8 14%) 0%,
+    color-mix(in srgb, #f5d04a 16%, transparent) 36%,
+    color-mix(in srgb, #e6b422 10%, transparent) 64%,
+    color-mix(in srgb, #8ab4f8 12%, transparent) 88%,
+    color-mix(in srgb, #8ab4f8 5%, transparent) 100%
+  );
+  box-shadow:
+    inset 6px 0 0 rgba(230, 180, 34, 0.98),
+    inset 0 1px 0 rgba(255, 235, 190, 0.18);
+}
+
+.table-group-order-ranking tbody tr.group-ranking-row--silver.row-self,
+.table-match-ranking tbody tr.group-ranking-row--silver.row-self,
+.table-final-ranking tbody tr.group-ranking-row--silver.row-self {
+  background: linear-gradient(
+    92deg,
+    color-mix(in srgb, #c5cdd8 30%, #8ab4f8 12%) 0%,
+    color-mix(in srgb, #e8eef5 12%, transparent) 36%,
+    color-mix(in srgb, #94a3b8 8%, transparent) 62%,
+    color-mix(in srgb, #8ab4f8 12%, transparent) 88%,
+    color-mix(in srgb, #8ab4f8 5%, transparent) 100%
+  );
+  box-shadow:
+    inset 6px 0 0 rgba(186, 198, 212, 0.96),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.table-group-order-ranking tbody tr.group-ranking-row--bronze.row-self,
+.table-match-ranking tbody tr.group-ranking-row--bronze.row-self,
+.table-final-ranking tbody tr.group-ranking-row--bronze.row-self {
+  background: linear-gradient(
+    92deg,
+    color-mix(in srgb, #cd7f32 32%, #8ab4f8 12%) 0%,
+    color-mix(in srgb, #e8a15e 12%, transparent) 34%,
+    color-mix(in srgb, #b8722c 9%, transparent) 62%,
+    color-mix(in srgb, #8ab4f8 12%, transparent) 88%,
+    color-mix(in srgb, #8ab4f8 5%, transparent) 100%
+  );
+  box-shadow:
+    inset 6px 0 0 rgba(184, 115, 51, 0.96),
+    inset 0 1px 0 rgba(255, 210, 170, 0.14);
+}
+
+.table-group-order-ranking th:nth-child(n + 3),
+.table-group-order-ranking td:nth-child(n + 3),
+.table-match-ranking th:nth-child(n + 3),
+.table-match-ranking td:nth-child(n + 3),
 .table-final-ranking th:nth-child(n + 3),
-.table-final-ranking td:nth-child(n + 3) {
+.table-final-ranking td:nth-child(n + 3),
+.table-group-order-ranking .group-ranking-num,
+.table-match-ranking .group-ranking-num,
+.table-final-ranking .group-ranking-num {
   text-align: center;
 }
 
@@ -3741,6 +4437,172 @@ span.td-muted {
 .table-final-ranking th:last-child,
 .table-final-ranking td:last-child {
   border-left: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+}
+
+/*
+ * Rankings de jugadores (grupos, partidos, final global): mismo formato visual.
+ * Solo presentación; la lógica de puntos sigue en app.js por panel.
+ */
+.table-group-order-ranking,
+.table-match-ranking,
+.table-final-ranking {
+  font-size: 1.35rem;
+  table-layout: fixed;
+}
+
+.table-group-order-ranking.table-compact th,
+.table-match-ranking.table-compact th,
+.table-final-ranking.table-compact th,
+.table-group-order-ranking.table-compact td,
+.table-match-ranking.table-compact td,
+.table-final-ranking.table-compact td {
+  padding: 0.64rem 0.14rem;
+}
+
+.table-group-order-ranking th,
+.table-match-ranking th,
+.table-final-ranking th {
+  font-size: 1.1rem;
+}
+
+/* El nombre va en <th scope="row">; .table th les pone fondo sólido y tapa el degradado del podio en el <tr>. */
+.table-group-order-ranking tbody th,
+.table-match-ranking tbody th,
+.table-final-ranking tbody th {
+  background: transparent;
+  color: var(--foreground, #e8f0ff);
+}
+
+.table-group-order-ranking tbody tr.group-ranking-row--gold th.group-ranking-name,
+.table-match-ranking tbody tr.group-ranking-row--gold th.group-ranking-name,
+.table-final-ranking tbody tr.group-ranking-row--gold th.group-ranking-name {
+  color: #f5d04a;
+  text-shadow:
+    0 0 8px rgba(245, 208, 74, 0.5),
+    0 0 14px rgba(230, 180, 34, 0.3),
+    0 1px 2px rgba(0, 0, 0, 0.78);
+}
+
+.table-group-order-ranking tbody tr.group-ranking-row--silver th.group-ranking-name,
+.table-match-ranking tbody tr.group-ranking-row--silver th.group-ranking-name,
+.table-final-ranking tbody tr.group-ranking-row--silver th.group-ranking-name {
+  color: #e2e8f0;
+  text-shadow:
+    0 0 8px rgba(226, 232, 240, 0.42),
+    0 0 14px rgba(148, 163, 184, 0.26),
+    0 1px 2px rgba(0, 0, 0, 0.78);
+}
+
+.table-group-order-ranking tbody tr.group-ranking-row--bronze th.group-ranking-name,
+.table-match-ranking tbody tr.group-ranking-row--bronze th.group-ranking-name,
+.table-final-ranking tbody tr.group-ranking-row--bronze th.group-ranking-name {
+  color: #e8a56a;
+  text-shadow:
+    0 0 8px rgba(232, 165, 106, 0.45),
+    0 0 14px rgba(184, 115, 51, 0.28),
+    0 1px 2px rgba(0, 0, 0, 0.78);
+}
+
+.table-group-order-ranking th:first-child,
+.table-match-ranking th:first-child,
+.table-final-ranking th:first-child,
+.table-group-order-ranking .group-ranking-rank,
+.table-match-ranking .group-ranking-rank,
+.table-final-ranking .group-ranking-rank {
+  width: 2.85rem;
+  min-width: 2.85rem;
+  padding-left: 0.1rem;
+  padding-right: 0.1rem;
+  text-align: center;
+}
+
+.table-group-order-ranking .group-ranking-name,
+.table-match-ranking .group-ranking-name,
+.table-final-ranking .group-ranking-name,
+.table-group-order-ranking th:nth-child(2),
+.table-match-ranking th:nth-child(2),
+.table-final-ranking th:nth-child(2) {
+  width: 11.75rem;
+  min-width: 0;
+  max-width: 11.75rem;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.table-group-order-ranking th:nth-child(3),
+.table-match-ranking th:nth-child(3),
+.table-final-ranking th:nth-child(3),
+.table-group-order-ranking td:nth-child(3),
+.table-match-ranking td:nth-child(3),
+.table-final-ranking td:nth-child(3) {
+  padding-left: 0;
+}
+
+.table-group-order-ranking .group-ranking-th-stat,
+.table-match-ranking .group-ranking-th-stat,
+.table-final-ranking .group-ranking-th-stat {
+  min-width: 3.48rem;
+  max-width: 4.75rem;
+  padding-left: 0.03rem;
+  padding-right: 0.03rem;
+}
+
+.table-group-order-ranking .group-ranking-th-stat--pts,
+.table-match-ranking .group-ranking-th-stat--pts,
+.table-final-ranking .group-ranking-th-stat--pts {
+  min-width: 3.05rem;
+}
+
+.table-group-order-ranking .group-ranking-label,
+.table-match-ranking .group-ranking-label,
+.table-final-ranking .group-ranking-label {
+  font-size: 1.22rem;
+  letter-spacing: 0.02em;
+}
+
+.table-group-order-ranking .group-ranking-label--excelente,
+.table-match-ranking .group-ranking-label--excelente,
+.table-final-ranking .group-ranking-label--excelente,
+.table-group-order-ranking .group-ranking-label--perfecto,
+.table-match-ranking .group-ranking-label--perfecto,
+.table-final-ranking .group-ranking-label--perfecto {
+  font-size: 1.12rem;
+}
+
+.table-group-order-ranking .group-ranking-stat,
+.table-match-ranking .group-ranking-stat,
+.table-final-ranking .group-ranking-stat {
+  padding: 0.5rem 0.03rem;
+}
+
+.table-group-order-ranking th:last-child,
+.table-match-ranking th:last-child,
+.table-final-ranking th:last-child,
+.table-group-order-ranking td:last-child,
+.table-match-ranking td:last-child,
+.table-final-ranking td:last-child {
+  padding-left: 0.08rem;
+  padding-right: 0.12rem;
+}
+
+.table-group-order-ranking .group-ranking-total::before,
+.table-match-ranking .group-ranking-total::before,
+.table-final-ranking .group-ranking-total::before {
+  inset: 0.26rem 0.06rem;
+}
+
+.table-group-order-ranking .group-ranking-stat-num,
+.table-match-ranking .group-ranking-stat-num,
+.table-final-ranking .group-ranking-stat-num {
+  font-size: 1.38rem;
+}
+
+.table-group-order-ranking .group-ranking-total strong,
+.table-match-ranking .group-ranking-total strong,
+.table-final-ranking .group-ranking-total strong {
+  font-size: 1.38rem;
 }
 
 .table-match-history {
@@ -3840,14 +4702,200 @@ span.td-muted {
   font-weight: 800;
 }
 
+/* Estadísticas: matriz (métricas en filas, jugadores en columnas) */
+.table-scroll--stats-matrix {
+  overflow-x: auto;
+  margin-top: 0.35rem;
+}
+
+.table-stats-matrix {
+  min-width: max(100%, 36rem);
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table-stats-matrix th,
+.table-stats-matrix td {
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+}
+
+.table-stats-matrix thead th {
+  vertical-align: bottom;
+  padding: 0.55rem 0.45rem 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: normal;
+  word-break: break-word;
+  hyphens: auto;
+  min-width: 5.25rem;
+  max-width: 10rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  background: color-mix(in srgb, var(--surface-2) 92%, transparent);
+}
+
+.table-stats-matrix .stats-matrix-corner {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  min-width: 12.5rem;
+  max-width: min(18rem, 40vw);
+  text-align: left;
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--surface);
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.12);
+}
+
+.table-stats-matrix .stats-matrix-player {
+  text-align: center;
+}
+
+.table-stats-matrix .stats-matrix-player--self {
+  cursor: pointer;
+  box-shadow: inset 0 -3px 0 rgba(138, 180, 248, 0.95);
+}
+
+.stats-hue-popover,
+.participant-accent-popover {
+  position: fixed;
+  z-index: 12000;
+  min-width: 13.5rem;
+  max-width: min(20rem, calc(100vw - 1.5rem));
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+  background: color-mix(in srgb, var(--surface) 92%, #060a10);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent),
+    0 18px 44px rgba(0, 0, 0, 0.5);
+}
+
+.stats-hue-popover-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.participant-accent-native-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0 0 0.65rem;
+  cursor: pointer;
+}
+
+.participant-accent-native-hint {
+  font-size: 0.78rem;
+}
+
+#participant-accent-color-input {
+  display: block;
+  width: 100%;
+  height: 2.75rem;
+  padding: 0.2rem;
+  border-radius: 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.participant-accent-presets-label {
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+}
+
+.participant-accent-presets {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.participant-accent-preset {
+  width: 100%;
+  aspect-ratio: 1;
+  margin: 0;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  border-radius: 0.45rem;
+  background: var(--preset-fill, #888);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.participant-accent-preset:hover {
+  filter: brightness(1.12);
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.stats-hue-popover-actions {
+  margin-top: 0.65rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.table-stats-matrix .stats-matrix-metric {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  text-align: left;
+  font-weight: 650;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  padding: 0.5rem 0.65rem 0.5rem 0.5rem;
+  vertical-align: middle;
+  min-width: 12.5rem;
+  max-width: min(18rem, 40vw);
+  background: color-mix(in srgb, var(--surface) 96%, var(--surface-2));
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.08);
+  cursor: help;
+}
+
+.table-stats-matrix tbody tr:hover .stats-matrix-metric {
+  background: color-mix(in srgb, var(--surface-2) 70%, var(--surface));
+}
+
+.table-stats-matrix .stats-matrix-cell {
+  text-align: center;
+  vertical-align: middle;
+  padding: 0.45rem 0.4rem;
+  border-left: 1px solid color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.table-stats-matrix .stats-matrix-val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  color: color-mix(in srgb, var(--foreground) 94%, #b8c5e0);
+}
+
+.table-stats-matrix .stats-matrix-cell--self .stats-matrix-val {
+  font-weight: 800;
+}
+
+.table-stats-matrix .stats-matrix-cell--best .stats-matrix-val {
+  font-weight: 900;
+  color: #fff;
+  text-shadow:
+    0 0 10px rgba(251, 240, 180, 0.55),
+    0 0 18px rgba(251, 192, 45, 0.35);
+}
+
+.table-stats-matrix .stats-matrix-cell--best {
+  box-shadow: inset 0 0 0 1.5px rgba(251, 192, 45, 0.55);
+}
+
 .stats-podium {
-  margin: 0.35rem 0 1rem;
+  margin: 0.35rem 0 1.25rem;
 }
 
 .stats-podium-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.7rem;
+  gap: 1rem;
   align-items: end;
 }
 
@@ -3855,56 +4903,109 @@ span.td-muted {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.35rem;
+  gap: 0.45rem;
+  filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.35));
 }
 
 .stats-podium-card {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 88%, transparent), var(--surface));
-  border: 1px solid var(--border);
-  border-radius: 0.85rem;
-  padding: 0.7rem 0.7rem 0.6rem;
+  --podium-accent-h: 210;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, hsl(var(--podium-accent-h) 42% 52%) 22%, var(--surface-2)) 0%,
+    color-mix(in srgb, var(--surface-2) 75%, #0d1117) 100%
+  );
+  border: 1px solid color-mix(in srgb, hsl(var(--podium-accent-h) 70% 58%) 45%, var(--border));
+  border-radius: 1rem;
+  padding: 0.85rem 0.75rem 0.65rem;
   text-align: center;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, hsl(var(--podium-accent-h) 88% 62%) 28%, transparent),
+    0 0 32px color-mix(in srgb, hsl(var(--podium-accent-h) 90% 55%) 22%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.stats-podium-card::before {
+  content: "";
+  position: absolute;
+  inset: -40% 50% 40% -20%;
+  background: radial-gradient(circle, hsla(var(--podium-accent-h), 85%, 65%, 0.35) 0%, transparent 68%);
+  pointer-events: none;
 }
 
 .stats-podium-card--p1 {
-  border-color: rgba(251, 188, 4, 0.62);
-  box-shadow: 0 0 0 1px rgba(251, 188, 4, 0.26);
-  min-height: 8.9rem;
+  border-color: rgba(255, 215, 64, 0.85);
+  box-shadow:
+    0 0 0 1px rgba(255, 215, 64, 0.35),
+    0 0 42px rgba(255, 200, 48, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  min-height: 9.4rem;
 }
 
 .stats-podium-card--p2 {
-  border-color: rgba(154, 160, 166, 0.62);
-  min-height: 7.6rem;
+  border-color: rgba(210, 220, 235, 0.78);
+  box-shadow:
+    0 0 0 1px rgba(210, 220, 235, 0.32),
+    0 0 36px rgba(180, 195, 220, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  min-height: 7.9rem;
 }
 
 .stats-podium-card--p3 {
-  border-color: rgba(205, 127, 50, 0.62);
-  min-height: 6.9rem;
+  border-color: rgba(255, 160, 88, 0.78);
+  box-shadow:
+    0 0 0 1px rgba(255, 160, 88, 0.32),
+    0 0 32px rgba(255, 130, 60, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  min-height: 7.2rem;
 }
 
 .stats-podium-medal {
-  font-size: 1.5rem;
+  position: relative;
+  z-index: 1;
+  font-size: 2rem;
   line-height: 1;
-  margin-bottom: 0.3rem;
+  margin-bottom: 0.35rem;
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.45));
 }
 
 .stats-podium-name {
-  margin: 0 0 0.1rem;
-  font-size: 0.95rem;
+  position: relative;
+  z-index: 1;
+  margin: 0 0 0.15rem;
+  font-size: 1.02rem;
   line-height: 1.25;
+  font-weight: 750;
+  color: #fff;
+  text-shadow:
+    0 0 18px color-mix(in srgb, hsl(var(--podium-accent-h) 90% 60%) 40%, transparent),
+    0 2px 4px rgba(0, 0, 0, 0.85);
+}
+
+.stats-podium-you {
+  font-weight: 600;
+  opacity: 0.88;
 }
 
 .stats-podium-points {
-  margin: 0.2rem 0 0;
-  font-weight: 800;
+  position: relative;
+  z-index: 1;
+  margin: 0.25rem 0 0;
+  font-weight: 900;
+  font-size: 1.08rem;
+  letter-spacing: 0.02em;
+  color: hsl(48 100% 72%);
+  text-shadow:
+    0 0 14px rgba(255, 214, 79, 0.55),
+    0 2px 6px rgba(0, 0, 0, 0.75);
 }
 
 .stats-podium-pillar {
-  border-radius: 0.7rem 0.7rem 0.45rem 0.45rem;
+  border-radius: 0.75rem 0.75rem 0.5rem 0.5rem;
   border: 1px solid var(--border);
   border-top: none;
   display: flex;
@@ -3915,28 +5016,32 @@ span.td-muted {
 }
 
 .stats-podium-pillar--p1 {
-  min-height: 4.6rem;
-  color: #fbc02d;
-  background: linear-gradient(180deg, rgba(251, 188, 4, 0.32), rgba(251, 188, 4, 0.16));
-  border-color: rgba(251, 188, 4, 0.5);
+  min-height: 4.85rem;
+  color: #ffe066;
+  background: linear-gradient(180deg, rgba(255, 213, 64, 0.55), rgba(255, 180, 40, 0.22));
+  border-color: rgba(255, 210, 80, 0.65);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .stats-podium-pillar--p2 {
-  min-height: 3.2rem;
-  color: #c7c9cc;
-  background: linear-gradient(180deg, rgba(154, 160, 166, 0.28), rgba(154, 160, 166, 0.14));
-  border-color: rgba(154, 160, 166, 0.44);
+  min-height: 3.35rem;
+  color: #eef2f8;
+  background: linear-gradient(180deg, rgba(210, 220, 235, 0.5), rgba(140, 155, 180, 0.2));
+  border-color: rgba(195, 205, 220, 0.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .stats-podium-pillar--p3 {
-  min-height: 2.4rem;
-  color: #d79a63;
-  background: linear-gradient(180deg, rgba(205, 127, 50, 0.26), rgba(205, 127, 50, 0.13));
-  border-color: rgba(205, 127, 50, 0.42);
+  min-height: 2.55rem;
+  color: #ffc9a0;
+  background: linear-gradient(180deg, rgba(255, 150, 88, 0.48), rgba(200, 95, 40, 0.22));
+  border-color: rgba(255, 145, 80, 0.58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
 .stats-podium-place {
-  font-size: 1.15rem;
+  font-size: 1.25rem;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
 }
 
 @media (max-width: 760px) {
@@ -4371,7 +5476,8 @@ span.td-muted {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  align-items: flex-start;
+  align-items: center;
+  width: 100%;
   max-width: 100%;
 }
 
@@ -4379,12 +5485,15 @@ span.td-muted {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 0.35rem 0.5rem;
+  width: 100%;
 }
 
 .ko-penalty-pick-actions__l {
   font-size: 0.78rem;
   width: 100%;
+  text-align: center;
 }
 
 .ko-penalty-pick-actions .btn-sm {
@@ -4397,6 +5506,8 @@ span.td-muted {
   font-size: 0.82rem;
   margin-top: 0.2rem;
   line-height: 1.25;
+  text-align: center;
+  width: 100%;
 }
 
 .partidos-ko-official-penalty {
@@ -4445,6 +5556,8 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 
 .partidos-match-card {
   position: relative;
+  /* Sangría horizontal de la fila líder visible hasta el borde interior de la tarjeta */
+  --quiniela-lead-bleed-x: calc(1.15rem + 1px);
 }
 
 .partidos-match-card--has-kickoff .partidos-acc__title.quiniela-match-title {
@@ -4708,31 +5821,79 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   }
 }
 
-@keyframes partidos-badge-rainbow {
-  0% {
-    background-position: 0% 50%;
-  }
+/* Solo bordes superior/inferior (fila líder quiniela); laterales normales vía reglas base */
+@keyframes quiniela-lead-tb-rainbow {
+  0%,
   100% {
-    background-position: 200% 50%;
+    border-top-color: #e11d48;
+    border-bottom-color: #e11d48;
+    box-shadow:
+      0 -6px 22px color-mix(in srgb, #e11d48 52%, transparent),
+      0 6px 22px color-mix(in srgb, #e11d48 52%, transparent);
+  }
+  16.66% {
+    border-top-color: #ea580c;
+    border-bottom-color: #ea580c;
+    box-shadow:
+      0 -6px 22px color-mix(in srgb, #ea580c 52%, transparent),
+      0 6px 22px color-mix(in srgb, #ea580c 52%, transparent);
+  }
+  33.33% {
+    border-top-color: #ca8a04;
+    border-bottom-color: #ca8a04;
+    box-shadow:
+      0 -6px 22px color-mix(in srgb, #ca8a04 52%, transparent),
+      0 6px 22px color-mix(in srgb, #ca8a04 52%, transparent);
+  }
+  50% {
+    border-top-color: #16a34a;
+    border-bottom-color: #16a34a;
+    box-shadow:
+      0 -6px 22px color-mix(in srgb, #22c55e 48%, transparent),
+      0 6px 22px color-mix(in srgb, #22c55e 48%, transparent);
+  }
+  66.66% {
+    border-top-color: #2563eb;
+    border-bottom-color: #2563eb;
+    box-shadow:
+      0 -6px 22px color-mix(in srgb, #3b82f6 52%, transparent),
+      0 6px 22px color-mix(in srgb, #3b82f6 52%, transparent);
+  }
+  83.33% {
+    border-top-color: #9333ea;
+    border-bottom-color: #9333ea;
+    box-shadow:
+      0 -6px 22px color-mix(in srgb, #a855f7 52%, transparent),
+      0 6px 22px color-mix(in srgb, #a855f7 52%, transparent);
+  }
+}
+
+/* Fondo animado solo en 1.ª celda (nombre) fila líder partidos */
+@keyframes quiniela-lead-name-bg-flow {
+  0%,
+  100% {
+    background-position: 8% 20%;
+  }
+  50% {
+    background-position: 92% 80%;
   }
 }
 
 .partidos-corner-badge--en-juego {
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
-  background: linear-gradient(
+  background-image: linear-gradient(
     90deg,
-    #e11d48,
-    #ea580c,
-    #ca8a04,
-    #16a34a,
-    #2563eb,
-    #9333ea,
-    #e11d48,
-    #ea580c
+    hsl(calc(var(--pm26-rainbow-h) + 0deg), 78%, 52%),
+    hsl(calc(var(--pm26-rainbow-h) + 60deg), 78%, 52%),
+    hsl(calc(var(--pm26-rainbow-h) + 120deg), 78%, 52%),
+    hsl(calc(var(--pm26-rainbow-h) + 180deg), 78%, 52%),
+    hsl(calc(var(--pm26-rainbow-h) + 240deg), 78%, 52%),
+    hsl(calc(var(--pm26-rainbow-h) + 300deg), 78%, 52%),
+    hsl(calc(var(--pm26-rainbow-h) + 360deg), 78%, 52%)
   );
-  background-size: 200% 100%;
-  animation: partidos-badge-rainbow 2.2s linear infinite;
+  background-size: 100% 100%;
+  animation: pm26-rainbow-hue-cycle 2.2s linear infinite;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
 }
 
@@ -4769,7 +5930,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 
   .partidos-corner-badge--en-juego {
     animation: none;
-    background-position: 0% 50%;
+    --pm26-rainbow-h: 0deg;
   }
 }
 
@@ -4906,29 +6067,31 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 .quiniela-official-head {
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 650;
+  font-size: 0.82rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 0.45rem 0.65rem;
+  letter-spacing: 0.07em;
+  padding: 0.55rem 0.85rem;
   border-bottom: 1px solid var(--border);
 }
 
 .quiniela-official-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) auto auto minmax(0, 1.1fr);
-  gap: 0.5rem 0.65rem;
+  gap: 0.65rem 0.85rem;
   align-items: center;
-  padding: 0.65rem 0.75rem;
+  padding: 0.9rem 1rem;
   background: rgba(0, 0, 0, 0.18);
 }
 
 .quiniela-official-grid--readonly .quiniela-cell--score {
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
-  font-size: 1.05rem;
+  font-weight: 800;
+  font-size: 1.45rem;
+  line-height: 1.15;
   text-align: center;
-  min-width: 2.25rem;
+  min-width: 2.85rem;
+  padding: 0.45rem 0.5rem;
 }
 
 .quiniela-cell--team {
@@ -4949,12 +6112,23 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   font-size: 0.88rem;
 }
 
+.quiniela-official .quiniela-cell--team .team-label {
+  font-size: 1.08rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
 .quiniela-cell--score {
   background: rgba(242, 139, 130, 0.18);
   border: 1px solid rgba(242, 139, 130, 0.35);
   border-radius: 8px;
   padding: 0.35rem;
   justify-self: center;
+}
+
+.quiniela-official .quiniela-cell--score {
+  border-radius: 10px;
+  padding: 0.4rem 0.45rem;
 }
 
 .quiniela-official .quiniela-cell--score.quiniela-cell--score-win {
@@ -4999,7 +6173,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 }
 
 .quiniela-preds-head {
-  font-size: 0.72rem;
+  font-size: 0.88rem;
   font-weight: 650;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -5014,6 +6188,13 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 .quiniela-preds {
   table-layout: fixed;
   width: 100%;
+  font-size: 1.02rem;
+  line-height: 1.4;
+}
+
+.quiniela-preds thead th {
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 .quiniela-preds .quiniela-num {
@@ -5025,7 +6206,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 
 .quiniela-preds th:first-child,
 .quiniela-preds td:first-child {
-  width: 26%;
+  width: 22%;
   vertical-align: middle;
 }
 
@@ -5039,6 +6220,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 
 .quiniela-participant-line {
   line-height: 1.35;
+  font-weight: 600;
 }
 
 /* Solo aparece bajo el nombre cuando hay marcador exacto; sin relleno de celda extra */
@@ -5052,7 +6234,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 
 .quiniela-perfect-inline .quiniela-perfect-label {
   margin: 0;
-  font-size: 0.65rem;
+  font-size: 0.72rem;
   font-weight: 750;
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -5063,9 +6245,36 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
     0 1px 2px rgba(0, 0, 0, 0.65);
 }
 
-/* Pastilla en flujo (no absolute): no se encima del texto */
+.quiniela-perfect-inline .quiniela-perfect-label--excelente {
+  color: #c792ea;
+  text-shadow:
+    0 0 3px rgba(0, 0, 0, 0.88),
+    0 0 12px rgba(199, 146, 234, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+/*
+ * En flujo junto al texto (Bien / Perfecto…), pero relative para que el canvas (absolute inset:0)
+ * no escape al td/th posicionado y llene toda la celda.
+ */
 .quiniela-perfect-inline .group-preds-pt-badge {
-  position: static !important;
+  position: relative !important;
+  top: auto !important;
+  right: auto !important;
+  inset: auto !important;
+  transform: none !important;
+  flex-shrink: 0;
+  font-size: 0.58rem;
+  padding: 0.15rem 0.28rem;
+}
+
+/*
+ * Grupos / generales: misma razón — static rompía el containing block del canvas.
+ */
+.table-group-preds .quiniela-perfect-inline .group-preds-pt-badge {
+  position: relative !important;
+  top: auto !important;
+  right: auto !important;
   inset: auto !important;
   transform: none !important;
   flex-shrink: 0;
@@ -5079,29 +6288,66 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 
 .quiniela-preds th.quiniela-num,
 .quiniela-preds td.quiniela-num {
-  width: 13.5%;
+  width: 14.5%;
   /* Cada stepper necesita ~7–8.5rem; sin min-width las celdas se comprimen y los botones de columnas vecinas se superponen */
   min-width: 8.25rem;
   box-sizing: border-box;
 }
 
-/* Stepper un poco más compacto solo en esta tabla para caber mejor con scroll horizontal si hace falta */
+/*
+ * Tamaño «normal» = mitad del de la fila líder (1.92rem / 1.72rem / 1.42rem en stepper).
+ * La fila líder redefine abajo con los valores grandes.
+ */
 .quiniela-preds .score-stepper__btn {
-  min-width: 2.35rem;
-  min-height: 2.35rem;
-  font-size: 1.2rem;
-  padding: 0 0.28rem;
+  min-width: calc(2.78rem / 2 + 0.4rem);
+  min-height: calc(2.88rem / 2 + 0.35rem);
+  font-size: calc(1.42rem / 2);
+  padding: 0 0.26rem;
 }
 
 .quiniela-preds .score-stepper__input {
-  width: 2.5rem;
-  min-height: 2.35rem;
-  font-size: 0.9rem;
+  width: calc(3.05rem / 2 + 0.45rem);
+  min-height: calc(2.88rem / 2 + 0.35rem);
+  font-size: calc(1.72rem / 2);
+}
+
+#panel-partidos .quiniela-preds .quiniela-cell-score-num {
+  font-size: 1.26rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+.table-match-history td.match-history-pts .quiniela-cell-score-num {
+  font-size: 1.26rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+/* números 1.72rem; stepper proporcional al par histórico 1.92 / 1.72 / 1.42 */
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead .score-stepper__btn {
+  min-width: 2.49rem;
+  min-height: 2.58rem;
+  font-size: 1.27rem;
+  padding: 0 0.3rem;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead .score-stepper__input {
+  width: 2.73rem;
+  min-height: 2.58rem;
+  font-size: 1.54rem;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td .quiniela-cell-score-num {
+  font-size: 1.72rem;
+  font-weight: 720;
+  line-height: 1.12;
 }
 
 .quiniela-preds th.quiniela-ganador-col,
 .quiniela-preds td.quiniela-ganador-col {
-  width: 17%;
+  width: 19%;
 }
 
 .quiniela-cell--hit {
@@ -5114,39 +6360,21 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   font-weight: 800;
 }
 
-.quiniela-pts--lead {
-  color: #e8c547 !important;
+/* Mayor puntaje del partido: solo color del texto (sin fondo dorado en la celda) */
+.quiniela-preds td.quiniela-pts--lead-text,
+.table-match-history td.match-history-pts.quiniela-pts--lead-text {
+  color: #fbc02d !important;
   font-weight: 800;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  text-shadow:
+    0 0 6px rgba(251, 188, 4, 0.48),
+    0 1px 2px rgba(0, 0, 0, 0.42);
+  background: transparent !important;
+  box-shadow: none;
 }
 
-/* Líder(es) en puntos del partido (misma regla que la letra dorada): celda + texto dorados */
-.quiniela-pts--lead-winner {
-  background: linear-gradient(
-    165deg,
-    rgba(212, 175, 55, 0.42) 0%,
-    rgba(160, 120, 40, 0.28) 55%,
-    rgba(212, 175, 55, 0.36) 100%
-  ) !important;
-  box-shadow:
-    inset 0 0 0 1px rgba(230, 200, 90, 0.75),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.12);
-  color: #fcefb0 !important;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
-}
-
-@keyframes quiniela-pts-bonus-rainbow {
-  0% {
-    background-position: 0% 50%;
-  }
-  100% {
-    background-position: 200% 50%;
-  }
-}
-
-/* Bono: celda normal salvo que también sea líder (entonces aplica el dorado de --lead-winner) */
-.quiniela-preds td.quiniela-pts--bonus-rainbow:not(.quiniela-pts--lead-winner),
-.table-match-history td.match-history-pts.quiniela-pts--bonus-rainbow:not(.quiniela-pts--lead-winner) {
+/* Bono: celda normal; el número lleva el gradiente animado */
+.quiniela-preds td.quiniela-pts--bonus-rainbow,
+.table-match-history td.match-history-pts.quiniela-pts--bonus-rainbow {
   background: transparent !important;
   box-shadow: none;
   font-weight: 800;
@@ -5156,23 +6384,23 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 .table-match-history td.match-history-pts .quiniela-pts__bonus-num {
   display: inline-block;
   line-height: 1.25;
-  background: linear-gradient(
+  background-image: linear-gradient(
     92deg,
-    #f0abfc,
-    #fda4af,
-    #fdba74,
-    #fde047,
-    #86efac,
-    #93c5fd,
-    #c4b5fd,
-    #f0abfc,
-    #fda4af
+    hsl(calc(var(--pm26-rainbow-h) + 0deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 51.43deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 102.86deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 154.29deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 205.71deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 257.14deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 308.57deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 360deg), 84%, 72%)
   );
-  background-size: 240% 100%;
+  background-size: 100% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: quiniela-pts-bonus-rainbow 2.8s linear infinite;
+  -webkit-text-fill-color: transparent;
+  animation: pm26-rainbow-hue-cycle 2.8s linear infinite;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
 }
 
@@ -5180,13 +6408,13 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   .quiniela-preds td.quiniela-pts--bonus-rainbow .quiniela-pts__bonus-num,
   .table-match-history td.match-history-pts .quiniela-pts__bonus-num {
     animation: none;
-    background-position: 40% 50%;
+    --pm26-rainbow-h: 48deg;
   }
 }
 
 .quiniela-preds .quiniela-cell-badges-wrap {
   position: relative;
-  min-height: 2.65rem;
+  min-height: 2.45rem;
   box-sizing: border-box;
   width: 100%;
 }
@@ -5196,8 +6424,16 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 2.35rem;
+  min-height: 2.1rem;
   box-sizing: border-box;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead .quiniela-cell-badges-wrap {
+  min-height: 3.15rem;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead .quiniela-cell-badges-main {
+  min-height: 2.85rem;
 }
 
 .quiniela-cell-badges-wrap--ganador {
@@ -5212,8 +6448,11 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   display: block;
   text-align: center;
   line-height: 1.25;
-  font-size: 0.82rem;
+  font-size: 0.95rem;
   max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .quiniela-ganador-draw {
@@ -5232,21 +6471,54 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   transform: none;
 }
 
-.quiniela-preds th.quiniela-actions-col {
-  width: 6.75rem;
-  white-space: nowrap;
+.quiniela-preds .quiniela-cell-badges-wrap > .quiniela-ganador-badges-stack {
+  position: absolute;
+  top: -0.22rem;
+  right: 0.06rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.08rem;
+}
+
+.quiniela-cell-badges-wrap--ganador .quiniela-cell-badges-main {
+  padding-left: 2.1rem;
+  padding-right: 2.1rem;
+}
+
+.quiniela-preds .quiniela-ganador-badges-stack .group-preds-pt-badge {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  inset: auto;
+  transform: none;
+}
+
+.quiniela-preds th.quiniela-last-col,
+.quiniela-preds td.quiniela-last-col {
+  width: 14.5%;
+  min-width: 6.5rem;
+  box-sizing: border-box;
+}
+
+.quiniela-preds--preplay th.quiniela-last-col--preplay,
+.quiniela-preds--preplay td.quiniela-last-col {
+  min-width: 7.75rem;
+  max-width: 9.5rem;
 }
 
 .quiniela-preds .quiniela-pred-actions {
   text-align: center;
   vertical-align: middle;
   white-space: normal;
-  padding: 0.35rem 0.25rem;
-  max-width: 6.75rem;
+  padding: 0.45rem 0.35rem;
+  box-sizing: border-box;
 }
 
 .quiniela-preds .quiniela-pred-actions .btn {
-  margin: 0.1rem 0;
+  margin: 0;
+  max-width: 100%;
 }
 
 .quiniela-preds .quiniela-pts,
@@ -5262,12 +6534,706 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 .quiniela-pred-row--top,
 .quiniela-pred-row--partial,
 .quiniela-pred-row--zero {
-  background: transparent !important;
   opacity: 1;
+}
+
+.quiniela-pred-row--exact,
+.quiniela-pred-row--top,
+.quiniela-pred-row--partial,
+.quiniela-pred-row--zero {
+  background: transparent !important;
 }
 
 .quiniela-pred-row--top.quiniela-pred-row--exact {
   background: transparent !important;
+}
+
+/*
+ * Fila líder (quiniela): banda en td:first-child::before (tr::before rompe columnas en WebKit).
+ * Ancho = contenedor del scroll (100cqi) + sangría; solo bordes horizontales con brillo.
+ */
+#panel-partidos .partidos-match-card .quiniela-table-wrap {
+  container-type: inline-size;
+  container-name: quiniela-preds-cq;
+}
+
+#panel-partidos .partidos-match-card:has(tbody tr.quiniela-pred-row--lead) .quiniela-table-wrap {
+  overflow-x: visible;
+  /* Evita la línea gris del propio .table-scroll a la altura de la fila que sangra */
+  border-left-color: transparent;
+  border-right-color: transparent;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:first-child {
+  position: relative;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:first-child .quiniela-participant-cell {
+  position: relative;
+  z-index: 1;
+}
+
+/* La banda ::before de la 1.ª celda tiene ancho 100cqi; estas columnas deben pintarse encima */
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:nth-child(2),
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:nth-child(3),
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:nth-child(4),
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td.quiniela-last-col {
+  position: relative;
+  z-index: 1;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:first-child::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--quiniela-lead-bleed-x));
+  top: -0.18rem;
+  bottom: -0.18rem;
+  /* Fallback: participante ~22% del ancho fijo de tabla */
+  width: calc(100% * 100 / 22 + 2 * var(--quiniela-lead-bleed-x));
+  z-index: 0;
+  pointer-events: none;
+  box-sizing: border-box;
+  border-radius: 0.45rem;
+  border-top: 3px solid var(--border);
+  border-bottom: 3px solid var(--border);
+  box-shadow:
+    0 -3px 14px rgba(0, 0, 0, 0.12),
+    0 3px 14px rgba(0, 0, 0, 0.1);
+}
+
+/*
+ * Fila líder: nombre y columna Ganador 1.5rem / 600; números marcador/Pts 1.72rem (sin pastillas +N).
+ * Pastillas +N en celdas 0.9rem; bajo el nombre (Perfecto + pastilla) pastilla 0.8rem.
+ */
+/* Sin borde izquierdo/derecho en los extremos: solo líneas verticales entre columnas (evita doble trazo al colapsar) */
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td {
+  background: transparent !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  box-shadow: none;
+  vertical-align: middle;
+  padding-top: 0.78rem;
+  padding-bottom: 0.78rem;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:first-child .quiniela-participant-line {
+  font-size: 1.5rem;
+}
+
+/* Ganador (fila líder): misma tipografía y lectura que .quiniela-participant-line (col. 1) */
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td.quiniela-ganador-col .quiniela-ganador-pick {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-draw {
+  font-weight: 600;
+}
+
+/*
+ * Celdas 2–3 (marcador): halo blanco + trazo fino en stepper para contraste sobre la banda.
+ * Col. Ganador usa la misma tipografía/sombra que el nombre (col. 1), ver bloque «Col. Ganador» más abajo.
+ */
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:nth-child(2) .score-stepper__input,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:nth-child(2) .score-stepper__btn,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:nth-child(3) .score-stepper__input,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:nth-child(3) .score-stepper__btn {
+  text-shadow:
+    0 0 10px rgba(255, 255, 255, 0.95),
+    0 0 20px rgba(255, 255, 255, 0.65),
+    0 1px 0 rgba(255, 255, 255, 0.85),
+    0 1px 2px rgba(0, 0, 0, 0.55),
+    0 2px 8px rgba(0, 0, 0, 0.4);
+  -webkit-text-stroke: 1px rgba(0, 0, 0, 0.2);
+  paint-order: stroke fill;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:nth-child(2) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:nth-child(3) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:nth-child(2) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:nth-child(3) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td.quiniela-last-col:not(.quiniela-pts--zero):not(.quiniela-pts--lead-text) .quiniela-cell-score-num:not(.quiniela-pts__bonus-num) {
+  color: #e8f4ff;
+  text-shadow:
+    0 0 14px rgba(125, 211, 252, 0.48),
+    0 0 28px rgba(56, 189, 248, 0.28),
+    0 1px 2px rgba(0, 0, 0, 0.58),
+    0 2px 6px rgba(0, 0, 0, 0.45),
+    0 0 2px rgba(0, 0, 0, 0.75);
+  -webkit-text-stroke: 0.9px rgba(8, 40, 88, 0.58);
+  paint-order: stroke fill;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td.quiniela-last-col .quiniela-pts__bonus-num {
+  filter:
+    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55))
+    drop-shadow(0 0 14px rgba(125, 211, 252, 0.38))
+    drop-shadow(0 2px 8px rgba(0, 0, 0, 0.42));
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:nth-child(2) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:nth-child(3) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:nth-child(2) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:nth-child(3) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td.quiniela-last-col:not(.quiniela-pts--zero):not(.quiniela-pts--lead-text) .quiniela-cell-score-num:not(.quiniela-pts__bonus-num) {
+  color: #faf5ff;
+  text-shadow:
+    0 0 14px rgba(216, 180, 254, 0.42),
+    0 0 28px rgba(167, 139, 250, 0.26),
+    0 1px 2px rgba(0, 0, 0, 0.58),
+    0 2px 6px rgba(0, 0, 0, 0.45),
+    0 0 2px rgba(0, 0, 0, 0.75);
+  -webkit-text-stroke: 0.9px rgba(48, 22, 78, 0.55);
+  paint-order: stroke fill;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td.quiniela-last-col .quiniela-pts__bonus-num {
+  filter:
+    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55))
+    drop-shadow(0 0 14px rgba(192, 160, 250, 0.36))
+    drop-shadow(0 2px 8px rgba(0, 0, 0, 0.42));
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:nth-child(2) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:nth-child(3) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:nth-child(2) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:nth-child(3) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td.quiniela-last-col:not(.quiniela-pts--zero):not(.quiniela-pts--lead-text) .quiniela-cell-score-num:not(.quiniela-pts__bonus-num) {
+  color: #fffbeb;
+  text-shadow:
+    0 0 12px rgba(253, 224, 71, 0.52),
+    0 0 26px rgba(250, 204, 21, 0.28),
+    0 1px 3px rgba(0, 0, 0, 0.62),
+    0 2px 8px rgba(0, 0, 0, 0.48),
+    0 0 2px rgba(0, 0, 0, 0.78);
+  -webkit-text-stroke: 0.9px rgba(72, 48, 10, 0.55);
+  paint-order: stroke fill;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td.quiniela-last-col .quiniela-pts__bonus-num {
+  filter:
+    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55))
+    drop-shadow(0 0 14px rgba(253, 224, 71, 0.4))
+    drop-shadow(0 2px 8px rgba(0, 0, 0, 0.45));
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:nth-child(2) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:nth-child(3) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:nth-child(2) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:nth-child(3) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td.quiniela-last-col:not(.quiniela-pts--zero):not(.quiniela-pts--lead-text) .quiniela-cell-score-num:not(.quiniela-pts__bonus-num) {
+  color: #f2f8ff;
+  text-shadow:
+    0 0 14px rgba(125, 211, 252, 0.46),
+    0 0 28px rgba(56, 189, 248, 0.24),
+    0 1px 2px rgba(0, 0, 0, 0.56),
+    0 2px 6px rgba(0, 0, 0, 0.42),
+    0 0 2px rgba(0, 0, 0, 0.72);
+  -webkit-text-stroke: 0.9px rgba(10, 42, 86, 0.56);
+  paint-order: stroke fill;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td.quiniela-last-col .quiniela-pts__bonus-num {
+  filter:
+    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55))
+    drop-shadow(0 0 14px rgba(125, 211, 252, 0.36))
+    drop-shadow(0 2px 8px rgba(0, 0, 0, 0.42));
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:nth-child(2) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:nth-child(3) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:nth-child(2) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:nth-child(3) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td.quiniela-last-col:not(.quiniela-pts--zero):not(.quiniela-pts--lead-text) .quiniela-cell-score-num:not(.quiniela-pts__bonus-num) {
+  color: #fff;
+  text-shadow:
+    0 0 3px rgba(0, 0, 0, 0.92),
+    0 0 18px rgba(0, 0, 0, 0.55),
+    0 1px 3px rgba(0, 0, 0, 0.68),
+    0 2px 8px rgba(0, 0, 0, 0.5);
+  -webkit-text-stroke: 1px rgba(0, 0, 0, 0.45);
+  paint-order: stroke fill;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td.quiniela-last-col .quiniela-pts__bonus-num {
+  filter:
+    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65))
+    drop-shadow(0 0 16px rgba(255, 255, 255, 0.35))
+    drop-shadow(0 2px 10px rgba(0, 0, 0, 0.5));
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td.quiniela-last-col.quiniela-pts--bonus-rainbow .quiniela-pts__bonus-num {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+
+/* Pts: 0 y máximo dorado — mismo contorno; el color sigue viniendo del td */
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td.quiniela-last-col.quiniela-pts--zero .quiniela-cell-score-num {
+  color: inherit;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.55),
+    0 0 10px rgba(0, 0, 0, 0.38),
+    0 2px 6px rgba(0, 0, 0, 0.42),
+    0 0 2px rgba(0, 0, 0, 0.65);
+  -webkit-text-stroke: 0.75px rgba(0, 0, 0, 0.28);
+  paint-order: stroke fill;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td.quiniela-last-col.quiniela-pts--lead-text .quiniela-cell-score-num {
+  color: inherit;
+  text-shadow:
+    0 0 8px rgba(251, 192, 36, 0.5),
+    0 0 16px rgba(0, 0, 0, 0.28),
+    0 1px 2px rgba(0, 0, 0, 0.58),
+    0 2px 6px rgba(0, 0, 0, 0.45),
+    0 0 2px rgba(0, 0, 0, 0.72);
+  -webkit-text-stroke: 0.75px rgba(55, 35, 6, 0.48);
+  paint-order: stroke fill;
+}
+
+/* +N solo en wraps de celda (marcador / ganador), no bajo el nombre */
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead .quiniela-cell-badges-wrap > .group-preds-pt-badge,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead .quiniela-ganador-badges-stack .group-preds-pt-badge {
+  font-size: 0.9rem;
+  padding: 0.18rem 0.34rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  line-height: 1;
+  min-height: calc(0.9rem + 0.36rem + 2px);
+  max-height: calc(0.9rem + 0.36rem + 2px);
+}
+
+/* +N en la fila «Perfecto … +N» bajo el participante */
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead .quiniela-perfect-inline .group-preds-pt-badge {
+  font-size: 0.8rem;
+  padding: 0.15rem 0.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  line-height: 1;
+  min-height: calc(0.8rem + 0.3rem + 2px);
+  max-height: calc(0.8rem + 0.3rem + 2px);
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead .quiniela-perfect-label,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead .group-preds-perfecto-label,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead .group-preds-bien-label,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead .group-preds-excelente-label {
+  font-size: 0.9rem;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:not(:first-child) {
+  border-left: 1px solid var(--border) !important;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td.quiniela-cell--hit {
+  background: rgba(255, 255, 255, 0.28) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
+}
+
+/*
+ * Fila líder tiers (bien / excelente / perfect / badge): relleno animado en canvas (chroma-js).
+ * ::before solo bordes + sombra; sin background-position (evita doble animación).
+ */
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:first-child::before {
+  z-index: 1;
+  border-top-color: #7dd3fc;
+  border-bottom-color: #7dd3fc;
+  background-color: transparent;
+  background-image: none;
+  box-shadow:
+    0 -6px 24px rgba(110, 203, 255, 0.45),
+    0 6px 24px rgba(110, 203, 255, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:first-child::before {
+  z-index: 1;
+  border-top-color: #d8b4fe;
+  border-bottom-color: #d8b4fe;
+  background-color: transparent;
+  background-image: none;
+  box-shadow:
+    0 -6px 24px rgba(199, 146, 234, 0.45),
+    0 6px 24px rgba(199, 146, 234, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:first-child::before {
+  z-index: 1;
+  border-top-color: #fde047;
+  border-bottom-color: #facc15;
+  background-color: transparent;
+  background-image: none;
+  box-shadow:
+    0 -6px 26px rgba(250, 204, 21, 0.42),
+    0 6px 26px rgba(217, 119, 6, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:first-child::before {
+  z-index: 1;
+  border-top-color: rgba(125, 211, 252, 0.98);
+  border-bottom-color: rgba(125, 211, 252, 0.98);
+  background-color: transparent;
+  background-image: none;
+  box-shadow:
+    inset 5px 0 0 0 rgba(56, 189, 248, 0.42),
+    0 -4px 20px rgba(56, 189, 248, 0.25),
+    0 4px 20px rgba(37, 99, 235, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Canvas tiers: misma geometría que bonus; opacidad vía quinielaPerfectBonusCanvas.js → --pm26-lead-tier-viz */
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:first-child .quiniela-lead-tier-gradient-canvas,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:first-child .quiniela-lead-tier-gradient-canvas,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:first-child .quiniela-lead-tier-gradient-canvas,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:first-child .quiniela-lead-tier-gradient-canvas {
+  position: absolute;
+  left: calc(-1 * var(--quiniela-lead-bleed-x));
+  top: -0.18rem;
+  bottom: auto;
+  display: block;
+  width: calc(100% * 100 / 22 + 2 * var(--quiniela-lead-bleed-x));
+  object-fit: fill;
+  aspect-ratio: auto;
+  z-index: 0;
+  pointer-events: none;
+  box-sizing: border-box;
+  border-radius: 0.45rem;
+  opacity: var(--pm26-lead-tier-viz, 0.5);
+}
+
+/* Fondo multicolor animado: canvas + chroma-js. La altura la fija JS (ResizeObserver): si width es muy grande y height:auto, el canvas usa ratio intrínseco y desborda la fila. */
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:first-child .quiniela-perfect-bonus-gradient-canvas {
+  position: absolute;
+  left: calc(-1 * var(--quiniela-lead-bleed-x));
+  top: -0.18rem;
+  bottom: auto;
+  display: block;
+  width: calc(100% * 100 / 22 + 2 * var(--quiniela-lead-bleed-x));
+  /* Sin height:auto: el elemento canvas aplicaría ratio ancho/alto del bitmap y crecería en vertical. */
+  object-fit: fill;
+  aspect-ratio: auto;
+  z-index: 0;
+  pointer-events: none;
+  box-sizing: border-box;
+  border-radius: 0.45rem;
+  /* Solo el relleno animado; bordes arcoíris del ::before van al 100 % */
+  opacity: var(--pm26-perfect-bonus-viz, 0.5);
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:first-child::before {
+  border-top: 3px solid #e11d48;
+  border-bottom: 3px solid #e11d48;
+  background-color: transparent;
+  background-image: none;
+  z-index: 1;
+  animation: quiniela-lead-tb-rainbow 2.4s ease-in-out infinite;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:first-child .quiniela-participant-line {
+  color: #e8f4ff;
+  text-shadow:
+    0 0 14px rgba(125, 211, 252, 0.4),
+    0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:first-child .td-muted {
+  color: rgba(226, 240, 255, 0.75);
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:first-child .quiniela-participant-line {
+  color: #faf5ff;
+  text-shadow:
+    0 0 14px rgba(216, 180, 254, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:first-child .td-muted {
+  color: rgba(243, 232, 255, 0.78);
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:first-child .quiniela-participant-line {
+  color: #fffbeb;
+  text-shadow:
+    0 0 12px rgba(253, 224, 71, 0.45),
+    0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:first-child .td-muted {
+  color: rgba(255, 247, 220, 0.82);
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:first-child .quiniela-participant-line {
+  color: #f2f8ff;
+  text-shadow:
+    0 0 14px rgba(125, 211, 252, 0.42),
+    0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:first-child .td-muted {
+  color: rgba(226, 240, 255, 0.72);
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:first-child .quiniela-participant-line {
+  color: #fff;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.9),
+    0 1px 3px rgba(0, 0, 0, 0.65);
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:first-child .td-muted {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+/*
+ * Col. Ganador (fila líder): copia exacta de color + text-shadow de .quiniela-participant-line / .td-muted en col. 1
+ * (mismo tier). Sin -webkit-text-stroke ni sombras de marcador.
+ */
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-name,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-draw,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline {
+  color: #e8f4ff;
+  text-shadow:
+    0 0 14px rgba(125, 211, 252, 0.4),
+    0 1px 2px rgba(0, 0, 0, 0.55);
+  -webkit-text-stroke: 0;
+  paint-order: normal;
+  filter: none;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td.quiniela-ganador-col .quiniela-ganador-pick > .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline.muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td.quiniela-ganador-col .quiniela-ganador-pick .ko-penalty-pick-actions .ko-penalty-pick-actions__l {
+  color: rgba(226, 240, 255, 0.75);
+  text-shadow: none;
+  -webkit-text-stroke: 0;
+  filter: none;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-name,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-draw,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline {
+  color: #faf5ff;
+  text-shadow:
+    0 0 14px rgba(216, 180, 254, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.55);
+  -webkit-text-stroke: 0;
+  paint-order: normal;
+  filter: none;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td.quiniela-ganador-col .quiniela-ganador-pick > .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline.muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td.quiniela-ganador-col .quiniela-ganador-pick .ko-penalty-pick-actions .ko-penalty-pick-actions__l {
+  color: rgba(243, 232, 255, 0.78);
+  text-shadow: none;
+  -webkit-text-stroke: 0;
+  filter: none;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-name,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-draw,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline {
+  color: #fffbeb;
+  text-shadow:
+    0 0 12px rgba(253, 224, 71, 0.45),
+    0 1px 3px rgba(0, 0, 0, 0.6);
+  -webkit-text-stroke: 0;
+  paint-order: normal;
+  filter: none;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td.quiniela-ganador-col .quiniela-ganador-pick > .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline.muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td.quiniela-ganador-col .quiniela-ganador-pick .ko-penalty-pick-actions .ko-penalty-pick-actions__l {
+  color: rgba(255, 247, 220, 0.82);
+  text-shadow: none;
+  -webkit-text-stroke: 0;
+  filter: none;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-name,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-draw,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline {
+  color: #f2f8ff;
+  text-shadow:
+    0 0 14px rgba(125, 211, 252, 0.42),
+    0 1px 2px rgba(0, 0, 0, 0.5);
+  -webkit-text-stroke: 0;
+  paint-order: normal;
+  filter: none;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td.quiniela-ganador-col .quiniela-ganador-pick > .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline.muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td.quiniela-ganador-col .quiniela-ganador-pick .ko-penalty-pick-actions .ko-penalty-pick-actions__l {
+  color: rgba(226, 240, 255, 0.72);
+  text-shadow: none;
+  -webkit-text-stroke: 0;
+  filter: none;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-name,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-draw,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline {
+  color: #fff;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.9),
+    0 1px 3px rgba(0, 0, 0, 0.65);
+  -webkit-text-stroke: 0;
+  paint-order: normal;
+  filter: none;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick > .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline.muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick .ko-penalty-pick-actions .ko-penalty-pick-actions__l {
+  color: rgba(255, 255, 255, 0.78);
+  text-shadow: none;
+  -webkit-text-stroke: 0;
+  filter: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:first-child .quiniela-lead-tier-gradient-canvas,
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:first-child .quiniela-lead-tier-gradient-canvas,
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:first-child .quiniela-lead-tier-gradient-canvas,
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:first-child .quiniela-lead-tier-gradient-canvas {
+    display: none;
+  }
+
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:first-child::before {
+    animation: none;
+    background-image: linear-gradient(
+      165deg,
+      rgba(52, 130, 196, 0.94) 0%,
+      rgba(28, 96, 168, 0.92) 42%,
+      rgba(16, 70, 138, 0.96) 100%
+    );
+    background-size: 220% 220%;
+    background-position: 50% 50%;
+  }
+
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:first-child::before {
+    animation: none;
+    background-image: linear-gradient(
+      165deg,
+      rgba(155, 105, 200, 0.94) 0%,
+      rgba(115, 72, 160, 0.92) 45%,
+      rgba(78, 48, 118, 0.96) 100%
+    );
+    background-size: 220% 220%;
+    background-position: 50% 50%;
+  }
+
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:first-child::before {
+    animation: none;
+    background-image: linear-gradient(
+      165deg,
+      rgba(212, 168, 48, 0.96) 0%,
+      rgba(165, 118, 32, 0.93) 42%,
+      rgba(115, 82, 22, 0.97) 100%
+    );
+    background-size: 220% 220%;
+    background-position: 50% 50%;
+  }
+
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:first-child::before {
+    animation: none;
+    background-image: linear-gradient(
+      180deg,
+      rgba(30, 90, 165, 0.94) 0%,
+      rgba(18, 58, 118, 0.9) 100%
+    );
+    background-size: 100% 180%;
+    background-position: 50% 50%;
+  }
+
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:first-child .quiniela-perfect-bonus-gradient-canvas {
+    display: none;
+  }
+
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:first-child::before {
+    animation: none;
+    border-top-color: color-mix(in srgb, #16a34a 70%, #2563eb);
+    border-bottom-color: color-mix(in srgb, #16a34a 70%, #2563eb);
+    background-color: #6d28d9;
+    background-image: linear-gradient(
+      120deg,
+      #ff5252 0%,
+      #ff9800 16.666%,
+      #ffeb3b 33.333%,
+      #66bb6a 50%,
+      #42a5f5 66.666%,
+      #ab47bc 83.333%,
+      #ff5252 100%
+    );
+    background-size: 100% 100%;
+    background-position: 50% 50%;
+    box-shadow:
+      0 -4px 16px color-mix(in srgb, #22c55e 35%, transparent),
+      0 4px 16px color-mix(in srgb, #3b82f6 35%, transparent);
+  }
+}
+
+@supports (width: 1cqi) {
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:first-child::before {
+    width: calc(100cqi + 2 * var(--quiniela-lead-bleed-x));
+  }
+
+  #panel-partidos
+    .partidos-match-card
+    .quiniela-preds
+    tbody
+    tr.quiniela-pred-row--lead-perfect-bonus
+    td:first-child
+    .quiniela-perfect-bonus-gradient-canvas {
+    width: calc(100cqi + 2 * var(--quiniela-lead-bleed-x));
+  }
+
+  #panel-partidos
+    .partidos-match-card
+    .quiniela-preds
+    tbody
+    tr.quiniela-pred-row--lead-bien
+    td:first-child
+    .quiniela-lead-tier-gradient-canvas,
+  #panel-partidos
+    .partidos-match-card
+    .quiniela-preds
+    tbody
+    tr.quiniela-pred-row--lead-badge
+    td:first-child
+    .quiniela-lead-tier-gradient-canvas,
+  #panel-partidos
+    .partidos-match-card
+    .quiniela-preds
+    tbody
+    tr.quiniela-pred-row--lead-excelente
+    td:first-child
+    .quiniela-lead-tier-gradient-canvas,
+  #panel-partidos
+    .partidos-match-card
+    .quiniela-preds
+    tbody
+    tr.quiniela-pred-row--lead-perfect
+    td:first-child
+    .quiniela-lead-tier-gradient-canvas {
+    width: calc(100cqi + 2 * var(--quiniela-lead-bleed-x));
+  }
+}
+
+@media (max-width: 36rem) {
+  #panel-partidos .partidos-match-card:has(tbody tr.quiniela-pred-row--lead) .quiniela-table-wrap {
+    overflow-x: auto;
+  }
 }
 
 span.quiniela-legend {
@@ -5595,8 +7561,8 @@ span.quiniela-legend {
 
 /* Ayudas de puntos grupos/partidos: más ancho para menos cortes de línea */
 .overlay-card--points-help-wide {
-  width: min(100%, 42rem);
-  max-width: min(100vw - 2rem, 42rem);
+  width: min(100%, 50rem);
+  max-width: min(100vw - 2rem, 50rem);
 }
 
 /* Ayuda partidos: más alto para evitar scroll en vista típica */
@@ -5681,28 +7647,29 @@ span.quiniela-legend {
 }
 
 .generales-points-sec-title--rainbow-grupos {
-  background: linear-gradient(
+  background-image: linear-gradient(
     92deg,
-    #f0abfc,
-    #fda4af,
-    #fdba74,
-    #fde047,
-    #86efac,
-    #93c5fd,
-    #c4b5fd,
-    #f0abfc
+    hsl(calc(var(--pm26-rainbow-h) + 0deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 51.43deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 102.86deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 154.29deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 205.71deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 257.14deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 308.57deg), 84%, 72%),
+    hsl(calc(var(--pm26-rainbow-h) + 360deg), 84%, 72%)
   );
-  background-size: 200% 100%;
+  background-size: 100% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: quiniela-pts-bonus-rainbow 3s linear infinite;
+  -webkit-text-fill-color: transparent;
+  animation: pm26-rainbow-hue-cycle 3s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .generales-points-sec-title--rainbow-grupos {
     animation: none;
-    background-position: 35% 50%;
+    --pm26-rainbow-h: 48deg;
   }
 }
 
@@ -5832,6 +7799,11 @@ span.quiniela-legend {
   margin: 0.2rem 0;
 }
 
+.generales-points-lines li.rules-subline {
+  margin-left: 1rem;
+  list-style-type: circle;
+}
+
 .admin-settings-list-wrap {
   margin-bottom: 1.25rem;
 }
@@ -5870,6 +7842,38 @@ span.quiniela-legend {
 
 .admin-settings-protected {
   font-size: 0.82rem;
+}
+
+.admin-settings-name-trigger {
+  cursor: pointer;
+  text-decoration: underline dotted color-mix(in srgb, var(--accent) 55%, transparent);
+  text-underline-offset: 0.14em;
+}
+
+.admin-settings-name-trigger:hover {
+  color: var(--foreground);
+}
+
+.admin-settings-hue-tools {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.admin-settings-color-jewel {
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--jewel, #888);
+  border: 2px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--jewel, #888) 45%, transparent);
+}
+
+.admin-settings-hue-reset:disabled {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 .admin-settings-add-form {

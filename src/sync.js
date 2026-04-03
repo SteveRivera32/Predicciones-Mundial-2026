@@ -125,7 +125,7 @@ function disableAllRemote() {
 }
 
 /**
- * Intenta enlazar con `/api/state` y WebSocket. Si falla, la app sigue solo con localStorage.
+ * Intenta enlazar con `/api/state` y WebSocket. Si falla, la app sigue solo en memoria local de esta pestaña.
  * @returns {Promise<boolean>}
  */
 export async function initRemoteSync() {

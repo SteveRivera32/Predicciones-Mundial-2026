@@ -1,16 +1,16 @@
 /**
- * Resultados oficiales (reales) — localStorage y opcionalmente servidor compartido.
+ * Resultados oficiales (reales) — memoria y opcionalmente servidor compartido.
  * Editable solo en la UI si `canEditOfficialResults(session)`.
  */
 
 import { isRemoteSyncActive } from "./remote-sync-flags.js";
 import { pushOfficial } from "./sync-push.js";
 
-const STORAGE_KEY = "pm26-official-results";
-
 let officialRemoteMode = false;
 /** @type {ReturnType<typeof emptyOfficialResults> | null} */
 let officialRemoteCache = null;
+/** @type {ReturnType<typeof emptyOfficialResults>} */
+let officialLocalCache = emptyOfficialResults();
 
 /** Resultado real del podio y premios (solo admin, confirmado cuando se publica). */
 function emptyGeneralOfficial() {
@@ -51,6 +51,14 @@ export function normalizeOfficialResultsData(data) {
       if (sc?.home !== "" && sc?.away !== "") knockoutScoresConfirmed[id] = true;
     }
   }
+  let knockoutMatchState = { ...base.knockoutMatchState, ...(data.knockoutMatchState ?? {}) };
+  if (data.knockoutScores && data.knockoutMatchState == null) {
+    for (const [id, sc] of Object.entries(kos)) {
+      const hasScore = sc?.home !== "" && sc?.away !== "";
+      if (!hasScore) continue;
+      knockoutMatchState[id] = knockoutScoresConfirmed[id] === true ? "finished" : "started";
+    }
+  }
   return {
     ...base,
     ...data,
@@ -77,6 +85,7 @@ export function normalizeOfficialResultsData(data) {
     groupPredictionsBlockedForAll: Boolean(data.groupPredictionsBlockedForAll),
     knockoutScores: kos,
     knockoutScoresConfirmed,
+    knockoutMatchState,
   };
 }
 
@@ -112,6 +121,9 @@ export function emptyOfficialResults() {
     /** Solo tras confirmar por partido (admin); alimenta la columna «Resultado real» en Brackets. */
     /** @type {Record<string, true>} */
     knockoutScoresConfirmed: {},
+    /** Estado del partido en eliminatoria: ready | started | finished */
+    /** @type {Record<string, "ready" | "started" | "finished">} */
+    knockoutMatchState: {},
   };
 }
 
@@ -122,28 +134,18 @@ export function loadOfficialResults() {
   if (officialRemoteMode && officialRemoteCache) {
     return normalizeOfficialResultsData(officialRemoteCache);
   }
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return emptyOfficialResults();
-    return normalizeOfficialResultsData(JSON.parse(raw));
-  } catch {
-    return emptyOfficialResults();
-  }
+  return normalizeOfficialResultsData(officialLocalCache);
 }
 
 /** @param {unknown} data */
 export function hydrateOfficialFromRemote(data) {
   officialRemoteMode = true;
   officialRemoteCache = normalizeOfficialResultsData(data);
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(officialRemoteCache));
-  } catch {
-    /* ignore */
-  }
 }
 
 export function disableRemoteOfficial() {
   officialRemoteMode = false;
+  officialLocalCache = officialRemoteCache ? normalizeOfficialResultsData(officialRemoteCache) : emptyOfficialResults();
   officialRemoteCache = null;
 }
 
@@ -205,6 +207,10 @@ export function saveOfficialResults(patch) {
       patch.groupPredictionsBlockedForAll === undefined
         ? prev.groupPredictionsBlockedForAll
         : patch.groupPredictionsBlockedForAll,
+    knockoutMatchState:
+      patch.knockoutMatchState === undefined
+        ? prev.knockoutMatchState
+        : { ...prev.knockoutMatchState, ...patch.knockoutMatchState },
     knockoutScores:
       patch.knockoutScores === undefined
         ? prev.knockoutScores
@@ -214,20 +220,22 @@ export function saveOfficialResults(patch) {
         ? prev.knockoutScoresConfirmed
         : { ...prev.knockoutScoresConfirmed, ...patch.knockoutScoresConfirmed },
   };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   if (officialRemoteMode) {
     officialRemoteCache = next;
     if (isRemoteSyncActive()) {
       pushOfficial(next).catch((e) => console.error("[pm26 sync]", e));
     }
+  } else {
+    officialLocalCache = next;
   }
   return next;
 }
 
 /** Quita por completo los resultados oficiales de este navegador (quiniela, grupos, podio admin, bloqueos). */
 export function clearOfficialResultsStorage() {
-  localStorage.removeItem(STORAGE_KEY);
   if (officialRemoteMode) {
     officialRemoteCache = emptyOfficialResults();
+  } else {
+    officialLocalCache = emptyOfficialResults();
   }
 }

@@ -104,7 +104,7 @@ export const MATCH_SCORING = {
   /** Semifinales (2 partidos) */
   sf: { outcome: 3, goalsEach: 1, exact: 3, maxPerMatch: 9, matchCount: 2 },
   /** 3.er puesto + final (2 partidos) */
-  finalPlacement: { outcome: 3, goalsEach: 1, exact: 4, maxPerMatch: 10, matchCount: 2 },
+  finalPlacement: { outcome: 4, goalsEach: 1, exact: 3, maxPerMatch: 10, matchCount: 2 },
 };
 
 export const IMPROBABLE_BONUS = 1;
@@ -237,4 +237,4 @@ export function sumMatchPhaseMax() {
 }
 
 /** Máximo de puntos en partidos sin contar el bono «resultado improbable» */
-export const MAX_MATCH_SCORES_TOTAL = sumMatchPhaseMax(); // 288+96+56+32+18+20 = 510
+export const MAX_MATCH_SCORES_TOTAL = sumMatchPhaseMax(); // 510

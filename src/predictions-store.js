@@ -1,5 +1,5 @@
 /**
- * Almacenamiento de predicciones por participante (localStorage y opcionalmente servidor).
+ * Almacenamiento de predicciones por participante (memoria y opcionalmente servidor).
  */
 
 import { isRemoteSyncActive } from "./remote-sync-flags.js";
@@ -7,13 +7,11 @@ import { pushPredictions, deleteRemotePredictions } from "./sync-push.js";
 
 /** @typedef {ReturnType<typeof emptyPredictions>} Predictions */
 
-function storeKey(participantId) {
-  return `pm26-predictions:${participantId}`;
-}
-
 let useRemotePredictions = false;
 /** @type {Record<string, Predictions>} */
 let predictionsRemoteMap = {};
+/** @type {Record<string, Predictions>} */
+let predictionsLocalMap = {};
 
 export function emptyPredictions() {
   return {
@@ -73,13 +71,7 @@ export function loadPredictions(participantId) {
     const raw = predictionsRemoteMap[participantId];
     return normalizePredictionsData(raw);
   }
-  try {
-    const raw = localStorage.getItem(storeKey(participantId));
-    if (!raw) return emptyPredictions();
-    return normalizePredictionsData(JSON.parse(raw));
-  } catch {
-    return emptyPredictions();
-  }
+  return normalizePredictionsData(predictionsLocalMap[participantId]);
 }
 
 /** @param {Record<string, unknown>} [map] */
@@ -90,21 +82,11 @@ export function hydratePredictionsFromRemote(map) {
   for (const [id, raw] of Object.entries(src)) {
     predictionsRemoteMap[id] = normalizePredictionsData(raw);
   }
-  const prefix = "pm26-predictions:";
-  if (typeof localStorage !== "undefined") {
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith(prefix)) localStorage.removeItem(k);
-    }
-    for (const [id, pred] of Object.entries(predictionsRemoteMap)) {
-      localStorage.setItem(storeKey(id), JSON.stringify(pred));
-    }
-  }
 }
 
 export function disableRemotePredictions() {
   useRemotePredictions = false;
-  predictionsRemoteMap = {};
+  predictionsLocalMap = { ...predictionsRemoteMap };
 }
 
 /**
@@ -138,25 +120,27 @@ export function savePredictions(participantId, patch) {
           ? { ...(patch.groupScoresConfirmed ?? {}) }
           : { ...prevGsc, ...patch.groupScoresConfirmed },
   };
-  localStorage.setItem(storeKey(participantId), JSON.stringify(next));
   if (useRemotePredictions) {
     predictionsRemoteMap[participantId] = next;
     if (isRemoteSyncActive()) {
       pushPredictions(participantId, next).catch((e) => console.error("[pm26 sync]", e));
     }
+  } else {
+    predictionsLocalMap[participantId] = next;
   }
   return next;
 }
 
 /** Borra las predicciones guardadas de un participante. */
 export function deletePredictionsStorage(participantId) {
-  localStorage.removeItem(storeKey(participantId));
   if (useRemotePredictions) {
     delete predictionsRemoteMap[participantId];
     if (isRemoteSyncActive()) {
       deleteRemotePredictions(participantId).catch((e) => console.error("[pm26 sync]", e));
     }
+    return;
   }
+  delete predictionsLocalMap[participantId];
 }
 
 /**
@@ -164,14 +148,9 @@ export function deletePredictionsStorage(participantId) {
  * No borra sesión ni resultados oficiales.
  */
 export function clearAllParticipantsPredictions() {
-  const prefix = "pm26-predictions:";
-  if (typeof localStorage !== "undefined") {
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith(prefix)) localStorage.removeItem(k);
-    }
-  }
   if (useRemotePredictions) {
     predictionsRemoteMap = {};
+  } else {
+    predictionsLocalMap = {};
   }
 }

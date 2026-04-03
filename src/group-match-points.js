@@ -1,8 +1,5 @@
 import { MATCH_SCORING, IMPROBABLE_BONUS } from "./scoring-rules.js";
 
-/** +1 por acertar el ganador en penales cuando hubo empate (eliminatoria, fases configuradas en la app). */
-export const PENALTY_WINNER_BONUS = 1;
-
 /** @typedef {typeof MATCH_SCORING.group} MatchScoringSlice */
 
 function parseScore(v) {
@@ -62,7 +59,7 @@ export function getImprobableOutcomeSign(votes) {
  * @param {"h"|"d"|"a"|null|undefined} improbableOutcomeSign
  * @param {MatchScoringSlice} [scoring]
  * @param {boolean} [knockoutPenaltyPhase] si true y el marcador es empate en ambos, puede sumarse bono por penales
- * @returns {{ total: number, outcomePts: number, homeGoalsPts: number, awayGoalsPts: number, exactPts: number, improbablePts: number, penaltyPts: number } | null}
+ * @returns {{ total: number, outcomePts: number, homeGoalsPts: number, awayGoalsPts: number, exactPts: number, improbablePts: number, penaltyPts: number, exactTier: "bien"|"excelente"|"perfecto"|null } | null}
  */
 function computeGroupMatchPointsParts(
   official,
@@ -83,7 +80,41 @@ function computeGroupMatchPointsParts(
   const outcomePts = outcomeOfficial === outcomePred ? outcome : 0;
   const homeGoalsPts = ph === oh ? goalsEach : 0;
   const awayGoalsPts = pa === oa ? goalsEach : 0;
-  const exactPts = ph === oh && pa === oa ? exact : 0;
+  const exactHit = ph === oh && pa === oa;
+  let exactPts = 0;
+  /** @type {"bien"|"excelente"|"perfecto"|null} */
+  let exactTier = null;
+  if (exactHit) {
+    if (knockoutPenaltyPhase && outcomeOfficial === "d") {
+      const ow = official.penaltyWinner;
+      const pw = pred.penaltyWinner;
+      const penaltiesHit = (ow === "home" || ow === "away") && pw === ow;
+      exactPts = penaltiesHit ? exact + 1 : exact;
+      exactTier = penaltiesHit ? "perfecto" : "excelente";
+    } else if (knockoutPenaltyPhase) {
+      exactPts = exact;
+      exactTier = "perfecto";
+    } else {
+      exactPts = exact;
+      exactTier = "perfecto";
+    }
+  } else {
+    /**
+     * Sin marcador exacto: BIEN / EXCELENTE alineados con reglas y quinielaComboBadgeNoPointsTier (app.js).
+     * — Resultado acertado + goles de un solo equipo → EXCELENTE; solo resultado → BIEN; solo un equipo → BIEN.
+     */
+    const out = outcomePts > 0;
+    const h = homeGoalsPts > 0;
+    const a = awayGoalsPts > 0;
+    const oneGoal = (h && !a) || (!h && a);
+    if (out && oneGoal) {
+      exactTier = "excelente";
+    } else if (out && !h && !a) {
+      exactTier = "bien";
+    } else if (!out && oneGoal) {
+      exactTier = "bien";
+    }
+  }
   const raw = outcomePts + homeGoalsPts + awayGoalsPts + exactPts;
   let improbablePts = 0;
   if (
@@ -94,15 +125,18 @@ function computeGroupMatchPointsParts(
     improbablePts = IMPROBABLE_BONUS;
   }
   let penaltyPts = 0;
-  if (knockoutPenaltyPhase && outcomeOfficial === "d" && outcomePred === "d") {
+  if (knockoutPenaltyPhase && outcomeOfficial === "d" && outcomePred === "d" && !exactHit) {
     const ow = official.penaltyWinner;
     const pw = pred.penaltyWinner;
     if ((ow === "home" || ow === "away") && pw === ow) {
-      penaltyPts = PENALTY_WINNER_BONUS;
+      penaltyPts = 1;
     }
   }
+  if (exactTier == null && penaltyPts > 0 && knockoutPenaltyPhase) {
+    exactTier = "bien";
+  }
   const total = Math.min(raw, maxPerMatch) + improbablePts + penaltyPts;
-  return { total, outcomePts, homeGoalsPts, awayGoalsPts, exactPts, improbablePts, penaltyPts };
+  return { total, outcomePts, homeGoalsPts, awayGoalsPts, exactPts, improbablePts, penaltyPts, exactTier };
 }
 
 /**
