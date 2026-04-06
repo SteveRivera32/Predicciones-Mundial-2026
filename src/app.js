@@ -71,6 +71,7 @@ import {
 } from "./match-calendar.js";
 import { syncQuinielaPerfectBonusCanvases } from "./quinielaPerfectBonusCanvas.js";
 import { syncGroupPtsBadgeCanvases, initGroupPtsBadgeCanvasObserver } from "./groupPtsBadgeCanvas.js";
+import { animate, stagger } from "animejs";
 
 const TAB_KEY = "pm26-active-tab";
 const BRACKET_FOCUS_KEY = "pm26-bracket-focus";
@@ -90,6 +91,7 @@ const TEAM_ORDER_LEFT_SOURCE_KEY = "pm26-team-order-left-source";
 const TEAM_ORDER_RIGHT_SOURCE_KEY = "pm26-team-order-right-source";
 /** Último participante con sesión: si cambia, se reinician tablas comparadas (oficial | tú). */
 const COMPARE_TABLES_BOUND_PARTICIPANT_KEY = "pm26-compare-tables-bound-participant";
+const STATS_COLOR_HINT_DISMISSED_KEY = "pm26-stats-color-hint-dismissed-v3";
 const FASE_GRUPOS_FILTER_KEY = "pm26-fase-grupos-gid";
 const FLOATING_RANK_POS_KEY = "pm26-floating-rank-pos";
 const FLOATING_RANK_ENABLED_KEY = "pm26-floating-rank-enabled";
@@ -140,6 +142,22 @@ function navigateToSiguientesPartidosTab() {
   }
   tabsController?.setTab("partidos");
   document.dispatchEvent(new CustomEvent("pm26-nav-drawer-close"));
+}
+
+function isStatsColorHintDismissed() {
+  try {
+    return localStorage.getItem(STATS_COLOR_HINT_DISMISSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function dismissStatsColorHint() {
+  try {
+    localStorage.setItem(STATS_COLOR_HINT_DISMISSED_KEY, "1");
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Nombres de equipo conocidos en fase de grupos (para banderas en la llave). */
@@ -2917,9 +2935,78 @@ function renderBrackets(participantId, _predictions) {
   wrap.appendChild(scroll);
 }
 
+/**
+ * Por partido con marcador oficial contable: veces sin predicción confirmada,
+ * veces empatando el mayor puntaje entre quienes mandaron predicción, y veces siendo el único con ese máximo.
+ * @returns {Record<string, { topTie: number, soleTop: number, noPred: number }>}
+ */
+function computePerParticipantMatchColumnStats() {
+  const offScores = getOfficialGroupScoresForLiveQuinielaPoints();
+  const officialStore = loadOfficialResults();
+  const participants = getParticipantsForDisplay();
+  /** @type {Record<string, { topTie: number, soleTop: number, noPred: number }>} */
+  const byId = {};
+  for (const p of participants) {
+    byId[p.id] = { topTie: 0, soleTop: 0, noPred: 0 };
+  }
+
+  /**
+   * @param {{ id: string, groupId?: string | null, roundId?: string | null }} m
+   * @param {{ home: unknown, away: unknown }} off
+   * @param {boolean} isKo
+   */
+  function processMatch(m, off, isKo) {
+    const koPenPh = isKo ? knockoutRoundRequiresPenaltyPickOnDraw(m.roundId) : false;
+    /** @type {{ id: string, pts: number }[]} */
+    const scored = [];
+    for (const p of participants) {
+      const pStore = loadPredictions(p.id);
+      const confirmed = isKo
+        ? pStore.knockoutScoresConfirmed?.[m.id] === true
+        : pStore.groupScoresConfirmed?.[m.id] === true;
+      if (!confirmed) {
+        byId[p.id].noPred += 1;
+        continue;
+      }
+      const pred = isKo
+        ? pStore.knockoutScores?.[m.id] ?? { home: "", away: "" }
+        : pStore.groupScores[m.id] ?? { home: "", away: "" };
+      const improb = isKo ? getImprobableOutcomeSignForKoMatch(m.id, off) : getImprobableOutcomeSignForMatch(m.id, off);
+      const matchScoring = getMatchScoringForQuiniela(m);
+      const pts = computeGroupMatchPoints(off, pred, improb, matchScoring, koPenPh);
+      if (pts === null) continue;
+      scored.push({ id: p.id, pts });
+    }
+    if (scored.length === 0) return;
+    const maxPts = Math.max(...scored.map((s) => s.pts));
+    const atMax = scored.filter((s) => s.pts === maxPts);
+    for (const s of atMax) {
+      byId[s.id].topTie += 1;
+    }
+    if (atMax.length === 1) {
+      byId[atMax[0].id].soleTop += 1;
+    }
+  }
+
+  for (const m of GROUP_MATCHES) {
+    const off = offScores[m.id];
+    if (!off) continue;
+    processMatch(m, off, false);
+  }
+  for (const m of getKnockoutMatchesFlat()) {
+    if (officialStore.knockoutScoresConfirmed?.[m.id] !== true) continue;
+    const off = officialStore.knockoutScores[m.id];
+    if (!off || off.home === "" || off.away === "") continue;
+    processMatch(m, off, true);
+  }
+
+  return byId;
+}
+
 function computeLiveParticipantRows(currentParticipantId) {
   const offScores = getOfficialGroupScoresForLiveQuinielaPoints();
   const officialStore = loadOfficialResults();
+  const matchColStats = computePerParticipantMatchColumnStats();
   const liveOfficial = getLiveOfficialGroupSnapshot();
   const officialGen = officialStore.generalOfficial ?? {};
   const hasGeneralOfficial =
@@ -3075,6 +3162,7 @@ function computeLiveParticipantRows(currentParticipantId) {
     const totalBien = matchBienCount + groupOrderBienCount + generalBienCount;
     const totalExcelente = matchExcelenteCount + groupOrderExcelenteCount + generalExcelenteCount;
     const avgPtsPerMatch = countedMatches > 0 ? matchPointsTotal / countedMatches : 0;
+    const mc = matchColStats[p.id] ?? { topTie: 0, soleTop: 0, noPred: 0 };
     return {
       p,
       pts: total,
@@ -3085,6 +3173,9 @@ function computeLiveParticipantRows(currentParticipantId) {
       matchBonusCount,
       countedMatches,
       avgPtsPerMatch,
+      matchTopTieCount: mc.topTie,
+      matchSoleTopCount: mc.soleTop,
+      matchNoPredCount: mc.noPred,
       totalBonus,
       totalPerfect,
       totalBien,
@@ -3567,6 +3658,7 @@ function bindParticipantAccentPopover() {
   colorInput.addEventListener("change", () => {
     if (!activeParticipantId) return;
     setParticipantColor(activeParticipantId, colorInput.value);
+    dismissStatsColorHint();
     refreshAll(loadSession());
     if (!adminOverlay.hidden) renderAdminSettingsList();
     const anchor =
@@ -3585,6 +3677,7 @@ function bindParticipantAccentPopover() {
     colorInput.value = hex;
     applyStatsMatrixAccentPreview(activeParticipantId, hex);
     setParticipantColor(activeParticipantId, hex);
+    dismissStatsColorHint();
     refreshAll(loadSession());
     if (!adminOverlay.hidden) renderAdminSettingsList();
     const anchor =
@@ -3597,6 +3690,7 @@ function bindParticipantAccentPopover() {
     const id = activeParticipantId ?? loadSession()?.participantId;
     if (!id) return;
     setParticipantColor(id, null);
+    dismissStatsColorHint();
     refreshAll(loadSession());
     if (!adminOverlay.hidden) renderAdminSettingsList();
     const p = getParticipantById(id);
@@ -3630,6 +3724,7 @@ function renderStats(session) {
     if (b.totalPerfect !== a.totalPerfect) return b.totalPerfect - a.totalPerfect;
     return a.p.name.localeCompare(b.p.name);
   });
+  const showStatsColorHint = !isStatsColorHintDismissed();
 
   const top3 = byPoints.slice(0, 3);
   const medals = ["🥇", "🥈", "🥉"];
@@ -3641,10 +3736,15 @@ function renderStats(session) {
       const you = r.self ? ' <span class="stats-podium-you">(tú)</span>' : "";
       const hue = getParticipantDisplayHue(r.p);
       return `<div class="stats-podium-slot stats-podium-slot--p${pos}">
-        <article class="stats-podium-card stats-podium-card--p${pos}" style="--podium-accent-h: ${hue};">
-          <div class="stats-podium-medal">${medals[idx]}</div>
-          <h3 class="stats-podium-name">${escapeHtml(r.p.name)}${you}</h3>
-          <p class="stats-podium-points">${r.pts} pts</p>
+        <article class="stats-podium-card stats-podium-card--p${pos}" style="--podium-accent-h: ${hue}; --podium-order: ${pos};">
+          <div class="stats-podium-medal-wrap">
+            <span class="stats-podium-medal">${medals[idx]}</span>
+            <span class="stats-podium-rank-badge">#${pos}</span>
+          </div>
+          <div class="stats-podium-nameplate" data-podium-nameplate>
+            <h3 class="stats-podium-name">${escapeHtml(r.p.name)}${you}</h3>
+            <p class="stats-podium-points">${r.pts} pts</p>
+          </div>
         </article>
         <div class="stats-podium-pillar stats-podium-pillar--p${pos}">
           <span class="stats-podium-place">${pos}</span>
@@ -3652,6 +3752,7 @@ function renderStats(session) {
       </div>`;
     })
     .join("")}</div>`;
+  animateStatsPodium(podium);
 
   const acSorted = [...rows].sort((a, b) => {
     if (b.pts !== a.pts) return b.pts - a.pts;
@@ -3668,7 +3769,23 @@ function renderStats(session) {
     return;
   }
 
+  const selfIdx = acSorted.findIndex((r) => r.self);
+  const hintRow =
+    showStatsColorHint && selfIdx >= 0
+      ? `<tr class="stats-color-hint-row" aria-hidden="true">` +
+        `<th class="stats-color-hint-cell stats-color-hint-cell--empty"></th>` +
+        acSorted
+          .map((_, idx) =>
+            idx === selfIdx
+              ? '<th class="stats-color-hint-cell stats-color-hint-cell--active"><span class="stats-color-hint-badge" role="status" aria-live="polite">CAMBIA TU COLOR</span></th>'
+              : '<th class="stats-color-hint-cell stats-color-hint-cell--empty"></th>',
+          )
+          .join("") +
+        `</tr>`
+      : "";
+
   const headRow =
+    hintRow +
     `<tr>` +
     `<th scope="col" class="stats-matrix-corner">Métrica</th>` +
     acSorted
@@ -3687,36 +3804,38 @@ function renderStats(session) {
 
   const metricRows = [
     {
-      label: "Cantidad de veces con 0 puntos",
-      title: "Partidos en los que la predicción no sumó puntos (0 pts).",
+      label: "Cant. de veces con 0 puntos",
+      title: "Partidos con marcador oficial ya contable en los que tu predicción confirmada sumó 0 puntos.",
       higherIsBetter: false,
       value: (r) => r.zeroPointMatches,
       format: (n) => String(n),
     },
     {
-      label: "Partidos con marcador exacto",
-      title: "Aciertos con el resultado final exacto (goles de cada equipo).",
+      label: "Cant. de veces con puntaje más alto",
+      title:
+        "Partidos en los que tu puntaje empató el máximo entre todos los participantes que enviaron predicción confirmada para ese partido.",
       higherIsBetter: true,
-      value: (r) => r.exact,
+      value: (r) => r.matchTopTieCount,
       format: (n) => String(n),
     },
     {
-      label: "Partidos con resultado (1X2) acertado",
-      title: "Aciertos en el signo del partido (victoria local, empate o visitante).",
+      label: "Cant. de veces con puntaje más alto siendo el único",
+      title: "Partidos en los que fuiste el único con el puntaje más alto entre quienes mandaron predicción confirmada.",
       higherIsBetter: true,
-      value: (r) => r.outcome,
+      value: (r) => r.matchSoleTopCount,
       format: (n) => String(n),
     },
     {
-      label: "Bonificaciones obtenidas en partidos",
-      title: "Veces que se obtuvo bonus por partido (pick minoritario acertado, etc.).",
-      higherIsBetter: true,
-      value: (r) => r.matchBonusCount,
+      label: "Cant. de veces sin mandar predicción",
+      title:
+        "Partidos con marcador oficial ya contable en los que no tenías predicción confirmada (no participaste en ese partido para la quiniela).",
+      higherIsBetter: false,
+      value: (r) => r.matchNoPredCount,
       format: (n) => String(n),
     },
     {
-      label: "Promedio de puntos por partido",
-      title: "Media de puntos por partido con predicción ya contabilizada.",
+      label: "Promedio de puntos",
+      title: "Media de puntos solo en partidos con tu predicción confirmada y puntaje ya contabilizado.",
       higherIsBetter: true,
       floatCompare: true,
       value: (r) => r.avgPtsPerMatch,
@@ -3761,6 +3880,32 @@ function renderStats(session) {
     .join("");
 }
 
+function animateStatsPodium(root) {
+  if (!root) return;
+  const slots = root.querySelectorAll(".stats-podium-slot");
+  const nameplates = root.querySelectorAll("[data-podium-nameplate]");
+  if (!slots.length) return;
+
+  animate(slots, {
+    y: [24, 0],
+    opacity: [0, 1],
+    scale: [0.96, 1],
+    duration: 700,
+    delay: stagger(90, { start: 60 }),
+    ease: "out(4)",
+  });
+
+  animate(nameplates, {
+    boxShadow: [
+      "0 0 0 rgba(0,0,0,0)",
+      "0 14px 26px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -10px 16px rgba(0,0,0,0.24)",
+    ],
+    duration: 850,
+    delay: stagger(110, { start: 220 }),
+    ease: "out(3)",
+  });
+}
+
 function escapeHtml(s) {
   return String(s)
     .replaceAll("&", "&amp;")
@@ -3800,6 +3945,41 @@ function countPendingProximosForUser(participantId, nextHighlightIds) {
     }
   }
   return n;
+}
+
+/**
+ * Mínimo de días (calendario local) hasta el kickoff entre partidos de la jornada próxima
+ * que el usuario aún no tiene confirmados.
+ * @param {string} participantId
+ * @param {Set<string>} nextHighlightIds
+ * @returns {number | null}
+ */
+function minDaysUntilKickoffForPendingProximos(participantId, nextHighlightIds) {
+  if (nextHighlightIds.size === 0) return null;
+  const pStore = loadPredictions(participantId);
+  const byId = new Map(allMatchesForPartidosCalendar().map((m) => [m.id, m]));
+  let minD = Infinity;
+  for (const id of nextHighlightIds) {
+    const m = byId.get(id);
+    if (!m?.kickoff) continue;
+    if (m.groupId != null) {
+      if (pStore.groupScoresConfirmed?.[id] === true) continue;
+    } else if (m.roundId != null) {
+      if (pStore.knockoutScoresConfirmed?.[id] === true) continue;
+    } else continue;
+    const d = daysUntilKickoffLocal(m.kickoff);
+    if (d !== null && d < minD) minD = d;
+  }
+  return Number.isFinite(minD) ? minD : null;
+}
+
+/** Texto entre paréntesis: cierre de predicciones según días hasta el primer kickoff pendiente. */
+function bannerCloseDaysParen(minDays, pendingCount) {
+  if (minDays === null) return null;
+  const verb = pendingCount === 1 ? "cierra" : "cierran";
+  if (minDays <= 0) return `(${verb} hoy)`;
+  if (minDays === 1) return `(${verb} en 1 día)`;
+  return `(${verb} en ${minDays} días)`;
 }
 
 function partidosSiguientesVistaActiva() {
@@ -3842,18 +4022,30 @@ function updateProximosNavShortcutButton(session) {
   const btnTitle =
     "Abre Partidos mostrando solo la jornada próxima (amarilla). Al cambiar Vista vuelves al listado completo.";
 
-  const setBannerLines = (mainText, variantClass, extraClass, showTapHint) => {
+  /**
+   * @param {string} mainText
+   * @param {string} variantClass
+   * @param {string} extraClass
+   * @param {boolean} showTapHint
+   * @param {{ parenText?: string | null, tapPlural?: boolean, tapText?: string | null }} [opts]
+   */
+  const setBannerLines = (mainText, variantClass, extraClass, showTapHint, opts = {}) => {
     if (!banner) return;
+    const parenText = opts.parenText ?? null;
+    const tapPlural = opts.tapPlural !== false;
+    const tapPhrase = opts.tapText ?? (tapPlural ? "Toca para ir a verlos" : "Toca para ir a verlo");
     const tap =
       showTapHint === true
-        ? `<span class="nav-drawer-pending-banner__hint">${escapeHtml("Toca para ir a verlos")}</span>`
+        ? `<span class="nav-drawer-pending-banner__hint">${escapeHtml(tapPhrase)}</span>`
         : "";
-    banner.innerHTML = `<span class="nav-drawer-pending-banner__main">${escapeHtml(mainText)}</span>${tap}`;
+    const mainInner =
+      parenText != null && parenText !== ""
+        ? `${escapeHtml(mainText)} <span class="nav-drawer-pending-banner__paren">${escapeHtml(parenText)}</span>`
+        : escapeHtml(mainText);
+    banner.innerHTML = `<span class="nav-drawer-pending-banner__main">${mainInner}</span>${tap}`;
     banner.className = ["nav-drawer-pending-banner", variantClass, extraClass].filter(Boolean).join(" ");
-    banner.setAttribute(
-      "aria-label",
-      showTapHint === true ? `${mainText}. Toca para ir a verlos` : mainText,
-    );
+    const ariaMain = parenText != null && parenText !== "" ? `${mainText} ${parenText}` : mainText;
+    banner.setAttribute("aria-label", showTapHint === true ? `${ariaMain}. ${tapPhrase}` : ariaMain);
   };
 
   const clearBanner = () => {
@@ -3885,22 +4077,26 @@ function updateProximosNavShortcutButton(session) {
   }
 
   const pending = countPendingProximosForUser(session.participantId, nextIds);
+  const minDays = minDaysUntilKickoffForPendingProximos(session.participantId, nextIds);
+  const closeParen = pending > 0 ? bannerCloseDaysParen(minDays, pending) : null;
 
   if (banner) {
     banner.hidden = false;
     banner.disabled = false;
     banner.title = btnTitle;
     if (pending <= 0) {
-      setBannerLines("Todo al día en la jornada próxima", "nav-drawer-pending-banner--ok", "", false);
+      setBannerLines("Las predicciones de la última fecha al día", "nav-drawer-pending-banner--ok", "", true, {
+        tapText: "Toca para ir a verlas",
+      });
     } else if (pending === 1) {
-      setBannerLines("Falta 1 partido por predecir", "nav-drawer-pending-banner--warn", "nav-drawer-pending-banner--pulse", true);
+      setBannerLines("Falta 1 partido por predecir", "nav-drawer-pending-banner--warn", "nav-drawer-pending-banner--pulse", true, {
+        parenText: closeParen,
+        tapPlural: false,
+      });
     } else {
-      setBannerLines(
-        `Faltan ${pending} partidos por predecir`,
-        "nav-drawer-pending-banner--warn",
-        "nav-drawer-pending-banner--pulse",
-        true,
-      );
+      setBannerLines(`Faltan ${pending} partidos por predecir`, "nav-drawer-pending-banner--warn", "nav-drawer-pending-banner--pulse", true, {
+        parenText: closeParen,
+      });
     }
   }
 }

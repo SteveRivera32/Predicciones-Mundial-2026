@@ -19,8 +19,10 @@ export const TEAM_ISO = {
   Sudafrica: "za",
   "Corea del Sur": "kr",
   Canada: "ca",
+  Chequia: "cz",
   Catar: "qa",
   Suiza: "ch",
+  "Bosnia y Herzegovina": "ba",
   Brasil: "br",
   Marruecos: "ma",
   Haiti: "ht",
@@ -28,12 +30,14 @@ export const TEAM_ISO = {
   "Estados Unidos": "us",
   Paraguay: "py",
   Australia: "au",
+  Turquia: "tr",
   Alemania: "de",
   Curazao: "cw",
   "Costa de Marfil": "ci",
   Ecuador: "ec",
   "Paises Bajos": "nl",
   Japon: "jp",
+  Suecia: "se",
   Tunez: "tn",
   Belgica: "be",
   Egipto: "eg",
@@ -45,12 +49,14 @@ export const TEAM_ISO = {
   Uruguay: "uy",
   Francia: "fr",
   Senegal: "sn",
+  Irak: "iq",
   Noruega: "no",
   Argentina: "ar",
   Argelia: "dz",
   Austria: "at",
   Jordania: "jo",
   Portugal: "pt",
+  "RD Congo": "cd",
   Uzbekistan: "uz",
   Colombia: "co",
   Inglaterra: "gb-eng",
@@ -93,27 +99,27 @@ export const GROUPS = GROUP_IDS.map((id) => ({
   id,
   teams:
     id === "A"
-      ? ["Mexico", "Sudafrica", "Corea del Sur", tbd(id)]
+      ? ["Mexico", "Sudafrica", "Corea del Sur", "Chequia"]
       : id === "B"
-        ? ["Canada", tbd(id), "Catar", "Suiza"]
+        ? ["Canada", "Bosnia y Herzegovina", "Catar", "Suiza"]
         : id === "C"
           ? ["Brasil", "Marruecos", "Haiti", "Escocia"]
           : id === "D"
-            ? ["Estados Unidos", "Paraguay", "Australia", tbd(id)]
+            ? ["Estados Unidos", "Paraguay", "Australia", "Turquia"]
             : id === "E"
               ? ["Alemania", "Curazao", "Costa de Marfil", "Ecuador"]
               : id === "F"
-                ? ["Paises Bajos", "Japon", tbd(id), "Tunez"]
+                ? ["Paises Bajos", "Japon", "Suecia", "Tunez"]
                 : id === "G"
                   ? ["Belgica", "Egipto", "Iran", "Nueva Zelanda"]
                   : id === "H"
                     ? ["Espana", "Cabo Verde", "Arabia Saudita", "Uruguay"]
                     : id === "I"
-                      ? ["Francia", "Senegal", tbd(id), "Noruega"]
+                      ? ["Francia", "Senegal", "Irak", "Noruega"]
                       : id === "J"
                         ? ["Argentina", "Argelia", "Austria", "Jordania"]
                         : id === "K"
-                          ? ["Portugal", tbd(id), "Uzbekistan", "Colombia"]
+                          ? ["Portugal", "RD Congo", "Uzbekistan", "Colombia"]
                           : ["Inglaterra", "Croacia", "Ghana", "Panama"],
 }));
 
