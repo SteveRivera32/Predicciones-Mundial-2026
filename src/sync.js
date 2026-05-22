@@ -1,7 +1,15 @@
 import { setRemoteSyncActive, isRemoteSyncActive } from "./remote-sync-flags.js";
-import { hydrateParticipantsFromRemote, disableRemoteParticipants } from "./participants.js";
+import {
+  getParticipants,
+  hydrateParticipantsFromRemote,
+  disableRemoteParticipants,
+} from "./participants.js";
 import { hydrateOfficialFromRemote, disableRemoteOfficial } from "./official-results-store.js";
-import { hydratePredictionsFromRemote, disableRemotePredictions } from "./predictions-store.js";
+import {
+  hydratePredictionsFromRemote,
+  disableRemotePredictions,
+  prunePredictionsToParticipantIds,
+} from "./predictions-store.js";
 
 /** @type {WebSocket | null} */
 let socket = null;
@@ -22,6 +30,7 @@ export function applyRemoteState(body) {
   hydrateParticipantsFromRemote(body.participants);
   hydrateOfficialFromRemote(body.official);
   hydratePredictionsFromRemote(body.predictions);
+  prunePredictionsToParticipantIds(getParticipants().map((p) => p.id));
   window.dispatchEvent(new CustomEvent("pm26-remote-sync"));
 }
 

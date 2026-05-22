@@ -1,24 +1,25 @@
 /**
- * Lista inicial de participantes (se copia a localStorage la primera vez).
- * El admin puede añadir o quitar participantes desde Ajustes; esta lista es solo semilla.
+ * Lista canónica de participantes: quien esté aquí compite en rankings y tablas.
+ * Al sincronizar con el servidor se quitan ids que ya no figuren en este array.
+ * El admin puede añadir jugadores desde Ajustes (también deben existir aquí para persistir).
  * Si `pin` es un string, debe introducirse una vez por navegador para confirmar identidad.
  * Si es `null`, no se pide PIN.
  */
 
 import { isRemoteSyncActive } from "./remote-sync-flags.js";
+import { prunePredictionsToParticipantIds } from "./predictions-store.js";
 import { pushParticipants } from "./sync-push.js";
 import { clearPinVerifiedForParticipant } from "./session.js";
 
 export const BUILTIN_PARTICIPANTS = [
   { id: "tivo", name: "Tivo", pin: "xd12" },
-  { id: "admin", name: "ADMIN", pin: null },
+  { id: "admin", name: "ADMIN", pin: "503965" },
   { id: "rick", name: "Rick", pin: "null" },
   { id: "ozeb", name: "Ozeb", pin: null },
   { id: "elcalvo", name: "ElCalvo", pin: null },
   { id: "akinian", name: "Akinian", pin: null },
   { id: "ale", name: "Ale", pin: null },
   { id: "jonny", name: "Jonny", pin: null },
-  { id: "eljumo", name: "ElJumo", pin: "a15" },
 ];
 
 /**
@@ -160,6 +161,7 @@ function seedFromBuiltin() {
 }
 
 const builtinById = new Map(BUILTIN_PARTICIPANTS.map((p) => [p.id, p]));
+const builtinParticipantIds = new Set(BUILTIN_PARTICIPANTS.map((p) => p.id));
 
 /**
  * Participantes incluidos en BUILTIN_PARTICIPANTS: si en código el PIN no es null/vacío,
@@ -184,19 +186,25 @@ function pinPairsJson(participants) {
 }
 
 /**
- * Asegura que todos los participantes builtin existan en la lista persistida.
- * Conserva los existentes y añade al final los que falten.
+ * Lista de jugadores alineada con `BUILTIN_PARTICIPANTS`:
+ * quita ids que ya no están en código y añade los nuevos al final.
  * @param {Participant[]} list
  * @returns {Participant[]}
  */
-function ensureBuiltinParticipants(list) {
-  const out = list.map((p) => ({ ...p }));
+export function reconcileParticipantsWithBuiltin(list) {
+  const out = (Array.isArray(list) ? list : [])
+    .filter((p) => p && builtinParticipantIds.has(p.id))
+    .map((p) => ({ ...p }));
   const ids = new Set(out.map((p) => p.id));
   for (const b of BUILTIN_PARTICIPANTS) {
     if (ids.has(b.id)) continue;
     out.push({ ...b });
   }
   return out;
+}
+
+function participantIdsSignature(list) {
+  return JSON.stringify(list.map((p) => p.id).sort());
 }
 
 /**
@@ -207,9 +215,15 @@ function ensureBuiltinParticipants(list) {
  * @returns {Participant[]}
  */
 function mergeAndPersistBuiltinPins(current, opts) {
-  const withBuiltin = ensureBuiltinParticipants(current);
+  const withBuiltin = reconcileParticipantsWithBuiltin(current);
   const merged = applyBuiltinPinDefaults(withBuiltin);
-  if (pinPairsJson(current) === pinPairsJson(merged)) return merged;
+  const rosterChanged = participantIdsSignature(current) !== participantIdsSignature(merged);
+  const pinsChanged = pinPairsJson(current) !== pinPairsJson(merged);
+  if (!rosterChanged && !pinsChanged) return merged;
+
+  if (rosterChanged) {
+    prunePredictionsToParticipantIds(merged.map((p) => p.id));
+  }
 
   for (const p of current) {
     const m = merged.find((x) => x.id === p.id);
@@ -224,7 +238,7 @@ function mergeAndPersistBuiltinPins(current, opts) {
   } else {
     localParticipantsList = merged;
   }
-  if (opts.remoteWrite && isRemoteSyncActive()) {
+  if (opts.remoteWrite && isRemoteSyncActive() && (rosterChanged || pinsChanged)) {
     pushParticipants(merged).catch((e) => console.error("[pm26 sync]", e));
   }
   return merged;
@@ -271,6 +285,8 @@ export function hydrateParticipantsFromRemote(list) {
       remoteParticipantsList = seedFromBuiltin();
     }
   }
+  const idsBeforeReconcile = participantIdsSignature(remoteParticipantsList);
+  remoteParticipantsList = reconcileParticipantsWithBuiltin(remoteParticipantsList);
   const beforePins = remoteParticipantsList.map((p) => ({ id: p.id, pin: p.pin ?? null }));
   remoteParticipantsList = applyBuiltinPinDefaults(remoteParticipantsList);
   for (const b of beforePins) {
@@ -278,6 +294,13 @@ export function hydrateParticipantsFromRemote(list) {
     const before = b.pin ?? null;
     const after = now?.pin ?? null;
     if (before !== after) clearPinVerifiedForParticipant(b.id);
+  }
+  if (
+    idsBeforeReconcile !== participantIdsSignature(remoteParticipantsList) &&
+    isRemoteSyncActive()
+  ) {
+    prunePredictionsToParticipantIds(remoteParticipantsList.map((p) => p.id));
+    pushParticipants(remoteParticipantsList).catch((e) => console.error("[pm26 sync]", e));
   }
 }
 
@@ -293,32 +316,26 @@ export function disableRemoteParticipants() {
  * @param {Participant[]} list
  */
 export function setParticipantsList(list) {
+  const parsed = Array.isArray(list) ? list.map(normalizeParticipant).filter((p) => p.id) : [];
+  const seen = new Set();
+  let next = parsed.filter((p) => {
+    if (seen.has(p.id)) return false;
+    seen.add(p.id);
+    return true;
+  });
+  next = reconcileParticipantsWithBuiltin(next);
+  if (next.length === 0) {
+    next = seedFromBuiltin();
+  }
+  prunePredictionsToParticipantIds(next.map((p) => p.id));
   if (remoteParticipantsMode) {
-    const parsed = Array.isArray(list) ? list.map(normalizeParticipant).filter((p) => p.id) : [];
-    const seen = new Set();
-    remoteParticipantsList = parsed.filter((p) => {
-      if (seen.has(p.id)) return false;
-      seen.add(p.id);
-      return true;
-    });
-    if (remoteParticipantsList.length === 0) {
-      remoteParticipantsList = seedFromBuiltin();
-    }
+    remoteParticipantsList = next;
     if (isRemoteSyncActive()) {
       pushParticipants(remoteParticipantsList).catch((e) => console.error("[pm26 sync]", e));
     }
     return;
   }
-  const parsed = Array.isArray(list) ? list.map(normalizeParticipant).filter((p) => p.id) : [];
-  const seen = new Set();
-  localParticipantsList = parsed.filter((p) => {
-    if (seen.has(p.id)) return false;
-    seen.add(p.id);
-    return true;
-  });
-  if (localParticipantsList.length === 0) {
-    localParticipantsList = seedFromBuiltin();
-  }
+  localParticipantsList = next;
 }
 
 export function getParticipantById(id) {

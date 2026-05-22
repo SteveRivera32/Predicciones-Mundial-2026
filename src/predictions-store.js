@@ -131,6 +131,22 @@ export function savePredictions(participantId, patch) {
   return next;
 }
 
+/**
+ * Elimina predicciones de participantes que ya no están en la quiniela.
+ * @param {Iterable<string>} validParticipantIds
+ */
+export function prunePredictionsToParticipantIds(validParticipantIds) {
+  const valid = new Set(validParticipantIds);
+  const map = useRemotePredictions ? predictionsRemoteMap : predictionsLocalMap;
+  for (const id of Object.keys(map)) {
+    if (valid.has(id)) continue;
+    delete map[id];
+    if (useRemotePredictions && isRemoteSyncActive()) {
+      deleteRemotePredictions(id).catch((e) => console.error("[pm26 sync]", e));
+    }
+  }
+}
+
 /** Borra las predicciones guardadas de un participante. */
 export function deletePredictionsStorage(participantId) {
   if (useRemotePredictions) {

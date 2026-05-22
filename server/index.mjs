@@ -10,7 +10,10 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 
-import { BUILTIN_PARTICIPANTS } from "../src/participants.js";
+import {
+  BUILTIN_PARTICIPANTS,
+  reconcileParticipantsWithBuiltin,
+} from "../src/participants.js";
 import { emptyOfficialResults } from "../src/official-results-store.js";
 import { emptyPredictions } from "../src/predictions-store.js";
 
@@ -35,6 +38,22 @@ let state = defaultState();
 /** @type {Set<import("ws").WebSocket>} */
 const wsClients = new Set();
 
+function pruneServerPredictionsToParticipants() {
+  const ids = new Set(
+    state.participants.map((p) => String((p && p.id) ?? "").trim()).filter(Boolean),
+  );
+  for (const key of Object.keys(state.predictions)) {
+    if (!ids.has(key)) delete state.predictions[key];
+  }
+}
+
+function applyParticipantsState(list) {
+  state.participants = reconcileParticipantsWithBuiltin(
+    Array.isArray(list) ? list : defaultState().participants,
+  );
+  pruneServerPredictionsToParticipants();
+}
+
 function getPublicState() {
   return {
     participants: state.participants,
@@ -57,6 +76,7 @@ async function loadStateFromDisk() {
       official: typeof parsed.official === "object" && parsed.official ? parsed.official : emptyOfficialResults(),
       predictions: typeof parsed.predictions === "object" && parsed.predictions ? parsed.predictions : {},
     };
+    applyParticipantsState(state.participants);
     return true;
   } catch {
     return false;
@@ -147,7 +167,7 @@ app.put("/api/participants", (req, res) => {
     res.status(400).json({ error: "se esperaba un array" });
     return;
   }
-  state.participants = req.body;
+  applyParticipantsState(req.body);
   persistAndBroadcast()
     .then(() => res.json({ ok: true }))
     .catch((e) => {
