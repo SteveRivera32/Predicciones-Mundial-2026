@@ -12,14 +12,14 @@ import { pushParticipants } from "./sync-push.js";
 import { clearPinVerifiedForParticipant } from "./session.js";
 
 export const BUILTIN_PARTICIPANTS = [
-  { id: "tivo", name: "Tivo", pin: "xd1278" },
-  { id: "admin", name: "ADMIN", pin: "503965" },
-  { id: "rick", name: "Rick", pin: "cr01392" },
-  { id: "ozeb", name: "Ozeb", pin: "pilin7891" },
+  { id: "tivo", name: "Tivo", pin: "xd127821" },
+  { id: "admin", name: "ADMIN", pin: "50396508" },
+  { id: "rick", name: "Rick", pin: "crot3923" },
+  { id: "ozeb", name: "Ozeb", pin: "pilin891" },
   { id: "elcalvo", name: "ElCalvo", pin: "sexoh741" },
-  { id: "akinian", name: "Akinian", pin: "pene99391" },
-  { id: "ale", name: "Ale", pin: "jijimmd237" },
-  { id: "jonny", name: "Jonny", pin: "culo200104" },
+  { id: "akinian", name: "Akinian", pin: "pene9935" },
+  { id: "ale", name: "Ale", pin: "jimmd237" },
+  { id: "jonny", name: "Jonny", pin: "culo2104" },
 ];
 
 /**
