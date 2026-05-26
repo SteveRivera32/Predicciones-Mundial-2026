@@ -271,6 +271,10 @@ export function getParticipantsForDisplay() {
 /** @param {unknown[]} list */
 export function hydrateParticipantsFromRemote(list) {
   remoteParticipantsMode = true;
+  const prevEffective = applyBuiltinPinDefaults(reconcileParticipantsWithBuiltin(remoteParticipantsList)).map((p) => ({
+    id: p.id,
+    pin: p.pin ?? null,
+  }));
   if (!Array.isArray(list) || list.length === 0) {
     remoteParticipantsList = seedFromBuiltin();
   } else {
@@ -287,13 +291,13 @@ export function hydrateParticipantsFromRemote(list) {
   }
   const idsBeforeReconcile = participantIdsSignature(remoteParticipantsList);
   remoteParticipantsList = reconcileParticipantsWithBuiltin(remoteParticipantsList);
-  const beforePins = remoteParticipantsList.map((p) => ({ id: p.id, pin: p.pin ?? null }));
   remoteParticipantsList = applyBuiltinPinDefaults(remoteParticipantsList);
-  for (const b of beforePins) {
-    const now = remoteParticipantsList.find((x) => x.id === b.id);
-    const before = b.pin ?? null;
-    const after = now?.pin ?? null;
-    if (before !== after) clearPinVerifiedForParticipant(b.id);
+  const nextEffective = remoteParticipantsList.map((p) => ({ id: p.id, pin: p.pin ?? null }));
+  const prevPinMap = new Map(prevEffective.map((p) => [p.id, p.pin]));
+  for (const now of nextEffective) {
+    if (prevPinMap.get(now.id) !== now.pin) {
+      clearPinVerifiedForParticipant(now.id);
+    }
   }
   if (
     idsBeforeReconcile !== participantIdsSignature(remoteParticipantsList) &&
