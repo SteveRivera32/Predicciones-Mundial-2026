@@ -1918,6 +1918,11 @@ function wireGeneralesAwardComboboxes(form, onCommit) {
     search.addEventListener("input", () => {
       renderAwardList(box, search.value);
     });
+    search.addEventListener("search", () => {
+      if (search.value.trim() === "") {
+        pickAward(box, "");
+      }
+    });
     search.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
         closeAllAwardLists(null);
@@ -1933,7 +1938,12 @@ function wireGeneralesAwardComboboxes(form, onCommit) {
           const hidden = /** @type {HTMLInputElement | null} */ (
             box.querySelector(`input[type="hidden"][name="${field}"]`)
           );
-          if (hidden && search.value.trim() !== hidden.value.trim()) {
+          if (!hidden) return;
+          const sv = search.value.trim();
+          const hv = hidden.value.trim();
+          if (sv === "") {
+            if (hv !== "") pickAward(box, "");
+          } else if (sv !== hv) {
             search.value = hidden.value;
           }
         }
