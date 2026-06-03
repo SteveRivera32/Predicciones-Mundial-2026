@@ -13,37 +13,61 @@ export function isPlaceholderTeam(teamName) {
   return String(teamName).startsWith(TBD_PREFIX);
 }
 
+/** Nombres históricos sin tilde → nombre canónico con acentos. */
+export const LEGACY_TEAM_NAMES = {
+  Mexico: "México",
+  Sudafrica: "Sudáfrica",
+  Canada: "Canadá",
+  Turquia: "Turquía",
+  Haiti: "Haití",
+  "Paises Bajos": "Países Bajos",
+  Japon: "Japón",
+  Tunez: "Túnez",
+  Belgica: "Bélgica",
+  Iran: "Irán",
+  Espana: "España",
+  Uzbekistan: "Uzbekistán",
+  Panama: "Panamá",
+};
+
+/** @param {unknown} name */
+export function normalizeTeamName(name) {
+  if (name == null || name === "") return name;
+  const s = String(name);
+  return LEGACY_TEAM_NAMES[s] ?? s;
+}
+
 /** ISO 3166-1 alpha-2 (o variantes gb-eng / gb-sct en flagcdn) para imágenes reales — evita emojis en Windows. */
 export const TEAM_ISO = {
-  Mexico: "mx",
-  Sudafrica: "za",
+  México: "mx",
+  Sudáfrica: "za",
   "Corea del Sur": "kr",
-  Canada: "ca",
+  Canadá: "ca",
   Chequia: "cz",
   Catar: "qa",
   Suiza: "ch",
   "Bosnia y Herzegovina": "ba",
   Brasil: "br",
   Marruecos: "ma",
-  Haiti: "ht",
+  Haití: "ht",
   Escocia: "gb-sct",
   "Estados Unidos": "us",
   Paraguay: "py",
   Australia: "au",
-  Turquia: "tr",
+  Turquía: "tr",
   Alemania: "de",
   Curazao: "cw",
   "Costa de Marfil": "ci",
   Ecuador: "ec",
-  "Paises Bajos": "nl",
-  Japon: "jp",
+  "Países Bajos": "nl",
+  Japón: "jp",
   Suecia: "se",
-  Tunez: "tn",
-  Belgica: "be",
+  Túnez: "tn",
+  Bélgica: "be",
   Egipto: "eg",
-  Iran: "ir",
+  Irán: "ir",
   "Nueva Zelanda": "nz",
-  Espana: "es",
+  España: "es",
   "Cabo Verde": "cv",
   "Arabia Saudita": "sa",
   Uruguay: "uy",
@@ -57,13 +81,55 @@ export const TEAM_ISO = {
   Jordania: "jo",
   Portugal: "pt",
   "RD Congo": "cd",
-  Uzbekistan: "uz",
+  Uzbekistán: "uz",
   Colombia: "co",
   Inglaterra: "gb-eng",
   Croacia: "hr",
   Ghana: "gh",
-  Panama: "pa",
+  Panamá: "pa",
 };
+
+/**
+ * Convierte nombres de equipo guardados (p. ej. sin tilde) al formato canónico.
+ * @param {Record<string, unknown>} data
+ */
+export function migrateStoredTeamNames(data) {
+  if (!data || typeof data !== "object") return data;
+  /** @type {Record<string, unknown>} */
+  const out = { ...data };
+
+  const migratePodium = (/** @type {Record<string, unknown> | undefined} */ obj) => {
+    if (!obj || typeof obj !== "object") return obj;
+    const next = { ...obj };
+    for (const k of ["first", "second", "third"]) {
+      if (typeof next[k] === "string") next[k] = normalizeTeamName(next[k]);
+    }
+    return next;
+  };
+
+  if (out.general) out.general = migratePodium(/** @type {Record<string, unknown>} */ (out.general));
+  if (out.generalOfficial) {
+    out.generalOfficial = migratePodium(/** @type {Record<string, unknown>} */ (out.generalOfficial));
+  }
+
+  const migrateOrderMap = (/** @type {Record<string, unknown> | undefined} */ map) => {
+    if (!map || typeof map !== "object") return map;
+    const next = { ...map };
+    for (const [gid, ord] of Object.entries(next)) {
+      if (Array.isArray(ord)) {
+        next[gid] = ord.map((t) => (typeof t === "string" ? normalizeTeamName(t) : t));
+      }
+    }
+    return next;
+  };
+
+  if (out.groupOrder) out.groupOrder = migrateOrderMap(/** @type {Record<string, unknown>} */ (out.groupOrder));
+  if (out.groupOfficialOrder) {
+    out.groupOfficialOrder = migrateOrderMap(/** @type {Record<string, unknown>} */ (out.groupOfficialOrder));
+  }
+
+  return out;
+}
 
 const FLAGCDN_W = 40;
 
@@ -72,7 +138,7 @@ const FLAGCDN_W = 40;
  * @returns {string}
  */
 export function getTeamFlagImgHtml(teamName) {
-  const raw = TEAM_ISO[teamName];
+  const raw = TEAM_ISO[teamName] ?? TEAM_ISO[normalizeTeamName(teamName)];
   if (raw && /^[a-z0-9-]+$/i.test(raw)) {
     const code = raw.toLowerCase();
     const src = `https://flagcdn.com/w${FLAGCDN_W}/${code}.png`;
@@ -99,28 +165,28 @@ export const GROUPS = GROUP_IDS.map((id) => ({
   id,
   teams:
     id === "A"
-      ? ["Mexico", "Sudafrica", "Corea del Sur", "Chequia"]
+      ? ["México", "Sudáfrica", "Corea del Sur", "Chequia"]
       : id === "B"
-        ? ["Canada", "Bosnia y Herzegovina", "Catar", "Suiza"]
+        ? ["Canadá", "Bosnia y Herzegovina", "Catar", "Suiza"]
         : id === "C"
-          ? ["Brasil", "Marruecos", "Haiti", "Escocia"]
+          ? ["Brasil", "Marruecos", "Haití", "Escocia"]
           : id === "D"
-            ? ["Estados Unidos", "Paraguay", "Australia", "Turquia"]
+            ? ["Estados Unidos", "Paraguay", "Australia", "Turquía"]
             : id === "E"
               ? ["Alemania", "Curazao", "Costa de Marfil", "Ecuador"]
               : id === "F"
-                ? ["Paises Bajos", "Japon", "Suecia", "Tunez"]
+                ? ["Países Bajos", "Japón", "Suecia", "Túnez"]
                 : id === "G"
-                  ? ["Belgica", "Egipto", "Iran", "Nueva Zelanda"]
+                  ? ["Bélgica", "Egipto", "Irán", "Nueva Zelanda"]
                   : id === "H"
-                    ? ["Espana", "Cabo Verde", "Arabia Saudita", "Uruguay"]
+                    ? ["España", "Cabo Verde", "Arabia Saudita", "Uruguay"]
                     : id === "I"
                       ? ["Francia", "Senegal", "Irak", "Noruega"]
                       : id === "J"
                         ? ["Argentina", "Argelia", "Austria", "Jordania"]
                         : id === "K"
-                          ? ["Portugal", "RD Congo", "Uzbekistan", "Colombia"]
-                          : ["Inglaterra", "Croacia", "Ghana", "Panama"],
+                          ? ["Portugal", "RD Congo", "Uzbekistán", "Colombia"]
+                          : ["Inglaterra", "Croacia", "Ghana", "Panamá"],
 }));
 
 /**
@@ -174,7 +240,7 @@ function koKick(id) {
 export const KNOCKOUT_ROUNDS = [
   {
     id: "r32",
-    title: "Dieciseisavos de final",
+    title: "Dieciséisavos de final",
     matches: R32_SLOTS.map((pair, i) => {
       const id = `ko-r32-${i + 1}`;
       return {

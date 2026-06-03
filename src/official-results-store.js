@@ -4,6 +4,7 @@
  */
 
 import { isRemoteSyncActive } from "./remote-sync-flags.js";
+import { migrateStoredTeamNames } from "./tournament.js";
 import { pushOfficial } from "./sync-push.js";
 
 let officialRemoteMode = false;
@@ -30,6 +31,7 @@ function emptyGeneralOfficial() {
  */
 export function normalizeOfficialResultsData(data) {
   if (!data || typeof data !== "object") return emptyOfficialResults();
+  data = /** @type {Record<string, unknown>} */ (migrateStoredTeamNames(data));
   const base = emptyOfficialResults();
   let groupScoresConfirmed = {
     ...base.groupScoresConfirmed,

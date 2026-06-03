@@ -2916,6 +2916,80 @@ span.td-muted {
   box-shadow: inset 0 1px 0 rgba(255, 220, 170, 0.2);
 }
 
+.award-combobox {
+  position: relative;
+  width: 100%;
+}
+
+.award-combobox__search {
+  width: 100%;
+}
+
+.award-combobox__list {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 0.3rem 0;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  max-height: min(50vh, 16rem);
+  overflow-y: auto;
+}
+
+.award-combobox__option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.award-combobox__option:hover,
+.award-combobox__option:focus {
+  background: var(--surface-2);
+  outline: none;
+}
+
+.award-combobox__option-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.award-combobox__option-country {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+}
+
+.award-combobox__empty {
+  padding: 0.55rem 0.75rem;
+  font-size: 0.85rem;
+  list-style: none;
+}
+
+.award-combobox__option--team .award-combobox__option-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.award-combobox__option--team .team-flag-img {
+  width: 22px;
+  height: 16px;
+}
+
+.award-combobox__option--team .team-label {
+  gap: 0.35rem;
+}
+
 .card-sub {
   margin: -0.35rem 0 0.85rem;
   font-size: 0.88rem;

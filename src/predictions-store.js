@@ -3,6 +3,7 @@
  */
 
 import { isRemoteSyncActive } from "./remote-sync-flags.js";
+import { migrateStoredTeamNames } from "./tournament.js";
 import { pushPredictions, deleteRemotePredictions } from "./sync-push.js";
 
 /** @typedef {ReturnType<typeof emptyPredictions>} Predictions */
@@ -45,7 +46,7 @@ export function emptyPredictions() {
  */
 export function normalizePredictionsData(data) {
   if (!data || typeof data !== "object") return emptyPredictions();
-  const d = data;
+  const d = /** @type {Record<string, unknown>} */ (migrateStoredTeamNames(data));
   const base = emptyPredictions();
   return {
     ...base,

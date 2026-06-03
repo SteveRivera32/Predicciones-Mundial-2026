@@ -47,7 +47,7 @@ import {
   MAX_PER_GROUP,
   MATCH_SCORING,
 } from "./scoring-rules.js";
-import { AWARD_NOMINEES } from "./award-nominees.js";
+import { getSquadEntriesByRole, SQUAD_ENTRIES } from "./award-nominees.js";
 import {
   GROUPS,
   GROUP_MATCHES,
@@ -60,6 +60,7 @@ import {
   BRACKET_SIDE_MATCH_INDICES,
   KNOCKOUT_PHASE_ROUND_INDEX,
   knockoutRoundRequiresPenaltyPickOnDraw,
+  normalizeTeamName,
 } from "./tournament.js";
 import { isLockedAtKickoff } from "./locks.js";
 import {
@@ -165,11 +166,9 @@ const BRACKET_KNOWN_TEAMS = new Set(GROUPS.flatMap((g) => g.teams));
 
 /** Equipo conocido y ya definido (no placeholder «Por determinar»). */
 function isQuinielaTeamSlotDecided(teamName) {
-  return BRACKET_KNOWN_TEAMS.has(teamName) && !isPlaceholderTeam(teamName);
+  const name = normalizeTeamName(teamName);
+  return BRACKET_KNOWN_TEAMS.has(name) && !isPlaceholderTeam(name);
 }
-
-/** Evita listeners duplicados al refrescar el formulario de generales (mismo elemento form del DOM). */
-let generalesUserAwardChangeHandler = null;
 
 /**
  * Reglas por partido en quiniela: por defecto fase de grupos.
@@ -1011,8 +1010,9 @@ function getKoRoundMatchIndex(matchId) {
 function bracketTeamLineHtml(label, opts = {}) {
   const { winner = false } = opts;
   const winCls = winner ? " is-winner" : "";
-  if (BRACKET_KNOWN_TEAMS.has(label)) {
-    return `<div class="bracket-team-line${winCls}">${teamLabelHtml(label)}</div>`;
+  const displayLabel = normalizeTeamName(label);
+  if (BRACKET_KNOWN_TEAMS.has(displayLabel)) {
+    return `<div class="bracket-team-line${winCls}">${teamLabelHtml(displayLabel)}</div>`;
   }
   return `<div class="bracket-team-line bracket-team-line--seed${winCls}"><span class="bracket-slot-txt">${escapeHtml(label || "—")}</span></div>`;
 }
@@ -1129,6 +1129,30 @@ function scrollAppMainToTop() {
   document.documentElement.scrollTop = 0;
   document.body.scrollTop = 0;
   document.getElementById("contenido-principal")?.scrollTo?.(0, 0);
+}
+
+/** @returns {string} */
+function getActiveTabId() {
+  const saved = localStorage.getItem(TAB_KEY);
+  if (saved && document.querySelector(`.tab[data-tab="${CSS.escape(saved)}"]`)) return saved;
+  return "grupos";
+}
+
+/** @returns {{ x: number, y: number }} */
+function captureWindowScrollAnchor() {
+  return { x: window.scrollX, y: window.scrollY };
+}
+
+/** @param {{ x: number, y: number } | null | undefined} anchor */
+function restoreWindowScrollAnchor(anchor) {
+  if (!anchor) return;
+  const apply = () => {
+    window.scrollTo(anchor.x, anchor.y);
+  };
+  requestAnimationFrame(() => {
+    apply();
+    requestAnimationFrame(apply);
+  });
 }
 
 /**
@@ -1621,18 +1645,25 @@ function generalesPodiumCellHtml(teamName, cellExact, qualWrong, hasOfficialData
 }
 
 /**
+ * @param {Record<string, string>} g
  * @param {boolean} disabled
  */
-function generalesPodiumFormFieldsHtml(teamOptions, disabled) {
-  const dis = disabled ? "disabled" : "";
-  const row = (name, label, medalClass, stepClass) => `
+function generalesPodiumFormFieldsHtml(g, disabled) {
+  const row = (name, label, medalClass, stepClass) => {
+    const meta = PODIUM_FIELD_META[name] ?? { placeholder: "Buscar selección…", label: name };
+    return `
     <label class="field generales-podium-slot ${medalClass} ${stepClass}">
       <span class="field-label">${label}</span>
-      <select class="input" name="${name}" ${dis}>
-        <option value="">— Elegir —</option>
-        ${teamOptions}
-      </select>
+      ${buildSearchPickerHtml({
+        fieldName: name,
+        role: "team",
+        currentValue: g[name] ?? "",
+        disabled,
+        label: meta.label,
+        placeholder: meta.placeholder,
+      })}
     </label>`;
+  };
   return `
     <div class="generales-podium-pyramid" role="group" aria-label="Podio: 1.º, 2.º y 3.º">
       <div class="generales-podium-tier generales-podium-tier--champion">
@@ -1647,17 +1678,16 @@ function generalesPodiumFormFieldsHtml(teamOptions, disabled) {
 }
 
 /**
- * @param {string} teamOptions
  * @param {Record<string, string>} g
  * @param {boolean} disabled
  */
-function generalesFullFormInnerHtml(teamOptions, g, disabled) {
+function generalesFullFormInnerHtml(g, disabled) {
   return `
     <div class="generales-form-layout">
       <section class="generales-block generales-block--podium" aria-label="Podio final">
         <h3 class="generales-side-title">Podio</h3>
         <div class="generales-podium-slots">
-          ${generalesPodiumFormFieldsHtml(teamOptions, disabled)}
+          ${generalesPodiumFormFieldsHtml(g, disabled)}
         </div>
       </section>
       <section class="generales-block generales-block--awards" aria-label="Premios individuales">
@@ -1669,50 +1699,277 @@ function generalesFullFormInnerHtml(teamOptions, g, disabled) {
     </div>`;
 }
 
-function buildAwardSelectOptionsHtml(currentValue) {
-  const cur = String(currentValue ?? "").trim();
-  const inList = new Set(AWARD_NOMINEES);
-  let orphan = "";
-  if (cur && !inList.has(cur)) {
-    orphan = `<option value="${escapeHtml(cur)}">${escapeHtml(cur)} · fuera de lista</option>`;
-  }
-  const opts = AWARD_NOMINEES.map(
-    (n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`,
-  ).join("");
-  return `<option value="">— Elegir —</option>${orphan}${opts}`;
+/** @type {Map<string, SquadEntry[]>} */
+const awardEntriesByRoleCache = new Map([
+  ["gk", getSquadEntriesByRole("gk")],
+  ["outfield", getSquadEntriesByRole("outfield")],
+]);
+const awardAllNames = new Set(SQUAD_ENTRIES.map((e) => e.name));
+/** @type {{ name: string, groupId: string }[]} */
+const PODIUM_TEAM_ENTRIES = GROUPS.flatMap((grp) =>
+  grp.teams.filter((t) => !isPlaceholderTeam(t)).map((name) => ({ name, groupId: grp.id })),
+).sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }));
+const podiumTeamNames = new Set(PODIUM_TEAM_ENTRIES.map((e) => e.name));
+let awardComboboxDocClickWired = false;
+
+const PODIUM_FIELD_META = {
+  first: { placeholder: "Buscar campeón…", label: "Campeón" },
+  second: { placeholder: "Buscar subcampeón…", label: "Subcampeón" },
+  third: { placeholder: "Buscar tercer lugar…", label: "Tercer lugar" },
+};
+
+const AWARD_FIELD_META = {
+  bestPlayer: { role: "outfield", placeholder: "Buscar jugador…", label: "Mejor jugador" },
+  bestGk: { role: "gk", placeholder: "Buscar portero…", label: "Mejor portero" },
+  topScorer: { role: "outfield", placeholder: "Buscar jugador…", label: "Goleador del torneo" },
+};
+
+const PODIUM_SLOT_NAMES = ["first", "second", "third"];
+
+function normalizeAwardSearchText(s) {
+  return String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "");
 }
 
 /**
- * Impide repetir el mismo país en 1.º / 2.º / 3.º (intercambia con el valor previo del slot editado).
- * @param {HTMLFormElement} form
- * @param {() => void} onCommit tras normalizar y guardar
+ * @param {{ fieldName: string, role: string, currentValue: string, disabled: boolean, label: string, placeholder: string }} opts
  */
-function wireGeneralesPodiumNoDuplicate(form, onCommit) {
-  const slotNames = ["first", "second", "third"];
-  for (const name of slotNames) {
-    const sel = form.querySelector(`select[name="${name}"]`);
-    if (!sel || sel.disabled) continue;
-    sel.addEventListener("focus", () => {
-      sel.dataset.prevPodiumPick = sel.value;
+function buildSearchPickerHtml(opts) {
+  const { fieldName, role, currentValue, disabled, label, placeholder } = opts;
+  const cur = String(currentValue ?? "").trim();
+  const dis = disabled ? "disabled" : "";
+  return `
+    <div class="award-combobox" data-award-field="${fieldName}" data-award-role="${role}">
+      <input type="hidden" name="${fieldName}" value="${escapeHtml(cur)}">
+      <input
+        type="search"
+        class="input award-combobox__search"
+        placeholder="${escapeHtml(placeholder)}"
+        value="${escapeHtml(cur)}"
+        autocomplete="off"
+        ${dis}
+        aria-label="${escapeHtml(label)}"
+        aria-autocomplete="list"
+        aria-expanded="false"
+      />
+      <ul class="award-combobox__list" role="listbox" hidden></ul>
+    </div>`;
+}
+
+/** @param {string} fieldName @param {string} currentValue @param {boolean} disabled */
+function buildAwardPickerHtml(fieldName, currentValue, disabled) {
+  const meta = AWARD_FIELD_META[fieldName] ?? { role: "outfield", placeholder: "Buscar…", label: fieldName };
+  return buildSearchPickerHtml({
+    fieldName,
+    role: meta.role,
+    currentValue,
+    disabled,
+    label: meta.label,
+    placeholder: meta.placeholder,
+  });
+}
+
+/**
+ * @param {HTMLFormElement} form
+ * @param {() => void} onCommit
+ */
+function wireGeneralesAwardComboboxes(form, onCommit) {
+  function closeAllAwardLists(except) {
+    form.querySelectorAll(".award-combobox").forEach((box) => {
+      if (except && box === except) return;
+      const list = box.querySelector(".award-combobox__list");
+      const search = box.querySelector(".award-combobox__search");
+      if (list) list.hidden = true;
+      if (search) search.setAttribute("aria-expanded", "false");
     });
-    sel.addEventListener("change", () => {
-      if (sel.disabled) return;
-      const prevSelf = sel.dataset.prevPodiumPick ?? "";
-      const newVal = sel.value;
-      const selects = slotNames.map((n) => form.querySelector(`select[name="${n}"]`));
-      const currentIdx = slotNames.indexOf(name);
-      if (newVal !== "") {
-        const dupIdx = selects.findIndex(
-          (s, i) => s && i !== currentIdx && s.value === newVal,
-        );
-        if (dupIdx >= 0 && selects[dupIdx]) {
-          selects[dupIdx].value = prevSelf;
-          selects[dupIdx].dataset.prevPodiumPick = selects[dupIdx].value;
+  }
+
+  function renderAwardList(box, query) {
+    const role = box.dataset.awardRole ?? "outfield";
+    const list = box.querySelector(".award-combobox__list");
+    const search = /** @type {HTMLInputElement | null} */ (box.querySelector(".award-combobox__search"));
+    const hidden = /** @type {HTMLInputElement | null} */ (box.querySelector(`input[type="hidden"][name="${box.dataset.awardField}"]`));
+    if (!list || !search || !hidden) return;
+
+    const q = normalizeAwardSearchText(query);
+    const isTeam = role === "team";
+    const playerEntries = awardEntriesByRoleCache.get(role) ?? [];
+    const teamEntries = PODIUM_TEAM_ENTRIES;
+    const poolSize = isTeam ? teamEntries.length : playerEntries.length;
+
+    if (!q) {
+      list.innerHTML = `<li class="award-combobox__empty muted" aria-hidden="true">Escribe para buscar entre ${poolSize} ${isTeam ? "selecciones" : "convocados"}</li>`;
+      list.hidden = false;
+      search.setAttribute("aria-expanded", "true");
+      return;
+    }
+
+    const cur = normalizeTeamName(hidden.value.trim());
+    let orphan = "";
+    if (isTeam) {
+      if (cur && !podiumTeamNames.has(cur)) {
+        orphan = `<li class="award-combobox__option award-combobox__option--orphan award-combobox__option--team" role="option" data-value="${escapeHtml(cur)}"><span class="award-combobox__option-name">${teamLabelHtml(cur)}</span><span class="muted">· fuera de lista</span></li>`;
+      }
+    } else if (cur && !awardAllNames.has(cur)) {
+      orphan = `<li class="award-combobox__option award-combobox__option--orphan" role="option" data-value="${escapeHtml(cur)}">${escapeHtml(cur)} <span class="muted">· fuera de lista</span></li>`;
+    }
+
+    let matches;
+    if (isTeam) {
+      matches = teamEntries.filter((e) => {
+        const hay = normalizeAwardSearchText(`${e.name} grupo ${e.groupId}`);
+        return hay.includes(q);
+      });
+    } else {
+      matches = playerEntries.filter((e) => {
+        const hay = normalizeAwardSearchText(`${e.name} ${e.country}`);
+        return hay.includes(q);
+      });
+    }
+
+    if (matches.length === 0 && !orphan) {
+      list.innerHTML = `<li class="award-combobox__empty muted" aria-hidden="true">Sin coincidencias</li>`;
+    } else if (isTeam) {
+      list.innerHTML =
+        orphan +
+        matches
+          .map(
+            (e) =>
+              `<li class="award-combobox__option award-combobox__option--team" role="option" data-value="${escapeHtml(e.name)}"><span class="award-combobox__option-name">${teamLabelHtml(e.name)}</span><span class="award-combobox__option-country muted">Grupo ${escapeHtml(e.groupId)}</span></li>`,
+          )
+          .join("");
+    } else {
+      list.innerHTML =
+        orphan +
+        matches
+          .map(
+            (e) =>
+              `<li class="award-combobox__option" role="option" data-value="${escapeHtml(e.name)}"><span class="award-combobox__option-name">${escapeHtml(e.name)}</span><span class="award-combobox__option-country muted">${escapeHtml(e.country)}</span></li>`,
+          )
+          .join("");
+    }
+
+    list.hidden = false;
+    search.setAttribute("aria-expanded", "true");
+  }
+
+  function setPickerSlotValue(field, value) {
+    const hidden = /** @type {HTMLInputElement | null} */ (
+      form.querySelector(`input[type="hidden"][name="${field}"]`)
+    );
+    const search = form.querySelector(`.award-combobox[data-award-field="${field}"] .award-combobox__search`);
+    if (hidden) hidden.value = value;
+    if (search instanceof HTMLInputElement) search.value = value;
+  }
+
+  function pickAward(box, value) {
+    const field = box.dataset.awardField ?? "";
+    const search = /** @type {HTMLInputElement | null} */ (box.querySelector(".award-combobox__search"));
+    const hidden = /** @type {HTMLInputElement | null} */ (box.querySelector(`input[type="hidden"][name="${field}"]`));
+    const list = box.querySelector(".award-combobox__list");
+    if (!search || !hidden) return;
+
+    if (PODIUM_SLOT_NAMES.includes(field)) {
+      const prevSelf = box.dataset.prevPodiumPick ?? hidden.value;
+      setPickerSlotValue(field, value);
+      if (value !== "") {
+        for (const otherName of PODIUM_SLOT_NAMES) {
+          if (otherName === field) continue;
+          const otherHidden = /** @type {HTMLInputElement | null} */ (
+            form.querySelector(`input[type="hidden"][name="${otherName}"]`)
+          );
+          if (otherHidden && otherHidden.value === value) {
+            setPickerSlotValue(otherName, prevSelf);
+            const otherBox = form.querySelector(`.award-combobox[data-award-field="${otherName}"]`);
+            if (otherBox) otherBox.dataset.prevPodiumPick = prevSelf;
+          }
         }
       }
-      sel.dataset.prevPodiumPick = newVal;
-      onCommit();
+      box.dataset.prevPodiumPick = value;
+    } else {
+      hidden.value = value;
+      search.value = value;
+    }
+
+    if (list) list.hidden = true;
+    search.setAttribute("aria-expanded", "false");
+    onCommit();
+  }
+
+  form.querySelectorAll(".award-combobox").forEach((box) => {
+    const search = /** @type {HTMLInputElement | null} */ (box.querySelector(".award-combobox__search"));
+    const list = box.querySelector(".award-combobox__list");
+    if (!search || !list || search.disabled) return;
+
+    search.addEventListener("focus", () => {
+      const field = box.dataset.awardField ?? "";
+      const hiddenEl = /** @type {HTMLInputElement | null} */ (
+        form.querySelector(`input[type="hidden"][name="${field}"]`)
+      );
+      if (PODIUM_SLOT_NAMES.includes(field)) {
+        box.dataset.prevPodiumPick = hiddenEl?.value ?? "";
+      }
+      closeAllAwardLists(box);
+      renderAwardList(box, search.value);
     });
+    search.addEventListener("input", () => {
+      renderAwardList(box, search.value);
+    });
+    search.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeAllAwardLists(null);
+        search.blur();
+      }
+    });
+    search.addEventListener("blur", () => {
+      window.setTimeout(() => {
+        if (!box.contains(document.activeElement)) {
+          list.hidden = true;
+          search.setAttribute("aria-expanded", "false");
+          const field = box.dataset.awardField ?? "";
+          const hidden = /** @type {HTMLInputElement | null} */ (
+            box.querySelector(`input[type="hidden"][name="${field}"]`)
+          );
+          if (hidden && search.value.trim() !== hidden.value.trim()) {
+            search.value = hidden.value;
+          }
+        }
+      }, 120);
+    });
+
+    list.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      const li = e.target.closest(".award-combobox__option");
+      if (!li) return;
+      pickAward(box, li.dataset.value ?? "");
+    });
+  });
+
+  if (!awardComboboxDocClickWired) {
+    awardComboboxDocClickWired = true;
+    document.addEventListener("click", (e) => {
+      if (e.target.closest(".award-combobox")) return;
+      document.querySelectorAll(".award-combobox__list").forEach((list) => {
+        list.hidden = true;
+      });
+      document.querySelectorAll(".award-combobox__search").forEach((search) => {
+        search.setAttribute("aria-expanded", "false");
+      });
+    });
+  }
+}
+
+/** Sincroniza inputs visibles con los hidden tras re-render. */
+function syncGeneralesPickerValues(form, general) {
+  for (const key of ["first", "second", "third", "bestPlayer", "bestGk", "topScorer"]) {
+    const hidden = /** @type {HTMLInputElement | null} */ (form.querySelector(`input[type="hidden"][name="${key}"]`));
+    const search = form.querySelector(`.award-combobox[data-award-field="${key}"] .award-combobox__search`);
+    const val = String(general?.[key] ?? "");
+    if (hidden) hidden.value = val;
+    if (search instanceof HTMLInputElement) search.value = val;
   }
 }
 
@@ -1739,25 +1996,18 @@ function isGeneralPayloadComplete(general) {
  * @param {boolean} disabled
  */
 function generalesPlayersFormFieldsHtml(g, disabled) {
-  const dis = disabled ? "disabled" : "";
   return `
     <label class="field generales-award-slot generales-award-slot--player">
       <span class="field-label">Mejor jugador</span>
-      <select class="input" name="bestPlayer" ${dis}>
-        ${buildAwardSelectOptionsHtml(g.bestPlayer)}
-      </select>
+      ${buildAwardPickerHtml("bestPlayer", g.bestPlayer, disabled)}
     </label>
     <label class="field generales-award-slot generales-award-slot--gk">
       <span class="field-label">Mejor portero</span>
-      <select class="input" name="bestGk" ${dis}>
-        ${buildAwardSelectOptionsHtml(g.bestGk)}
-      </select>
+      ${buildAwardPickerHtml("bestGk", g.bestGk, disabled)}
     </label>
     <label class="field generales-award-slot generales-award-slot--scorer">
       <span class="field-label">Goleador del torneo</span>
-      <select class="input" name="topScorer" ${dis}>
-        ${buildAwardSelectOptionsHtml(g.topScorer)}
-      </select>
+      ${buildAwardPickerHtml("topScorer", g.topScorer, disabled)}
     </label>`;
 }
 
@@ -1957,10 +2207,6 @@ function renderGeneralesOfficialAdmin(participantId) {
     return;
   }
 
-  const teams = [...new Set(GROUPS.flatMap((x) => x.teams))].filter((t) => !isPlaceholderTeam(t));
-  const teamOptions = teams
-    .map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`)
-    .join("");
   const officialStore = loadOfficialResults();
   const g = officialStore.generalOfficial ?? {};
   const confirmed = officialStore.generalOfficialConfirmed === true;
@@ -1998,7 +2244,7 @@ function renderGeneralesOfficialAdmin(participantId) {
       <p class="muted card-sub">Primero bloquea predicciones. Luego edita y confirma el resultado oficial.</p>
       ${lockSectionHtml}
       <form id="form-generales-official" class="generales-form-layout generales-form-layout--admin">
-        ${generalesFullFormInnerHtml(teamOptions, g, adminOfficialFormDisabled)}
+        ${generalesFullFormInnerHtml(g, adminOfficialFormDisabled)}
       </form>
     </article>`;
 
@@ -2009,6 +2255,7 @@ function renderGeneralesOfficialAdmin(participantId) {
     const el = form.querySelector(`[name="${key}"]`);
     if (el) el.value = String(g[key] ?? "");
   }
+  syncGeneralesPickerValues(form, g);
 
   function commitOfficialDraft() {
     saveOfficialResults({
@@ -2020,13 +2267,7 @@ function renderGeneralesOfficialAdmin(participantId) {
   }
 
   if (!adminOfficialFormDisabled) {
-    wireGeneralesPodiumNoDuplicate(form, commitOfficialDraft);
-    form.addEventListener("change", (e) => {
-      const t = e.target;
-      if (!(t instanceof HTMLSelectElement)) return;
-      if (["first", "second", "third"].includes(t.name)) return;
-      commitOfficialDraft();
-    });
+    wireGeneralesAwardComboboxes(form, commitOfficialDraft);
   }
 
   const lockStatusEl = $("#generales-admin-lock-status");
@@ -2226,10 +2467,6 @@ function renderGenerales(participantId, predictions, disabled) {
   const officialLocked = official.generalOfficialConfirmed === true;
   const isAdmin = canEditOfficialResults(participantId);
   const formDisabled = disabled || officialLocked || generalesPredictionsFormLocked() || userGeneralConfirmed;
-  const teams = [...new Set(GROUPS.flatMap((x) => x.teams))].filter((t) => !isPlaceholderTeam(t));
-  const teamOptions = teams
-    .map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`)
-    .join("");
 
   const lockBanner = officialLocked
     ? `<p class="generales-locked-banner muted" role="status">El resultado oficial está <strong>confirmado</strong>. No puedes cambiar tus predicciones hasta que un administrador desconfirme.</p>`
@@ -2254,18 +2491,15 @@ function renderGenerales(participantId, predictions, disabled) {
       </div>`
     : "";
   form.innerHTML = `${lockBanner}
-    ${generalesFullFormInnerHtml(teamOptions, g, formDisabled)}
+    ${generalesFullFormInnerHtml(g, formDisabled)}
     ${userConfirmActionsHtml}`;
 
   for (const key of ["first", "second", "third", "bestPlayer", "bestGk", "topScorer"]) {
     const el = form.querySelector(`[name="${key}"]`);
     if (el) el.value = g[key] ?? "";
   }
+  syncGeneralesPickerValues(form, g);
 
-  if (generalesUserAwardChangeHandler) {
-    form.removeEventListener("change", generalesUserAwardChangeHandler);
-    generalesUserAwardChangeHandler = null;
-  }
   if (!formDisabled) {
     function commitUserGenerales() {
       const payload = readGeneralFormPayload(form);
@@ -2278,14 +2512,7 @@ function renderGenerales(participantId, predictions, disabled) {
       renderGeneralesComparisonTable(participantId);
       renderStats(loadSession());
     }
-    wireGeneralesPodiumNoDuplicate(form, commitUserGenerales);
-    generalesUserAwardChangeHandler = (e) => {
-      const t = e.target;
-      if (!(t instanceof HTMLSelectElement)) return;
-      if (["first", "second", "third"].includes(t.name)) return;
-      commitUserGenerales();
-    };
-    form.addEventListener("change", generalesUserAwardChangeHandler);
+    wireGeneralesAwardComboboxes(form, commitUserGenerales);
 
     const confirmBtn = /** @type {HTMLButtonElement | null} */ (
       form.querySelector('[data-general-user-action="confirm"]')
@@ -4250,12 +4477,13 @@ function officialScoreOutcomeClass(homeVal, awayVal, side) {
 }
 
 function teamLabelHtml(teamName) {
-  const isTbd = isPlaceholderTeam(teamName);
+  const displayName = normalizeTeamName(teamName);
+  const isTbd = isPlaceholderTeam(displayName);
   const cls = `team-label${isTbd ? " is-tbd" : ""}`;
   return `
     <span class="${cls}">
-      ${getTeamFlagImgHtml(teamName)}
-      <span class="team-text">${escapeHtml(teamName)}</span>
+      ${getTeamFlagImgHtml(displayName)}
+      <span class="team-text">${escapeHtml(displayName)}</span>
     </span>
   `;
 }
@@ -7279,10 +7507,17 @@ function redrawTeamOrderRanking() {
 
 /**
  * @param {{ participantId: string } | null} session
- * @param {{ skipPartidosRender?: boolean }} [opts]
+ * @param {{ skipPartidosRender?: boolean, preserveScroll?: boolean, onlyActivePanel?: boolean }} [opts]
  */
 function refreshAll(session, opts = {}) {
-  const { skipPartidosRender = false } = opts;
+  const { skipPartidosRender = false, preserveScroll = false, onlyActivePanel = false } = opts;
+  const activeTab = getActiveTabId();
+  const showPanel = (panelId) => !onlyActivePanel || activeTab === panelId;
+  const partidosWrap = $("#quiniela-wrap");
+  const partidosHadFocusAnchor =
+    preserveScroll && activeTab === "partidos" && capturePartidosInteractionAnchor(partidosWrap);
+  const scrollAnchor = preserveScroll && !partidosHadFocusAnchor ? captureWindowScrollAnchor() : null;
+
   if (session) {
     const p = getParticipantById(session.participantId);
     if (p && p.pin != null && p.pin !== "" && !isPinVerified(p.id, p.pin)) {
@@ -7331,22 +7566,41 @@ function refreshAll(session, opts = {}) {
   }
   const predictions = loadPredictions(session.participantId);
   updatePredictionTabsProgress(session, predictions);
-  renderGenerales(session.participantId, predictions, false);
-  renderGrupos(session.participantId, predictions);
-  renderBrackets(session.participantId, predictions);
-  redrawTeamStats();
-  redrawTeamOrder();
-  redrawTeamOrderRanking();
-  redrawMatchRanking();
-  redrawMatchHistory();
-  renderFinalRanking(session);
-  if (!skipPartidosRender) {
+  if (showPanel("generales")) {
+    renderGenerales(session.participantId, predictions, false);
+  }
+  if (showPanel("grupos")) {
+    renderGrupos(session.participantId, predictions);
+  }
+  if (showPanel("brackets")) {
+    renderBrackets(session.participantId, predictions);
+  }
+  if (showPanel("team-stats")) {
+    redrawTeamStats();
+    rebuildTeamStatsSelectOptions();
+  }
+  if (showPanel("team-order")) {
+    redrawTeamOrder();
+    rebuildTeamOrderSelectOptions();
+  }
+  if (showPanel("team-order-ranking")) {
+    redrawTeamOrderRanking();
+  }
+  if (showPanel("match-ranking")) {
+    redrawMatchRanking();
+  }
+  if (showPanel("match-history")) {
+    redrawMatchHistory();
+  }
+  if (showPanel("final-ranking")) {
+    renderFinalRanking(session);
+  }
+  if (showPanel("partidos") && !skipPartidosRender) {
     renderQuiniela(session, loadOfficialResults());
   }
   updateProximosNavShortcutButton(session);
-  rebuildTeamStatsSelectOptions();
-  rebuildTeamOrderSelectOptions();
   syncGroupPtsBadgeCanvases(document.body);
+  if (scrollAnchor) restoreWindowScrollAnchor(scrollAnchor);
 }
 
 export function initApp() {
@@ -7361,6 +7615,16 @@ export function initApp() {
   ensureFaseGruposFilter();
   tabsController = initTabs((tabId) => {
     syncDrawerExpandableSubmenus(tabId);
+    const sess = loadSession();
+    if (tabId === "generales" && sess) {
+      renderGenerales(sess.participantId, loadPredictions(sess.participantId), false);
+    }
+    if (tabId === "grupos" && sess) {
+      renderGrupos(sess.participantId, loadPredictions(sess.participantId));
+    }
+    if (tabId === "brackets" && sess) {
+      renderBrackets(sess.participantId, loadPredictions(sess.participantId));
+    }
     if (tabId === "partidos") redrawQuiniela();
     if (tabId === "team-stats") redrawTeamStats();
     if (tabId === "team-order") redrawTeamOrder();
@@ -7378,7 +7642,7 @@ export function initApp() {
   function queueRefreshAfterExternalSync() {
     externalSyncRefreshChain = externalSyncRefreshChain
       .then(() => {
-        refreshAll(loadSession());
+        refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true });
       })
       .catch((err) => {
         console.error("[pm26] refresh tras sincronización externa", err);
