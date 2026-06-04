@@ -187,13 +187,16 @@ app.post("/api/reset-quiniela", (_req, res) => {
     });
 });
 
-/** Sirve la app construida si existe dist/ (despliegue en un solo puerto). */
+/** Sirve landing (/) y quiniela (/PrediccionesMundial/) si existe dist/. */
+const QUINIELA_DIST = path.join(DIST_DIR, "PrediccionesMundial");
 if (fs.existsSync(DIST_DIR)) {
   app.use(express.static(DIST_DIR));
   app.use((req, res, next) => {
     if (req.path.startsWith("/api")) return next();
     if (req.method !== "GET" && req.method !== "HEAD") return next();
-    res.sendFile(path.join(DIST_DIR, "index.html"));
+    if (!req.path.startsWith("/PrediccionesMundial")) return next();
+    if (!fs.existsSync(QUINIELA_DIST)) return next();
+    res.sendFile(path.join(QUINIELA_DIST, "index.html"));
   });
 }
 

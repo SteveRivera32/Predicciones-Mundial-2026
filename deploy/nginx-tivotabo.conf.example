@@ -1,15 +1,17 @@
 # Ejemplo para Ubuntu/Debian en la VM.
 # Copia a /etc/nginx/sites-available/tivotabo y enlaza en sites-enabled.
 #
-# Desarrollo (Vite 5173 + server 8787 en paralelo con npm run dev:all):
-#   proxy_pass → http://127.0.0.1:5173
+# Desarrollo (Vite 5173 + server 8787 con npm run dev:all):
+#   proxy_pass → http://127.0.0.1:5173  (Vite sirve / y /PrediccionesMundial/)
 #
-# Producción (recomendado para dominio público: npm run build && npm start):
+# Producción (npm run build && npm start en puerto 8787):
 #   proxy_pass → http://127.0.0.1:8787
 #
+# URLs:
+#   http://tivotabo.com/                      → landing (redes)
+#   http://tivotabo.com/PrediccionesMundial/ → quiniela
+#
 # Tras editar: sudo nginx -t && sudo systemctl reload nginx
-# DNS: registro A de tivotabo.com (y www si quieres) → 168.228.192.202
-# Firewall: abrir 80 (y 443 si usas HTTPS). No hace falta exponer 5173 al mundo.
 
 server {
     listen 80;

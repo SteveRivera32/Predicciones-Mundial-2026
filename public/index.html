@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>tivotabo</title>
+    <meta name="description" content="Sitio oficial de tivotabo." />
+    <link rel="stylesheet" href="/landing.css" />
+  </head>
+  <body>
+    <svg xmlns="http://www.w3.org/2000/svg" class="landing-sprite" aria-hidden="true">
+      <symbol id="icon-youtube" viewBox="0 0 24 24">
+        <path
+          fill="currentColor"
+          d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2 31.5 31.5 0 0 0 0 12a31.5 31.5 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1A31.5 31.5 0 0 0 24 12a31.5 31.5 0 0 0-.5-5.8zM9.6 15.5V8.5L15.8 12l-6.2 3.5z"
+        />
+      </symbol>
+      <symbol id="icon-tiktok" viewBox="0 0 24 24">
+        <path
+          fill="currentColor"
+          d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.27 6.27 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.75a8.18 8.18 0 0 0 4.77 1.52V6.88a4.85 4.85 0 0 1-1-.19z"
+        />
+      </symbol>
+      <symbol id="icon-twitch" viewBox="0 0 24 24">
+        <path
+          fill="currentColor"
+          d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0 1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0H6zm14.571 11.143-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714V11.143z"
+        />
+      </symbol>
+      <symbol id="icon-spotify" viewBox="0 0 24 24">
+        <path
+          fill="currentColor"
+          d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.64-1.61-5.94-1.87-9.84-1.02-.399.12-.779-.12-.899-.48-.12-.42.12-.78.48-.9 4.56-1.021 8.28-.721 11.22.84.42.18.479.659.24 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"
+        />
+      </symbol>
+      <symbol id="icon-discord" viewBox="0 0 24 24">
+        <path
+          fill="currentColor"
+          d="M20.32 4.37A19.8 19.8 0 0 0 15.55 3l-.3.58a18 18 0 0 1 4.3 2.12 14.5 14.5 0 0 0-11.1 0A17.6 17.6 0 0 1 8.45 3l-.3-.58a19.7 19.7 0 0 0-4.77 1.37C1.55 8.22.66 11.95 1.03 15.64a19.9 19.9 0 0 0 4.86 2.47 14.8 14.8 0 0 0 1.17-1.9 12.8 12.8 0 0 1-1.85-.88l.42-.33a13.5 13.5 0 0 0 11.54 0l.42.33c-.6.33-1.2.62-1.85.88.33.68.7 1.32 1.17 1.9a19.8 19.8 0 0 0 4.86-2.47c.5-4.35-.82-8.04-3.28-11.27zM8.02 13.9c-.97 0-1.77-.9-1.77-2s.77-2 1.77-2 1.79.9 1.77 2-.8 2-1.77 2zm7.96 0c-.97 0-1.77-.9-1.77-2s.77-2 1.77-2 1.79.9 1.77 2-.79 2-1.77 2z"
+        />
+      </symbol>
+      <symbol id="icon-instagram" viewBox="0 0 24 24">
+        <path
+          fill="currentColor"
+          d="M7.8 2h8.4C19.4 2 22 4.6 22 7.8v8.4a5.8 5.8 0 0 1-5.8 5.8H7.8C4.6 22 2 19.4 2 16.2V7.8A5.8 5.8 0 0 1 7.8 2m-.2 2A3.6 3.6 0 0 0 4 7.6v8.8C4 18.1 5.9 20 8.4 20h7.2c2.5 0 4.4-1.9 4.4-4.4V7.6C20 5.1 18.1 3 15.6 3H7.6m9.65 1.5a1.25 1.25 0 0 1 1.25 1.25 1.25 1.25 0 0 1-2.5 0 1.25 1.25 0 0 1 1.25-1.25M12 7a5 5 0 0 1 5 5 5 5 0 0 1-10 0 5 5 0 0 1 5-5m0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"
+        />
+      </symbol>
+      <symbol id="icon-x" viewBox="0 0 24 24">
+        <path
+          fill="currentColor"
+          d="M18.9 2.25h3.68l-8.04 9.19L24 21.75h-7.44l-5.83-7.62-6.67 7.62H.96l8.6-9.83L0 2.25h7.63l5.27 6.98L18.9 2.25zm-1.29 17.52h2.04L7.11 4.26H5.04l12.57 15.51z"
+        />
+      </symbol>
+    </svg>
+
+    <main class="landing">
+      <p class="landing-claim">
+        Esta página es propiedad de <span class="landing-brand">tivotabo</span>.
+      </p>
+
+      <div class="landing-groups">
+        <section class="social-group social-group--youtube" aria-labelledby="group-youtube">
+          <h2 id="group-youtube" class="social-group-title">
+            <svg class="social-group-logo" viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#icon-youtube"></use>
+            </svg>
+          </h2>
+          <div class="social-group-grid">
+            <a class="social-link" href="https://www.youtube.com/@tivotabo" target="_blank" rel="noopener noreferrer" title="@tivotabo">
+              <span class="social-avatar-wrap"><img class="social-avatar" src="/social/youtube.jpg" alt="" width="88" height="88" loading="lazy" decoding="async" /></span>
+              <span class="social-meta"><svg class="social-logo" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-youtube"></use></svg><span class="social-handle">@tivotabo</span></span>
+            </a>
+            <a class="social-link" href="https://www.youtube.com/@TiVlogHN" target="_blank" rel="noopener noreferrer" title="@TiVlogHN">
+              <span class="social-avatar-wrap"><img class="social-avatar" src="/social/youtube-tivloghn.jpg" alt="" width="88" height="88" loading="lazy" decoding="async" /></span>
+              <span class="social-meta"><svg class="social-logo" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-youtube"></use></svg><span class="social-handle">@TiVlogHN</span></span>
+            </a>
+            <a class="social-link" href="https://www.youtube.com/@TiVoid" target="_blank" rel="noopener noreferrer" title="@TiVoid">
+              <span class="social-avatar-wrap"><img class="social-avatar" src="/social/youtube-tivoid.jpg" alt="" width="88" height="88" loading="lazy" decoding="async" /></span>
+              <span class="social-meta"><svg class="social-logo" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-youtube"></use></svg><span class="social-handle">@TiVoid</span></span>
+            </a>
+            <a class="social-link" href="https://www.youtube.com/@TivoTaboMusic" target="_blank" rel="noopener noreferrer" title="@TivoTaboMusic">
+              <span class="social-avatar-wrap"><img class="social-avatar" src="/social/youtube-tivotabomusic.jpg" alt="" width="88" height="88" loading="lazy" decoding="async" /></span>
+              <span class="social-meta"><svg class="social-logo" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-youtube"></use></svg><span class="social-handle">@TivoTaboMusic</span></span>
+            </a>
+            <a class="social-link" href="https://www.youtube.com/@TiVODs" target="_blank" rel="noopener noreferrer" title="@TiVODs">
+              <span class="social-avatar-wrap"><img class="social-avatar" src="/social/youtube-tivods.jpg" alt="" width="88" height="88" loading="lazy" decoding="async" /></span>
+              <span class="social-meta"><svg class="social-logo" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-youtube"></use></svg><span class="social-handle">@TiVODs</span></span>
+            </a>
+          </div>
+        </section>
+
+        <section class="social-group social-group--tiktok" aria-labelledby="group-tiktok">
+          <h2 id="group-tiktok" class="social-group-title">
+            <svg class="social-group-logo" viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#icon-tiktok"></use>
+            </svg>
+          </h2>
+          <div class="social-group-grid">
+            <a class="social-link" href="https://www.tiktok.com/@tivotabo" target="_blank" rel="noopener noreferrer" title="@tivotabo">
+              <span class="social-avatar-wrap"><img class="social-avatar" src="/social/tiktok.jpg" alt="" width="88" height="88" loading="lazy" decoding="async" /></span>
+              <span class="social-meta"><svg class="social-logo" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-tiktok"></use></svg><span class="social-handle">@tivotabo</span></span>
+            </a>
+            <a class="social-link" href="https://www.tiktok.com/@tivotaboirl" target="_blank" rel="noopener noreferrer" title="@tivotaboirl">
+              <span class="social-avatar-wrap"><img class="social-avatar" src="/social/tiktok-irl.jpg" alt="" width="88" height="88" loading="lazy" decoding="async" /></span>
+              <span class="social-meta"><svg class="social-logo" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-tiktok"></use></svg><span class="social-handle">@tivotaboirl</span></span>
+            </a>
+          </div>
+        </section>
+
+        <section class="social-group social-group--twitch" aria-labelledby="group-twitch">
+          <h2 id="group-twitch" class="social-group-title">
+            <svg class="social-group-logo" viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#icon-twitch"></use>
+            </svg>
+          </h2>
+          <div class="social-group-grid">
+            <a class="social-link" href="https://www.twitch.tv/tivotabo" target="_blank" rel="noopener noreferrer" title="@tivotabo">
+              <span class="social-avatar-wrap"><img class="social-avatar" src="/social/twitch.jpg" alt="" width="88" height="88" loading="lazy" decoding="async" /></span>
+              <span class="social-meta"><svg class="social-logo" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-twitch"></use></svg><span class="social-handle">@tivotabo</span></span>
+            </a>
+          </div>
+        </section>
+
+        <section class="social-group social-group--spotify" aria-labelledby="group-spotify">
+          <h2 id="group-spotify" class="social-group-title">
+            <svg class="social-group-logo" viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#icon-spotify"></use>
+            </svg>
+          </h2>
+          <div class="social-group-grid">
+            <a class="social-link" href="https://open.spotify.com/intl-es/artist/5nHa7CKVELMdynSClNz3Kp" target="_blank" rel="noopener noreferrer" title="tivotabo en Spotify">
+              <span class="social-avatar-wrap"><img class="social-avatar" src="/social/youtube-tivotabomusic.jpg" alt="" width="88" height="88" loading="lazy" decoding="async" /></span>
+              <span class="social-meta"><svg class="social-logo" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-spotify"></use></svg><span class="social-handle">@tivotabo</span></span>
+            </a>
+          </div>
+        </section>
+
+        <section class="social-group social-group--instagram" aria-labelledby="group-instagram">
+          <h2 id="group-instagram" class="social-group-title">
+            <svg class="social-group-logo" viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#icon-instagram"></use>
+            </svg>
+          </h2>
+          <div class="social-group-grid">
+            <a class="social-link" href="https://www.instagram.com/tivotabo/" target="_blank" rel="noopener noreferrer" title="@tivotabo">
+              <span class="social-avatar-wrap"><img class="social-avatar" src="/social/instagram.jpg" alt="" width="88" height="88" loading="lazy" decoding="async" /></span>
+              <span class="social-meta"><svg class="social-logo" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-instagram"></use></svg><span class="social-handle">@tivotabo</span></span>
+            </a>
+          </div>
+        </section>
+
+        <section class="social-group social-group--x" aria-labelledby="group-x">
+          <h2 id="group-x" class="social-group-title">
+            <svg class="social-group-logo" viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#icon-x"></use>
+            </svg>
+          </h2>
+          <div class="social-group-grid">
+            <a class="social-link" href="https://www.x.com/tivotabo" target="_blank" rel="noopener noreferrer" title="@tivotabo">
+              <span class="social-avatar-wrap"><img class="social-avatar" src="/social/x.jpg" alt="" width="88" height="88" loading="lazy" decoding="async" /></span>
+              <span class="social-meta"><svg class="social-logo" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-x"></use></svg><span class="social-handle">@tivotabo</span></span>
+            </a>
+          </div>
+        </section>
+
+        <section class="social-group social-group--discord" aria-labelledby="group-discord">
+          <h2 id="group-discord" class="social-group-title">
+            <svg class="social-group-logo" viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#icon-discord"></use>
+            </svg>
+          </h2>
+          <div class="social-group-grid">
+            <a class="social-link" href="https://www.discord.gg/7TBz7ACTd9" target="_blank" rel="noopener noreferrer" title="@tivotabo">
+              <span class="social-avatar-wrap"><img class="social-avatar" src="/social/discord.png" alt="" width="88" height="88" loading="lazy" decoding="async" /></span>
+              <span class="social-meta"><svg class="social-logo" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-discord"></use></svg><span class="social-handle">@tivotabo</span></span>
+            </a>
+          </div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

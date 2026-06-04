@@ -1,11 +1,13 @@
+import path from "path";
+import { fileURLToPath } from "url";
 import { defineConfig } from "vite";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 /**
- * Proxy de /api y /ws al proceso `npm run server` (8787).
- * Así móviles en la LAN solo abren http://TU_IP:5173 y el WebSocket también va por Vite.
- * Si el proxy WS falla en tu entorno, define VITE_WS_DIRECT=true y abre el puerto 8787 al firewall.
+ * Producción: quiniela en /PrediccionesMundial/, landing en / (public/).
+ * Desarrollo: base / para que localhost:5173/ y /PrediccionesMundial/ funcionen.
  */
-/** Hosts permitidos en dev/preview (Vite 6 bloquea otros por defecto). */
 const allowedHosts = [
   "tivotabo.com",
   "www.tivotabo.com",
@@ -13,11 +15,42 @@ const allowedHosts = [
   "168.228.192.202",
 ];
 
-export default defineConfig({
+/** @type {import('vite').Plugin} */
+function quinielaDevFallback() {
+  return {
+    name: "quiniela-dev-fallback",
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        const url = req.url?.split("?")[0] ?? "";
+        if (url === "/" || url === "") {
+          req.url = "/index.html";
+        } else if (url === "/PrediccionesMundial" || url === "/PrediccionesMundial/") {
+          req.url = "/PrediccionesMundial/index.html";
+        }
+        next();
+      });
+    },
+  };
+}
+
+export default defineConfig(({ command }) => ({
+  base: command === "build" ? "/PrediccionesMundial/" : "/",
+  plugins: command === "serve" ? [quinielaDevFallback()] : [],
+  build: {
+    rollupOptions: {
+      input: path.resolve(__dirname, "PrediccionesMundial/index.html"),
+      output: {
+        entryFileNames: "PrediccionesMundial/assets/[name]-[hash].js",
+        chunkFileNames: "PrediccionesMundial/assets/[name]-[hash].js",
+        assetFileNames: "PrediccionesMundial/assets/[name]-[hash][extname]",
+      },
+    },
+  },
   server: {
     port: 5173,
     host: true,
     allowedHosts,
+    open: "/",
     proxy: {
       "/api": {
         target: "http://127.0.0.1:8787",
@@ -34,4 +67,4 @@ export default defineConfig({
     host: true,
     allowedHosts,
   },
-});
+}));

@@ -1,0 +1,311 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+  color: #e8eaef;
+  background: radial-gradient(ellipse 120% 80% at 50% 0%, #1a2744 0%, #0d1117 55%, #080a0f 100%);
+}
+
+.landing-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.landing {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2rem;
+  padding: 2.5rem 1.25rem 3rem;
+  text-align: center;
+}
+
+.landing-claim {
+  margin: 0;
+  max-width: 28rem;
+  font-size: clamp(1.15rem, 3.5vw, 1.45rem);
+  line-height: 1.5;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
+.landing-brand {
+  font-weight: 800;
+  font-size: 1.15em;
+  letter-spacing: 0.04em;
+  background: linear-gradient(120deg, #7dd3fc 0%, #a78bfa 45%, #f472b6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-transform: lowercase;
+}
+
+.landing-groups {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  align-content: flex-start;
+  justify-content: center;
+  gap: 0.85rem;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: 0.35rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.social-group {
+  flex: 0 0 10.35rem;
+  align-self: flex-start;
+  width: 10.35rem;
+  padding: 1rem 0.45rem 1.1rem;
+  border-radius: 1.15rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.social-group-title {
+  margin: 0 0 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.social-group-logo {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.social-group--youtube .social-group-logo {
+  color: #ff4444;
+}
+
+.social-group--tiktok .social-group-logo {
+  color: #69c9d0;
+}
+
+.social-group--twitch .social-group-logo {
+  color: #9146ff;
+}
+
+.social-group--spotify .social-group-logo {
+  color: #1db954;
+}
+
+.social-group--discord .social-group-logo {
+  color: #5865f2;
+}
+
+.social-group--instagram .social-group-logo {
+  color: #e1306c;
+}
+
+.social-group--x .social-group-logo {
+  color: #e7e9ea;
+}
+
+.social-group-grid {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.social-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.65rem 0.35rem 0.75rem;
+  border-radius: 1rem;
+  color: #c5cad6;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    transform 0.15s,
+    box-shadow 0.2s;
+}
+
+.social-avatar-wrap {
+  display: block;
+  width: 5.5rem;
+  height: 5.5rem;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.12),
+    0 8px 24px rgba(0, 0, 0, 0.35);
+  transition:
+    box-shadow 0.2s,
+    transform 0.15s;
+}
+
+.social-avatar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.social-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  overflow: visible;
+}
+
+.social-logo {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+.social-handle {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.social-group--youtube .social-logo {
+  color: #ff4444;
+}
+
+.social-group--tiktok .social-logo {
+  color: #69c9d0;
+}
+
+.social-group--twitch .social-logo {
+  color: #9146ff;
+}
+
+.social-group--spotify .social-logo {
+  color: #1db954;
+}
+
+.social-group--discord .social-logo {
+  color: #5865f2;
+}
+
+.social-group--instagram .social-logo {
+  color: #e1306c;
+}
+
+.social-group--x .social-logo {
+  color: #e7e9ea;
+}
+
+.social-link:hover,
+.social-link:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-3px);
+  outline: none;
+}
+
+.social-link:hover .social-handle,
+.social-link:focus-visible .social-handle {
+  color: #fff;
+}
+
+.social-link:hover .social-avatar-wrap,
+.social-link:focus-visible .social-avatar-wrap {
+  transform: scale(1.04);
+}
+
+.social-group--youtube .social-link:hover .social-avatar-wrap,
+.social-group--youtube .social-link:focus-visible .social-avatar-wrap {
+  box-shadow:
+    0 0 0 2px #ff4444,
+    0 8px 28px rgba(255, 68, 68, 0.35);
+}
+
+.social-group--tiktok .social-link:hover .social-avatar-wrap,
+.social-group--tiktok .social-link:focus-visible .social-avatar-wrap {
+  box-shadow:
+    0 0 0 2px #69c9d0,
+    0 8px 28px rgba(105, 201, 208, 0.35);
+}
+
+.social-group--twitch .social-link:hover .social-avatar-wrap,
+.social-group--twitch .social-link:focus-visible .social-avatar-wrap {
+  box-shadow:
+    0 0 0 2px #9146ff,
+    0 8px 28px rgba(145, 70, 255, 0.35);
+}
+
+.social-group--spotify .social-link:hover .social-avatar-wrap,
+.social-group--spotify .social-link:focus-visible .social-avatar-wrap {
+  box-shadow:
+    0 0 0 2px #1db954,
+    0 8px 28px rgba(29, 185, 84, 0.35);
+}
+
+.social-group--discord .social-link:hover .social-avatar-wrap,
+.social-group--discord .social-link:focus-visible .social-avatar-wrap {
+  box-shadow:
+    0 0 0 2px #5865f2,
+    0 8px 28px rgba(88, 101, 242, 0.35);
+}
+
+.social-group--instagram .social-link:hover .social-avatar-wrap,
+.social-group--instagram .social-link:focus-visible .social-avatar-wrap {
+  box-shadow:
+    0 0 0 2px #e1306c,
+    0 8px 28px rgba(225, 48, 108, 0.35);
+}
+
+.social-group--x .social-link:hover .social-avatar-wrap,
+.social-group--x .social-link:focus-visible .social-avatar-wrap {
+  box-shadow:
+    0 0 0 2px #e7e9ea,
+    0 8px 28px rgba(231, 233, 234, 0.25);
+}
+
+@media (min-width: 540px) {
+  .social-group {
+    flex-basis: 10.5rem;
+    width: 10.5rem;
+  }
+
+  .social-handle {
+    font-size: 0.7rem;
+  }
+}
+
+@media (max-width: 1100px) {
+  .landing-groups {
+    justify-content: flex-start;
+    scroll-snap-type: x proximity;
+  }
+
+  .social-group {
+    scroll-snap-align: start;
+  }
+}
