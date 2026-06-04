@@ -5,10 +5,19 @@ import { defineConfig } from "vite";
  * Así móviles en la LAN solo abren http://TU_IP:5173 y el WebSocket también va por Vite.
  * Si el proxy WS falla en tu entorno, define VITE_WS_DIRECT=true y abre el puerto 8787 al firewall.
  */
+/** Hosts permitidos en dev/preview (Vite 6 bloquea otros por defecto). */
+const allowedHosts = [
+  "tivotabo.com",
+  "www.tivotabo.com",
+  ".tivotabo.com",
+  "168.228.192.202",
+];
+
 export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    allowedHosts,
     proxy: {
       "/api": {
         target: "http://127.0.0.1:8787",
@@ -20,5 +29,9 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+  },
+  preview: {
+    host: true,
+    allowedHosts,
   },
 });
