@@ -47,6 +47,7 @@ function normalizeCountry(raw) {
 function cleanName(raw) {
   return raw
     .replace(/[\u200B-\u200D\uFEFF⁠]/g, "")
+    .replace(/;\s*/g, " ")
     .replace(/[.,;]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();

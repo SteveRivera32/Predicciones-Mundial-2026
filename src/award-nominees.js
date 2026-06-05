@@ -1520,7 +1520,7 @@ export const SQUAD_ENTRIES = [
     "role": "outfield"
   },
   {
-    "name": "Desiré; Doué",
+    "name": "Desiré Doué",
     "country": "Francia",
     "role": "outfield"
   },
@@ -6675,7 +6675,7 @@ export const AWARD_OUTFIELD_PLAYERS = [
   "Derek Cornelius",
   "Deroy Duarte",
   "Derrick Etienne",
-  "Desiré; Doué",
+  "Desiré Doué",
   "Deveron Fonville",
   "Diego Gómez",
   "Diego Moreira",
