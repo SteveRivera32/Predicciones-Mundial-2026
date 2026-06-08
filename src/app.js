@@ -62,7 +62,14 @@ import {
   knockoutRoundRequiresPenaltyPickOnDraw,
   normalizeTeamName,
 } from "./tournament.js";
-import { isLockedAtKickoff } from "./locks.js";
+import {
+  isLockedAtKickoff,
+  isGroupMatchPredictionsLocked,
+  isKoMatchPredictionsLocked,
+  isAnyTournamentMatchKickoffLocked,
+  scheduleKickoffLockRefresh,
+} from "./locks.js";
+import { applyKickoffAutoStarts } from "./kickoff-autostart.js";
 import {
   formatKickoffShortSpanish,
   countdownLabelSpanish,
@@ -1211,16 +1218,13 @@ function isPartidosPredictionsCompleteForUser(participantId, official) {
   for (const m of GROUP_MATCHES) {
     const teamsDecided = isQuinielaTeamSlotDecided(m.home) && isQuinielaTeamSlotDecided(m.away);
     if (!teamsDecided) continue;
-    const matchStage = official.groupMatchState?.[m.id] ?? "ready";
-    const predictionsLocked =
-      matchStage !== "ready" || official.groupPredictionsBlockedForAll === true;
+    const predictionsLocked = isGroupMatchPredictionsLocked(official, m);
     const predCommitted = pStore.groupScoresConfirmed?.[m.id] === true;
     if (!predictionsLocked && !predCommitted) return false;
   }
   const labelScoresKo = allFilledOfficialKnockoutScores(official);
   for (const m of getKnockoutMatchesFlat()) {
-    const officialConfirmed = official.knockoutScoresConfirmed?.[m.id] === true;
-    const predictionsLocked = officialConfirmed;
+    const predictionsLocked = isKoMatchPredictionsLocked(official, m);
     const { ri, mi } = getKoRoundMatchIndex(m.id);
     const koOfficialHome = resolveKnockoutSlotLabel(ri, mi, "home", labelScoresKo);
     const koOfficialAway = resolveKnockoutSlotLabel(ri, mi, "away", labelScoresKo);
@@ -1567,9 +1571,14 @@ function bindAdminSettings(afterSessionReady) {
   });
 }
 
+/** Bloqueo manual del admin en predicciones generales. */
+function generalesPredictionsAdminBlocked() {
+  return loadOfficialResults().generalPredictionsBlockedForParticipants === true;
+}
+
 /** Pestaña Predicciones generales: nadie puede editar el formulario de participante (incl. admin). */
 function generalesPredictionsFormLocked() {
-  return loadOfficialResults().generalPredictionsBlockedForParticipants === true;
+  return generalesPredictionsAdminBlocked() || isAnyTournamentMatchKickoffLocked();
 }
 
 /** Fase de grupos: bloqueo global de predicciones para todos (incl. admin). */
@@ -2480,11 +2489,13 @@ function renderGenerales(participantId, predictions, disabled) {
 
   const lockBanner = officialLocked
     ? `<p class="generales-locked-banner muted" role="status">El resultado oficial está <strong>confirmado</strong>. No puedes cambiar tus predicciones hasta que un administrador desconfirme.</p>`
-    : generalesPredictionsFormLocked()
+    : generalesPredictionsAdminBlocked()
       ? isAdmin
         ? `<p class="generales-locked-banner generales-locked-banner--admin muted" role="status">Tus predicciones de participante están <strong>bloqueadas</strong> mientras defines el resultado oficial. Usa el panel <strong>Resultado oficial (admin)</strong> más abajo.</p>`
         : `<p class="generales-locked-banner muted" role="status">Un administrador ha <strong>bloqueado</strong> esta pestaña: no puedes cambiar el podio ni los premios individuales hasta que lo desbloqueen.</p>`
-      : "";
+      : isAnyTournamentMatchKickoffLocked()
+        ? `<p class="generales-locked-banner muted" role="status">Las predicciones generales están <strong>cerradas</strong>: ya comenzó al menos un partido del torneo.</p>`
+        : "";
 
   const canToggleUserConfirm = !disabled && !officialLocked && !generalesPredictionsFormLocked();
   const isUserGeneralComplete = isGeneralPayloadComplete(g);
@@ -2717,7 +2728,7 @@ function renderGrupos(participantId, predictions) {
       const adminLock = document.createElement("div");
       adminLock.className = "group-admin-lock";
       adminLock.innerHTML = `
-        <p class="group-admin-lock__title">Bloqueo global de predicciones (Fase de grupos)</p>
+        <p class="group-admin-lock__title">Bloqueo global del orden de grupos</p>
         <div class="group-admin-lock__actions">
           ${
             groupsBlocked
@@ -2727,8 +2738,8 @@ function renderGrupos(participantId, predictions) {
         </div>
         <p class="muted group-admin-lock__status">${
           groupsBlocked
-            ? "Actualmente bloqueado: nadie puede editar orden ni marcadores predichos de grupos."
-            : "Actualmente desbloqueado: todos pueden editar sus predicciones de grupos."
+            ? "Actualmente bloqueado: nadie puede editar el orden de clasificación ni si el 3.º pasa."
+            : "Actualmente desbloqueado: todos pueden editar el orden de sus grupos."
         }</p>
       `;
       card.appendChild(adminLock);
@@ -2737,7 +2748,7 @@ function renderGrupos(participantId, predictions) {
       blocked.className = "generales-locked-banner muted";
       blocked.setAttribute("role", "status");
       blocked.innerHTML =
-        "Un administrador ha <strong>bloqueado</strong> la fase de grupos: no puedes editar orden ni marcadores predichos hasta que lo desbloquee.";
+        "Un administrador ha <strong>bloqueado</strong> el orden de grupos: no puedes cambiar la clasificación ni si el 3.º pasa hasta que lo desbloquee.";
       card.appendChild(blocked);
     }
 
@@ -2975,8 +2986,8 @@ function renderGrupos(participantId, predictions) {
       if (!canEditOfficialResults(participantId)) return;
       const to = btn.dataset.groupAdminLock === "on";
       const q = to
-        ? "¿Bloquear predicciones de Fase de grupos para todos, incluido Tivo?"
-        : "¿Desbloquear predicciones de Fase de grupos para todos?";
+        ? "¿Bloquear el orden de clasificación de grupos para todos (incluido Tivo)? Los marcadores de partidos no se ven afectados."
+        : "¿Desbloquear el orden de clasificación de grupos para todos?";
       if (!confirm(q)) return;
       saveOfficialResults({ groupPredictionsBlockedForAll: to });
       refreshAll(loadSession());
@@ -4657,7 +4668,7 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
   const officialConfirmed = matchStage === "finished" && official.groupScoresConfirmed?.[m.id] === true;
   const bothFilled = off.home !== "" && off.away !== "";
   const officialCompleteForScoring = bothFilled && (matchStage === "started" || officialConfirmed);
-  const predictionsLocked = matchStage !== "ready" || official.groupPredictionsBlockedForAll === true;
+  const predictionsLocked = isGroupMatchPredictionsLocked(official, m);
   /** Tras iniciar el partido la última columna muestra Pts; antes solo acciones (confirmar/cambiar). */
   const showPtsColumn = matchStage !== "ready";
 
@@ -4801,7 +4812,12 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
           const bothPred = d.pred.home !== "" && d.pred.away !== "";
           if (predictionsLocked) {
             const gameUnderway = matchStage !== "ready";
-            if (!gameUnderway) preplayInner = '<span class="muted">Bloqueado</span>';
+            const kickoffClosed = isLockedAtKickoff(m.kickoff);
+            if (kickoffClosed && !gameUnderway) {
+              preplayInner = '<span class="muted">Cerrado (hora de inicio)</span>';
+            } else if (!gameUnderway) {
+              preplayInner = '<span class="muted">Bloqueado</span>';
+            }
           } else if (d.predCommitted) {
             preplayInner = `<button type="button" class="btn btn-sm quiniela-pred-unlock-user" data-mid="${escapeHtml(m.id)}" data-pid="${escapeHtml(d.p.id)}">Cambiar</button>`;
           } else if (!teamsDecided) {
@@ -4905,7 +4921,7 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
   const koStage = official.knockoutMatchState?.[m.id] ?? "ready";
   const bothFilled = off.home !== "" && off.away !== "";
   const officialCompleteForScoring = bothFilled && (koStage === "started" || officialConfirmed);
-  const predictionsLocked = koStage !== "ready";
+  const predictionsLocked = isKoMatchPredictionsLocked(official, m);
   const showPtsColumn = koStage !== "ready";
 
   const { ri, mi } = getKoRoundMatchIndex(m.id);
@@ -5094,7 +5110,13 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
             !koPenaltyPhase || !drawPred || d.pred.penaltyWinner === "home" || d.pred.penaltyWinner === "away";
           const bothPred = scoresOk && penOk;
           if (predictionsLocked) {
-            preplayInner = "";
+            const gameUnderway = koStage !== "ready";
+            const kickoffClosed = isLockedAtKickoff(m.kickoff);
+            if (kickoffClosed && !gameUnderway) {
+              preplayInner = '<span class="muted">Cerrado (hora de inicio)</span>';
+            } else if (!gameUnderway) {
+              preplayInner = '<span class="muted">Bloqueado</span>';
+            }
           } else if (d.predCommitted) {
             preplayInner = `<button type="button" class="btn btn-sm partidos-ko-pred-unlock-user" data-kid="${escapeHtml(m.id)}" data-pid="${escapeHtml(d.p.id)}">Cambiar</button>`;
           } else if (!koSlotsReadyForEdit) {
@@ -5181,7 +5203,9 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
       ? `<p class="quiniela-match-status quiniela-match-status--pending" role="status"><strong>Modo pruebas ADMIN.</strong> Puedes cargar y confirmar marcador oficial aunque los equipos todavía estén por definir.</p>`
     : koStage === "started"
       ? `<p class="quiniela-match-status quiniela-match-status--live" role="status"><strong>En juego.</strong> Las predicciones están cerradas; el marcador oficial lo actualiza el admin.</p>`
-      : `<p class="quiniela-match-status quiniela-match-status--ready" role="status"><strong>No ha comenzado.</strong> Aquí puedes editar y confirmar tu predicción.</p>`;
+      : isLockedAtKickoff(m.kickoff)
+        ? `<p class="quiniela-match-status quiniela-match-status--live" role="status"><strong>Cerrado por hora de inicio.</strong> Las predicciones ya no se pueden editar ni confirmar.</p>`
+        : `<p class="quiniela-match-status quiniela-match-status--ready" role="status"><strong>No ha comenzado.</strong> Aquí puedes editar y confirmar tu predicción.</p>`;
 
   const koPenNeeded =
     knockoutRoundRequiresPenaltyPickOnDraw(m.roundId) && isKnockoutScoreDrawNumbers(off.home, off.away);
@@ -5501,6 +5525,7 @@ function bindPartidosAdminHandlers(scope, session) {
       const cur = loadOfficialResults();
       const { [mid]: _r, ...rest } = cur.groupScoresConfirmed ?? {};
       saveOfficialResults({
+        groupScores: { [mid]: { home: "", away: "" } },
         groupScoresConfirmed: rest,
         replaceGroupScoresConfirmed: true,
         groupMatchState: { [mid]: "ready" },
@@ -5633,6 +5658,7 @@ function bindPartidosAdminHandlers(scope, session) {
       const kid = btn.dataset.kid;
       if (!kid) return;
       saveOfficialResults({
+        knockoutScores: { [kid]: { home: "", away: "", penaltyWinner: "" } },
         knockoutScoresConfirmed: { [kid]: false },
         knockoutMatchState: { [kid]: "ready" },
       });
@@ -5651,6 +5677,8 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const mid = row.dataset.quinielaSelfMid;
       const targetParticipantId = row.dataset.predPid || session.participantId;
       if (!mid || !partial[mid] || !targetParticipantId) return;
+      const gm = GROUP_MATCHES.find((x) => x.id === mid);
+      if (!gm || isGroupMatchPredictionsLocked(loadOfficialResults(), gm)) return;
       savePredictions(targetParticipantId, {
         groupScores: { [mid]: { home: partial[mid].home, away: partial[mid].away } },
       });
@@ -5672,7 +5700,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
         return;
       }
       const offNow = loadOfficialResults();
-      if ((offNow.groupMatchState?.[mid] ?? "ready") !== "ready") return;
+      if (isGroupMatchPredictionsLocked(offNow, gm)) return;
       const latest = loadPredictions(targetParticipantId);
       const sc = latest.groupScores[mid] ?? { home: "", away: "" };
       if (sc.home === "" || sc.away === "") return;
@@ -5689,8 +5717,10 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const mid = btn.dataset.mid;
       const targetParticipantId = btn.dataset.pid || session.participantId;
       if (!mid || !targetParticipantId) return;
+      const gm = GROUP_MATCHES.find((x) => x.id === mid);
+      if (!gm) return;
       const offNow = loadOfficialResults();
-      if ((offNow.groupMatchState?.[mid] ?? "ready") !== "ready") return;
+      if (isGroupMatchPredictionsLocked(offNow, gm)) return;
       const latest = loadPredictions(targetParticipantId);
       const { [mid]: _r, ...rest } = latest.groupScoresConfirmed ?? {};
       savePredictions(targetParticipantId, {
@@ -5709,10 +5739,11 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const kid = row.dataset.partidosKoSelfKid;
       const targetParticipantId = row.dataset.predPid || session.participantId;
       if (!kid || !partial[kid] || !targetParticipantId) return;
+      const mKo = getKnockoutMatchesFlat().find((x) => x.id === kid);
+      if (!mKo || isKoMatchPredictionsLocked(loadOfficialResults(), mKo)) return;
       const latest = loadPredictions(targetParticipantId);
       const prevSc = latest.knockoutScores?.[kid] ?? {};
-      const mKo = getKnockoutMatchesFlat().find((x) => x.id === kid);
-      const penPh = mKo ? knockoutRoundRequiresPenaltyPickOnDraw(mKo.roundId) : false;
+      const penPh = knockoutRoundRequiresPenaltyPickOnDraw(mKo.roundId);
       const home = partial[kid].home;
       const away = partial[kid].away;
       const merged = { ...prevSc, home, away };
@@ -5739,6 +5770,8 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const targetParticipantId = btn.dataset.pid || session.participantId;
       const pick = btn.dataset.penPick;
       if (!kid || !targetParticipantId || (pick !== "home" && pick !== "away")) return;
+      const mKo = getKnockoutMatchesFlat().find((x) => x.id === kid);
+      if (!mKo || isKoMatchPredictionsLocked(loadOfficialResults(), mKo)) return;
       const latest = loadPredictions(targetParticipantId);
       const prev = latest.knockoutScores?.[kid] ?? { home: "", away: "" };
       savePredictions(targetParticipantId, {
@@ -5756,9 +5789,11 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const kid = btn.dataset.kid;
       const targetParticipantId = btn.dataset.pid || session.participantId;
       if (!kid || !targetParticipantId) return;
+      const mKo = getKnockoutMatchesFlat().find((x) => x.id === kid);
+      if (!mKo) return;
       const offPred = loadOfficialResults();
       if (offPred.knockoutScoresConfirmed?.[kid] === true) return;
-      if ((offPred.knockoutMatchState?.[kid] ?? "ready") !== "ready") return;
+      if (isKoMatchPredictionsLocked(offPred, mKo)) return;
       const { ri, mi } = getKoRoundMatchIndex(kid);
       const labelPred = allFilledOfficialKnockoutScores(offPred);
       const kh = resolveKnockoutSlotLabel(ri, mi, "home", labelPred);
@@ -5796,8 +5831,11 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const kid = btn.dataset.kid;
       const targetParticipantId = btn.dataset.pid || session.participantId;
       if (!kid || !targetParticipantId) return;
-      if (loadOfficialResults().knockoutScoresConfirmed?.[kid] === true) return;
-      if ((loadOfficialResults().knockoutMatchState?.[kid] ?? "ready") !== "ready") return;
+      const mKo = getKnockoutMatchesFlat().find((x) => x.id === kid);
+      if (!mKo) return;
+      const offNow = loadOfficialResults();
+      if (offNow.knockoutScoresConfirmed?.[kid] === true) return;
+      if (isKoMatchPredictionsLocked(offNow, mKo)) return;
       const latest = loadPredictions(targetParticipantId);
       const { [kid]: _r, ...rest } = latest.knockoutScoresConfirmed ?? {};
       savePredictions(targetParticipantId, {
@@ -6392,11 +6430,15 @@ function ensurePartidosScopeFilter() {
  * @param {"ready"|"started"|"finished"} matchStage
  * @param {boolean} officialConfirmed
  * @param {boolean} [groupTeamsDecided=true]
+ * @param {boolean} [kickoffLocked=false]
  */
-function quinielaMatchStatusBanner(matchStage, officialConfirmed, groupTeamsDecided = true) {
+function quinielaMatchStatusBanner(matchStage, officialConfirmed, groupTeamsDecided = true, kickoffLocked = false) {
   if (matchStage === "ready") {
     if (groupTeamsDecided === false) {
       return `<p class="quiniela-match-status quiniela-match-status--pending" role="status"><strong>Equipos por definir.</strong> Las predicciones están bloqueadas hasta que ambos equipos del partido estén fijados (sin «Por determinar»).</p>`;
+    }
+    if (kickoffLocked) {
+      return `<p class="quiniela-match-status quiniela-match-status--live" role="status"><strong>Cerrado por hora de inicio.</strong> Las predicciones ya no se pueden editar ni confirmar.</p>`;
     }
     return `<p class="quiniela-match-status quiniela-match-status--ready" role="status"><strong>No ha comenzado.</strong> Aquí puedes editar y confirmar tu predicción.</p>`;
   }
@@ -6431,6 +6473,7 @@ function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds) 
   const userPredConfirmed = isUserPredictionConfirmedStore(pStorePrev, m);
   const matchClosed = isMatchOfficiallyClosed(official, m);
   const matchInProgress = matchStage === "started";
+  const kickoffLocked = isLockedAtKickoff(m.kickoff);
   const cornerHtml = partidosMatchCornerHtml(m, nextJornadaIds, userPredConfirmed, matchClosed, matchInProgress);
   const noKickHtml = partidosAccNoKickoffHintHtml(m);
   const officialPreview = partidosOfficialPreviewLineGroup(m, official);
@@ -6535,7 +6578,7 @@ function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds) 
           </div>
         </summary>
         <div class="partidos-acc__body">
-          ${quinielaMatchStatusBanner(matchStage, officialConfirmed, groupTeamsDecided)}
+          ${quinielaMatchStatusBanner(matchStage, officialConfirmed, groupTeamsDecided, kickoffLocked)}
           ${officialHtml}
           <div class="quiniela-preds-head">Predicciones</div>
           <div class="table-scroll quiniela-table-wrap">
@@ -7521,6 +7564,7 @@ function redrawTeamOrderRanking() {
  */
 function refreshAll(session, opts = {}) {
   const { skipPartidosRender = false, preserveScroll = false, onlyActivePanel = false } = opts;
+  applyKickoffAutoStarts();
   const activeTab = getActiveTabId();
   const showPanel = (panelId) => !onlyActivePanel || activeTab === panelId;
   const partidosWrap = $("#quiniela-wrap");
@@ -7572,6 +7616,9 @@ function refreshAll(session, opts = {}) {
     updateProximosNavShortcutButton(null);
     updatePredictionTabsProgress(null, null);
     syncGroupPtsBadgeCanvases(document.body);
+    scheduleKickoffLockRefresh(() => {
+      refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true });
+    });
     return;
   }
   const predictions = loadPredictions(session.participantId);
@@ -7611,6 +7658,9 @@ function refreshAll(session, opts = {}) {
   updateProximosNavShortcutButton(session);
   syncGroupPtsBadgeCanvases(document.body);
   if (scrollAnchor) restoreWindowScrollAnchor(scrollAnchor);
+  scheduleKickoffLockRefresh(() => {
+    refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true });
+  });
 }
 
 export function initApp() {

@@ -3096,8 +3096,12 @@ span.td-muted {
 }
 
 .input-score {
-  width: 3.25rem;
+  width: 4.25rem;
+  min-width: 4.25rem;
+  padding: 0 0.2rem;
   text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
 }
 
 /* Buttons */
@@ -5657,9 +5661,11 @@ span.td-muted {
 }
 
 .score-stepper--tight .score-stepper__input {
-  width: 2.2rem;
-  padding: 0.18rem;
+  width: 3.35rem;
+  min-width: 3.35rem;
+  padding: 0.18rem 0.22rem;
   font-size: 0.82rem;
+  box-sizing: border-box;
 }
 
 .score-stepper--tight .score-stepper__btn {
@@ -6567,7 +6573,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 .quiniela-preds td.quiniela-num {
   width: 14.5%;
   /* Cada stepper necesita ~7–8.5rem; sin min-width las celdas se comprimen y los botones de columnas vecinas se superponen */
-  min-width: 8.25rem;
+  min-width: 9.5rem;
   box-sizing: border-box;
 }
 
@@ -6583,9 +6589,13 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 }
 
 .quiniela-preds .score-stepper__input {
-  width: calc(3.05rem / 2 + 0.45rem);
+  width: 3rem;
+  min-width: 3rem;
   min-height: calc(2.88rem / 2 + 0.35rem);
+  padding: 0 0.18rem;
   font-size: calc(1.72rem / 2);
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
 }
 
 #panel-partidos .quiniela-preds .quiniela-cell-score-num {
@@ -6611,9 +6621,13 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 }
 
 #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead .score-stepper__input {
-  width: 2.73rem;
+  width: 4rem;
+  min-width: 4rem;
   min-height: 2.58rem;
+  padding: 0 0.22rem;
   font-size: 1.54rem;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
 }
 
 #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td .quiniela-cell-score-num {
@@ -7565,14 +7579,18 @@ span.quiniela-legend {
 }
 
 .score-stepper__input {
-  width: 3rem;
+  width: 4.25rem;
+  min-width: 4.25rem;
   min-height: 2.75rem;
+  padding: 0 0.22rem;
   text-align: center;
   border: none;
   border-left: 1px solid var(--border);
   border-right: 1px solid var(--border);
   border-radius: 0;
   background: var(--surface);
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
   -moz-appearance: textfield;
 }
 
