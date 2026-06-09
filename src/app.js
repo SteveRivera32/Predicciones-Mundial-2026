@@ -2881,9 +2881,7 @@ function renderGrupos(participantId, predictions) {
         : ["", "", "", ""];
     const groupConfirmed = predictions.groupOrderConfirmed?.[grp.id] === true;
 
-    const orderKickoffLocked = GROUP_MATCHES.some(
-      (m) => m.groupId === grp.id && isLockedAtKickoff(m.kickoff),
-    );
+    const orderKickoffLocked = isAnyTournamentMatchKickoffLocked();
     const orderLocked = groupsBlocked || orderKickoffLocked || groupConfirmed;
 
     card.innerHTML = `<header class="generales-user-pred-header">
@@ -2954,7 +2952,7 @@ function renderGrupos(participantId, predictions) {
       } else if (groupsBlocked) {
         orderWrap.innerHTML += `<p class="muted">Bloqueado por administración.</p>`;
       } else if (orderKickoffLocked) {
-        orderWrap.innerHTML += `<p class="muted">Cerrado por inicio de partidos.</p>`;
+        orderWrap.innerHTML += `<p class="muted">Cerrado: ya comenzó al menos un partido del torneo.</p>`;
       }
     } else {
       const ol = document.createElement("ol");

@@ -16,7 +16,7 @@ export function getAllTournamentMatchesWithKickoff() {
   return [...GROUP_MATCHES, ...getKnockoutMatchesFlat()];
 }
 
-/** Predicciones generales: cerrar cuando ya empezó algún partido del torneo (por hora de kickoff). */
+/** Predicciones generales y orden de grupos: cerrar cuando ya empezó algún partido del torneo (por hora de kickoff). */
 export function isAnyTournamentMatchKickoffLocked() {
   return getAllTournamentMatchesWithKickoff().some((m) => isLockedAtKickoff(m.kickoff));
 }
