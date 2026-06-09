@@ -8,6 +8,7 @@ import {
   hasParticipantCustomAccent,
   hexToRgb,
   canEditOfficialResults,
+  canManagePartidosMatchFlow,
   canEditAllParticipantsPredictions,
   setParticipantsList,
   isAdminParticipantId,
@@ -5650,7 +5651,8 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
     officialSlotsReadyForAdmin &&
     (!koPenNeeded || koPenReady);
 
-  const officialMini = isAdmin
+  const canManageMatchFlow = canManagePartidosMatchFlow(session.participantId);
+  const officialMini = canManageMatchFlow
     ? `
       <div class="quiniela-official partidos-ko-official ${koStage === "started" ? "partidos-ko-official--editing" : "partidos-ko-official--locked"}" data-ko-mid="${escapeHtml(m.id)}">
         <div class="quiniela-official-head">
@@ -5870,7 +5872,7 @@ function replaceQuinielaMatchArticleAndRebind(wrap, matchId, session) {
   wireQuinielaPredictionHandlersInScope(newArt, session);
   syncQuinielaPerfectBonusCanvases(wrap);
   syncGroupPtsBadgeCanvases(wrap);
-  if (isAdmin) bindPartidosAdminHandlers(newArt, session);
+  if (canManagePartidosMatchFlow(session.participantId)) bindPartidosAdminHandlers(newArt, session);
 }
 
 /**
@@ -5879,7 +5881,7 @@ function replaceQuinielaMatchArticleAndRebind(wrap, matchId, session) {
  */
 function bindPartidosAdminHandlers(scope, session) {
   const partidosWrap = $("#quiniela-wrap");
-  if (!scope || !partidosWrap) return;
+  if (!scope || !partidosWrap || !canManagePartidosMatchFlow(session.participantId)) return;
   const canForceUndecidedMatches = canEditAllParticipantsPredictions(session.participantId);
   scope.querySelectorAll(".quiniela-btn-iniciar-partido").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -6943,7 +6945,7 @@ function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds) 
   const va = off.away === "" ? "" : escapeHtml(String(off.away));
 
   let officialHtml;
-  if (isAdmin) {
+  if (canManagePartidosMatchFlow(session.participantId)) {
     if (matchStage === "finished" && bothFilled) {
       officialHtml = `
       <div class="quiniela-official quiniela-official--admin quiniela-official--locked" data-quiniela-mid="${escapeHtml(m.id)}">
@@ -7313,7 +7315,7 @@ function renderQuiniela(session, official) {
   syncQuinielaPerfectBonusCanvases(wrap);
   syncGroupPtsBadgeCanvases(wrap);
 
-  if (isAdmin) bindPartidosAdminHandlers(wrap, session);
+  if (canManagePartidosMatchFlow(session.participantId)) bindPartidosAdminHandlers(wrap, session);
 
   if (blocks.length > 0) restoreOpenPartidosAccordions(wrap, openAccordionMatchIds);
   restorePartidosInteractionAnchor(wrap, partidosInteractionAnchor, partidosViewportLock);

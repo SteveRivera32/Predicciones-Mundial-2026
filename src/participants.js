@@ -137,6 +137,8 @@ export const ADMIN_PARTICIPANT_ID = "admin";
 const OFFICIAL_RESULTS_ADMIN_IDS = new Set(["tivo", "admin"]);
 /** Super-admin de pruebas: además puede editar predicciones de todos y forzar cruces sin definir. */
 const SUPER_ADMIN_PARTICIPANT_IDS = new Set(["admin"]);
+/** Iniciar, terminar, reiniciar y desconfirmar partidos en Predicciones de partidos. */
+const PARTIDOS_MATCH_FLOW_ADMIN_IDS = new Set(["admin"]);
 
 /** @param {unknown} p */
 function normalizeParticipant(p) {
@@ -404,6 +406,11 @@ export function setParticipantHue(participantId, hueOrNull) {
 /** Quién puede cargar el marcador oficial y abrir Ajustes. */
 export function canEditOfficialResults(participantId) {
   return OFFICIAL_RESULTS_ADMIN_IDS.has(participantId);
+}
+
+/** Quién ve los controles de ciclo de vida del partido (iniciar, terminar, reiniciar, etc.). */
+export function canManagePartidosMatchFlow(participantId) {
+  return PARTIDOS_MATCH_FLOW_ADMIN_IDS.has(participantId);
 }
 
 export function isAdminParticipantId(id) {
