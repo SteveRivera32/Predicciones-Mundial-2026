@@ -43,25 +43,29 @@ function allFilledOfficialKnockoutScores(official) {
   return out;
 }
 
-/** @param {{ home?: string|number|"", away?: string|number|"" } | undefined} draft */
+/**
+ * Convierte borrador en marcador confirmable. Sin borrador → null (no cuenta).
+ * Borrador parcial: conserva lo escrito y completa el otro lado con 0.
+ * @param {{ home?: string|number|"", away?: string|number|"" } | undefined} draft
+ * @returns {{ home: string|number, away: string|number } | null}
+ */
 function draftToConfirmedGroupScore(draft) {
   const home = draft?.home;
   const away = draft?.away;
   const homeFilled = home !== "" && home != null;
   const awayFilled = away !== "" && away != null;
+  if (!homeFilled && !awayFilled) return null;
   if (homeFilled && awayFilled) return { home, away };
-  if (homeFilled || awayFilled) {
-    return {
-      home: homeFilled ? home : 0,
-      away: awayFilled ? away : 0,
-    };
-  }
-  return { home: 0, away: 0 };
+  return {
+    home: homeFilled ? home : 0,
+    away: awayFilled ? away : 0,
+  };
 }
 
 /** @param {{ home?: string|number|"", away?: string|number|"", penaltyWinner?: string } | undefined} draft */
 function draftToConfirmedKoScore(draft) {
   const base = draftToConfirmedGroupScore(draft);
+  if (!base) return null;
   const pw = draft?.penaltyWinner;
   return {
     ...base,
@@ -75,9 +79,10 @@ export function confirmPendingPredictionsForGroupMatch(matchId) {
   for (const p of getParticipantsForDisplay()) {
     const store = loadPredictions(p.id);
     if (store.groupScoresConfirmed?.[matchId] === true) continue;
-    const draft = store.groupScores?.[matchId];
+    const confirmed = draftToConfirmedGroupScore(store.groupScores?.[matchId]);
+    if (!confirmed) continue;
     savePredictions(p.id, {
-      groupScores: { [matchId]: draftToConfirmedGroupScore(draft) },
+      groupScores: { [matchId]: confirmed },
       groupScoresConfirmed: { [matchId]: true },
     });
     changed = true;
@@ -91,11 +96,12 @@ export function confirmPendingPredictionsForKoMatch(matchId) {
   for (const p of getParticipantsForDisplay()) {
     const store = loadPredictions(p.id);
     if (store.knockoutScoresConfirmed?.[matchId] === true) continue;
-    const draft = store.knockoutScores?.[matchId];
+    const confirmed = draftToConfirmedKoScore(store.knockoutScores?.[matchId]);
+    if (!confirmed) continue;
     savePredictions(p.id, {
       knockoutScores: {
         ...store.knockoutScores,
-        [matchId]: draftToConfirmedKoScore(draft),
+        [matchId]: confirmed,
       },
       knockoutScoresConfirmed: { [matchId]: true },
     });
@@ -105,8 +111,8 @@ export function confirmPendingPredictionsForKoMatch(matchId) {
 }
 
 /**
- * Al llegar el kickoff: iniciar partido (0-0 oficial) y confirmar predicciones pendientes
- * (borrador del usuario o 0-0 si no había nada).
+ * Al llegar el kickoff: iniciar partido (0-0 oficial) y confirmar solo borradores con marcador.
+ * Quien no predijo no se confirma ni puntúa.
  * Idempotente.
  * @returns {boolean} hubo cambios persistidos
  */

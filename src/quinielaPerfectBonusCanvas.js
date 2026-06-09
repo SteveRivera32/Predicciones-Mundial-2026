@@ -12,8 +12,10 @@ const BLEED_REM = 0.18;
 
 /** Opacidad solo del canvas multicolor (bonus). Bordes ::before al 100 %. */
 const FILL_ALPHA = 0.5;
-/** Misma idea para tiers azul / morado / dorado. */
+/** Misma idea para tiers azul / morado / dorado (fila líder). */
 const LEAD_TIER_VIZ = 0.5;
+/** Filas con badge que no van 1.º: banda más tenue. */
+const NON_LEAD_TIER_VIZ = 0.24;
 
 /** Periodos por tier (alineados ~con quiniela-lead-name-bg-flow). */
 const TIER_PERIOD_MS = {
@@ -53,7 +55,9 @@ function isMobileLeadBandLayout() {
 }
 
 function syncLeadRowBandWidthForTable(table) {
-  const leadRow = table.querySelector("tbody tr.quiniela-pred-row--lead");
+  const leadRow =
+    table.querySelector("tbody tr.quiniela-pred-row--lead") ??
+    table.querySelector('tbody tr[class*="quiniela-pred-row--tier-"]');
   if (!leadRow) {
     table.style.removeProperty("--quiniela-lead-band-width");
     return;
@@ -103,11 +107,13 @@ function bleedPx() {
 function syncVizCustomProps(canvas) {
   const td = canvas.parentElement;
   if (!(td instanceof HTMLElement) || td.tagName !== "TD") return;
+  const row = td.closest("tr");
+  const isLead = row?.classList.contains("quiniela-pred-row--lead") === true;
   if (canvas.classList.contains("quiniela-perfect-bonus-gradient-canvas")) {
-    td.style.setProperty("--pm26-perfect-bonus-viz", String(FILL_ALPHA));
+    td.style.setProperty("--pm26-perfect-bonus-viz", String(isLead ? FILL_ALPHA : NON_LEAD_TIER_VIZ));
     td.style.removeProperty("--pm26-lead-tier-viz");
   } else {
-    td.style.setProperty("--pm26-lead-tier-viz", String(LEAD_TIER_VIZ));
+    td.style.setProperty("--pm26-lead-tier-viz", String(isLead ? LEAD_TIER_VIZ : NON_LEAD_TIER_VIZ));
     td.style.removeProperty("--pm26-perfect-bonus-viz");
   }
 }

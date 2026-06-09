@@ -7479,38 +7479,37 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   container-name: quiniela-preds-cq;
 }
 
-#panel-partidos .partidos-match-card:has(tbody tr.quiniela-pred-row--lead) .quiniela-table-wrap {
+#panel-partidos .partidos-match-card:has(tbody tr[class*="quiniela-pred-row--tier-"]) .quiniela-table-wrap {
   overflow-x: visible;
   /* Evita la línea gris del propio .table-scroll a la altura de la fila que sangra */
   border-left-color: transparent;
   border-right-color: transparent;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:first-child {
+/* Filas con badge (tier): banda de color; tamaño normal salvo si también son líder */
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"] td:first-child {
   position: relative;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:first-child .quiniela-participant-cell {
-  position: relative;
-  z-index: 1;
-}
-
-/* La banda ::before de la 1.ª celda tiene ancho 100cqi; estas columnas deben pintarse encima */
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:nth-child(2),
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:nth-child(3),
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:nth-child(4),
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td.quiniela-last-col {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"] td:first-child .quiniela-participant-cell {
   position: relative;
   z-index: 1;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:first-child::before {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"] td:nth-child(2),
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"] td:nth-child(3),
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"] td:nth-child(4),
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"] td.quiniela-last-col {
+  position: relative;
+  z-index: 1;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"] td:first-child::before {
   content: "";
   position: absolute;
   left: calc(-1 * var(--quiniela-lead-bleed-x));
-  top: -0.18rem;
-  bottom: -0.18rem;
-  /* Fallback: participante ~22% del ancho fijo de tabla */
+  top: 0;
+  bottom: 0;
   width: calc(100% * 100 / 22 + 2 * var(--quiniela-lead-bleed-x));
   z-index: 0;
   pointer-events: none;
@@ -7523,12 +7522,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
     0 3px 14px rgba(0, 0, 0, 0.1);
 }
 
-/*
- * Fila líder: nombre y columna Ganador 1.5rem / 600; números marcador/Pts 1.72rem (sin pastillas +N).
- * Pastillas +N en celdas 0.9rem; bajo el nombre (Perfecto + pastilla) pastilla 0.8rem.
- */
-/* Sin borde izquierdo/derecho en los extremos: solo líneas verticales entre columnas (evita doble trazo al colapsar) */
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"] td {
   background: transparent !important;
   border-left: none !important;
   border-right: none !important;
@@ -7536,8 +7530,56 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   border-bottom: none !important;
   box-shadow: none;
   vertical-align: middle;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"] td:not(:first-child) {
+  border-left: 1px solid var(--border) !important;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"] td.quiniela-cell--hit {
+  background: rgba(255, 255, 255, 0.28) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
+}
+
+/* Fila líder: banda más alta y padding extra (encima del tier) */
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:first-child::before {
+  top: -0.18rem;
+  bottom: -0.18rem;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td {
   padding-top: 0.78rem;
   padding-bottom: 0.78rem;
+}
+
+/*
+ * Tiers que no van 1.º: solo la banda de fondo más transparente; nombres y badges al 100 %.
+ */
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"]:not(.quiniela-pred-row--lead) td:first-child::before {
+  opacity: 0.48;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"]:not(.quiniela-pred-row--lead) td:first-child .quiniela-participant-line,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"]:not(.quiniela-pred-row--lead) td:first-child .td-muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"]:not(.quiniela-pred-row--lead) td:first-child .quiniela-perfect-inline,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"]:not(.quiniela-pred-row--lead) .group-preds-pt-badge {
+  opacity: 1;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"]:not(.quiniela-pred-row--lead) td:nth-child(2) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"]:not(.quiniela-pred-row--lead) td:nth-child(3) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"]:not(.quiniela-pred-row--lead) td.quiniela-ganador-col .quiniela-ganador-pick,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"]:not(.quiniela-pred-row--lead) td.quiniela-last-col:not(.quiniela-pts--bonus-rainbow) .quiniela-cell-score-num:not(.quiniela-pts__bonus-num) {
+  opacity: 0.78;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"]:not(.quiniela-pred-row--lead) td.quiniela-last-col.quiniela-pts--bonus-rainbow .quiniela-pts__bonus-num {
+  opacity: 1;
+}
+
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"]:not(.quiniela-pred-row--lead) td.quiniela-cell--hit {
+  background: rgba(255, 255, 255, 0.14) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
 
 #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:first-child .quiniela-participant-line {
@@ -7573,11 +7615,11 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   paint-order: stroke fill;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:nth-child(2) .quiniela-cell-score-num,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:nth-child(3) .quiniela-cell-score-num,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:nth-child(2) .quiniela-cell-badges-main .muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:nth-child(3) .quiniela-cell-badges-main .muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td.quiniela-last-col:not(.quiniela-pts--zero):not(.quiniela-pts--lead-text) .quiniela-cell-score-num:not(.quiniela-pts__bonus-num) {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td:nth-child(2) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td:nth-child(3) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td:nth-child(2) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td:nth-child(3) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td.quiniela-last-col:not(.quiniela-pts--zero):not(.quiniela-pts--lead-text) .quiniela-cell-score-num:not(.quiniela-pts__bonus-num) {
   color: #e8f4ff;
   text-shadow:
     0 0 14px rgba(125, 211, 252, 0.48),
@@ -7589,18 +7631,18 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   paint-order: stroke fill;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td.quiniela-last-col .quiniela-pts__bonus-num {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td.quiniela-last-col .quiniela-pts__bonus-num {
   filter:
     drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55))
     drop-shadow(0 0 14px rgba(125, 211, 252, 0.38))
     drop-shadow(0 2px 8px rgba(0, 0, 0, 0.42));
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:nth-child(2) .quiniela-cell-score-num,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:nth-child(3) .quiniela-cell-score-num,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:nth-child(2) .quiniela-cell-badges-main .muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:nth-child(3) .quiniela-cell-badges-main .muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td.quiniela-last-col:not(.quiniela-pts--zero):not(.quiniela-pts--lead-text) .quiniela-cell-score-num:not(.quiniela-pts__bonus-num) {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td:nth-child(2) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td:nth-child(3) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td:nth-child(2) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td:nth-child(3) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td.quiniela-last-col:not(.quiniela-pts--zero):not(.quiniela-pts--lead-text) .quiniela-cell-score-num:not(.quiniela-pts__bonus-num) {
   color: #faf5ff;
   text-shadow:
     0 0 14px rgba(216, 180, 254, 0.42),
@@ -7612,18 +7654,18 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   paint-order: stroke fill;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td.quiniela-last-col .quiniela-pts__bonus-num {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td.quiniela-last-col .quiniela-pts__bonus-num {
   filter:
     drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55))
     drop-shadow(0 0 14px rgba(192, 160, 250, 0.36))
     drop-shadow(0 2px 8px rgba(0, 0, 0, 0.42));
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:nth-child(2) .quiniela-cell-score-num,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:nth-child(3) .quiniela-cell-score-num,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:nth-child(2) .quiniela-cell-badges-main .muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:nth-child(3) .quiniela-cell-badges-main .muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td.quiniela-last-col:not(.quiniela-pts--zero):not(.quiniela-pts--lead-text) .quiniela-cell-score-num:not(.quiniela-pts__bonus-num) {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td:nth-child(2) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td:nth-child(3) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td:nth-child(2) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td:nth-child(3) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td.quiniela-last-col:not(.quiniela-pts--zero):not(.quiniela-pts--lead-text) .quiniela-cell-score-num:not(.quiniela-pts__bonus-num) {
   color: #fffbeb;
   text-shadow:
     0 0 12px rgba(253, 224, 71, 0.52),
@@ -7635,18 +7677,18 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   paint-order: stroke fill;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td.quiniela-last-col .quiniela-pts__bonus-num {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td.quiniela-last-col .quiniela-pts__bonus-num {
   filter:
     drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55))
     drop-shadow(0 0 14px rgba(253, 224, 71, 0.4))
     drop-shadow(0 2px 8px rgba(0, 0, 0, 0.45));
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:nth-child(2) .quiniela-cell-score-num,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:nth-child(3) .quiniela-cell-score-num,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:nth-child(2) .quiniela-cell-badges-main .muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:nth-child(3) .quiniela-cell-badges-main .muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td.quiniela-last-col:not(.quiniela-pts--zero):not(.quiniela-pts--lead-text) .quiniela-cell-score-num:not(.quiniela-pts__bonus-num) {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td:nth-child(2) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td:nth-child(3) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td:nth-child(2) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td:nth-child(3) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td.quiniela-last-col:not(.quiniela-pts--zero):not(.quiniela-pts--lead-text) .quiniela-cell-score-num:not(.quiniela-pts__bonus-num) {
   color: #f2f8ff;
   text-shadow:
     0 0 14px rgba(125, 211, 252, 0.46),
@@ -7658,18 +7700,18 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   paint-order: stroke fill;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td.quiniela-last-col .quiniela-pts__bonus-num {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td.quiniela-last-col .quiniela-pts__bonus-num {
   filter:
     drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55))
     drop-shadow(0 0 14px rgba(125, 211, 252, 0.36))
     drop-shadow(0 2px 8px rgba(0, 0, 0, 0.42));
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:nth-child(2) .quiniela-cell-score-num,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:nth-child(3) .quiniela-cell-score-num,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:nth-child(2) .quiniela-cell-badges-main .muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:nth-child(3) .quiniela-cell-badges-main .muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td.quiniela-last-col:not(.quiniela-pts--zero):not(.quiniela-pts--lead-text) .quiniela-cell-score-num:not(.quiniela-pts__bonus-num) {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td:nth-child(2) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td:nth-child(3) .quiniela-cell-score-num,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td:nth-child(2) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td:nth-child(3) .quiniela-cell-badges-main .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td.quiniela-last-col:not(.quiniela-pts--zero):not(.quiniela-pts--lead-text) .quiniela-cell-score-num:not(.quiniela-pts__bonus-num) {
   color: #fff;
   text-shadow:
     0 0 3px rgba(0, 0, 0, 0.92),
@@ -7680,7 +7722,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   paint-order: stroke fill;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td.quiniela-last-col .quiniela-pts__bonus-num {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td.quiniela-last-col .quiniela-pts__bonus-num {
   filter:
     drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65))
     drop-shadow(0 0 16px rgba(255, 255, 255, 0.35))
@@ -7749,20 +7791,11 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   font-size: 0.9rem;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:not(:first-child) {
-  border-left: 1px solid var(--border) !important;
-}
-
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td.quiniela-cell--hit {
-  background: rgba(255, 255, 255, 0.28) !important;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
-}
-
 /*
- * Fila líder tiers (bien / excelente / perfect / badge): relleno animado en canvas (chroma-js).
+ * Filas tier (bien / excelente / perfect / badge): relleno animado en canvas (chroma-js).
  * ::before solo bordes + sombra; sin background-position (evita doble animación).
  */
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:first-child::before {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td:first-child::before {
   z-index: 1;
   border-top-color: #7dd3fc;
   border-bottom-color: #7dd3fc;
@@ -7774,7 +7807,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
     inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:first-child::before {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td:first-child::before {
   z-index: 1;
   border-top-color: #d8b4fe;
   border-bottom-color: #d8b4fe;
@@ -7786,7 +7819,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:first-child::before {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td:first-child::before {
   z-index: 1;
   border-top-color: #fde047;
   border-bottom-color: #facc15;
@@ -7798,7 +7831,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:first-child::before {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td:first-child::before {
   z-index: 1;
   border-top-color: rgba(125, 211, 252, 0.98);
   border-bottom-color: rgba(125, 211, 252, 0.98);
@@ -7812,10 +7845,10 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 }
 
 /* Canvas tiers: misma geometría que bonus; opacidad vía quinielaPerfectBonusCanvas.js → --pm26-lead-tier-viz */
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:first-child .quiniela-lead-tier-gradient-canvas,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:first-child .quiniela-lead-tier-gradient-canvas,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:first-child .quiniela-lead-tier-gradient-canvas,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:first-child .quiniela-lead-tier-gradient-canvas {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td:first-child .quiniela-lead-tier-gradient-canvas,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td:first-child .quiniela-lead-tier-gradient-canvas,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td:first-child .quiniela-lead-tier-gradient-canvas,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td:first-child .quiniela-lead-tier-gradient-canvas {
   position: absolute;
   left: calc(-1 * var(--quiniela-lead-bleed-x));
   top: -0.18rem;
@@ -7832,7 +7865,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 }
 
 /* Fondo multicolor animado: canvas + chroma-js. La altura la fija JS (ResizeObserver): si width es muy grande y height:auto, el canvas usa ratio intrínseco y desborda la fila. */
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:first-child .quiniela-perfect-bonus-gradient-canvas {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td:first-child .quiniela-perfect-bonus-gradient-canvas {
   position: absolute;
   left: calc(-1 * var(--quiniela-lead-bleed-x));
   top: -0.18rem;
@@ -7850,7 +7883,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   opacity: var(--pm26-perfect-bonus-viz, 0.5);
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:first-child::before {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td:first-child::before {
   border-top: 3px solid #e11d48;
   border-bottom: 3px solid #e11d48;
   background-color: transparent;
@@ -7859,58 +7892,58 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   animation: quiniela-lead-tb-rainbow 2.4s ease-in-out infinite;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:first-child .quiniela-participant-line {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td:first-child .quiniela-participant-line {
   color: #e8f4ff;
   text-shadow:
     0 0 14px rgba(125, 211, 252, 0.4),
     0 1px 2px rgba(0, 0, 0, 0.55);
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:first-child .td-muted {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td:first-child .td-muted {
   color: rgba(226, 240, 255, 0.75);
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:first-child .quiniela-participant-line {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td:first-child .quiniela-participant-line {
   color: #faf5ff;
   text-shadow:
     0 0 14px rgba(216, 180, 254, 0.35),
     0 1px 2px rgba(0, 0, 0, 0.55);
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:first-child .td-muted {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td:first-child .td-muted {
   color: rgba(243, 232, 255, 0.78);
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:first-child .quiniela-participant-line {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td:first-child .quiniela-participant-line {
   color: #fffbeb;
   text-shadow:
     0 0 12px rgba(253, 224, 71, 0.45),
     0 1px 3px rgba(0, 0, 0, 0.6);
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:first-child .td-muted {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td:first-child .td-muted {
   color: rgba(255, 247, 220, 0.82);
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:first-child .quiniela-participant-line {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td:first-child .quiniela-participant-line {
   color: #f2f8ff;
   text-shadow:
     0 0 14px rgba(125, 211, 252, 0.42),
     0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:first-child .td-muted {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td:first-child .td-muted {
   color: rgba(226, 240, 255, 0.72);
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:first-child .quiniela-participant-line {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td:first-child .quiniela-participant-line {
   color: #fff;
   text-shadow:
     0 0 2px rgba(0, 0, 0, 0.9),
     0 1px 3px rgba(0, 0, 0, 0.65);
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:first-child .td-muted {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td:first-child .td-muted {
   color: rgba(255, 255, 255, 0.78);
 }
 
@@ -7918,9 +7951,9 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
  * Col. Ganador (fila líder): copia exacta de color + text-shadow de .quiniela-participant-line / .td-muted en col. 1
  * (mismo tier). Sin -webkit-text-stroke ni sombras de marcador.
  */
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-name,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-draw,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-name,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-draw,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline {
   color: #e8f4ff;
   text-shadow:
     0 0 14px rgba(125, 211, 252, 0.4),
@@ -7930,18 +7963,18 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   filter: none;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td.quiniela-ganador-col .quiniela-ganador-pick > .muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline.muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td.quiniela-ganador-col .quiniela-ganador-pick .ko-penalty-pick-actions .ko-penalty-pick-actions__l {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td.quiniela-ganador-col .quiniela-ganador-pick > .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline.muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td.quiniela-ganador-col .quiniela-ganador-pick .ko-penalty-pick-actions .ko-penalty-pick-actions__l {
   color: rgba(226, 240, 255, 0.75);
   text-shadow: none;
   -webkit-text-stroke: 0;
   filter: none;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-name,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-draw,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-name,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-draw,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline {
   color: #faf5ff;
   text-shadow:
     0 0 14px rgba(216, 180, 254, 0.35),
@@ -7951,18 +7984,18 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   filter: none;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td.quiniela-ganador-col .quiniela-ganador-pick > .muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline.muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td.quiniela-ganador-col .quiniela-ganador-pick .ko-penalty-pick-actions .ko-penalty-pick-actions__l {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td.quiniela-ganador-col .quiniela-ganador-pick > .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline.muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td.quiniela-ganador-col .quiniela-ganador-pick .ko-penalty-pick-actions .ko-penalty-pick-actions__l {
   color: rgba(243, 232, 255, 0.78);
   text-shadow: none;
   -webkit-text-stroke: 0;
   filter: none;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-name,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-draw,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-name,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-draw,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline {
   color: #fffbeb;
   text-shadow:
     0 0 12px rgba(253, 224, 71, 0.45),
@@ -7972,18 +8005,18 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   filter: none;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td.quiniela-ganador-col .quiniela-ganador-pick > .muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline.muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td.quiniela-ganador-col .quiniela-ganador-pick .ko-penalty-pick-actions .ko-penalty-pick-actions__l {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td.quiniela-ganador-col .quiniela-ganador-pick > .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline.muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td.quiniela-ganador-col .quiniela-ganador-pick .ko-penalty-pick-actions .ko-penalty-pick-actions__l {
   color: rgba(255, 247, 220, 0.82);
   text-shadow: none;
   -webkit-text-stroke: 0;
   filter: none;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-name,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-draw,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-name,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-draw,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline {
   color: #f2f8ff;
   text-shadow:
     0 0 14px rgba(125, 211, 252, 0.42),
@@ -7993,18 +8026,18 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   filter: none;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td.quiniela-ganador-col .quiniela-ganador-pick > .muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline.muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td.quiniela-ganador-col .quiniela-ganador-pick .ko-penalty-pick-actions .ko-penalty-pick-actions__l {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td.quiniela-ganador-col .quiniela-ganador-pick > .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline.muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td.quiniela-ganador-col .quiniela-ganador-pick .ko-penalty-pick-actions .ko-penalty-pick-actions__l {
   color: rgba(226, 240, 255, 0.72);
   text-shadow: none;
   -webkit-text-stroke: 0;
   filter: none;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-name,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-draw,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-name,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick .quiniela-ganador-draw,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline {
   color: #fff;
   text-shadow:
     0 0 2px rgba(0, 0, 0, 0.9),
@@ -8014,9 +8047,9 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
   filter: none;
 }
 
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick > .muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline.muted,
-#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick .ko-penalty-pick-actions .ko-penalty-pick-actions__l {
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick > .muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick .ko-pen-pick-inline.muted,
+#panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td.quiniela-ganador-col .quiniela-ganador-pick .ko-penalty-pick-actions .ko-penalty-pick-actions__l {
   color: rgba(255, 255, 255, 0.78);
   text-shadow: none;
   -webkit-text-stroke: 0;
@@ -8024,14 +8057,14 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:first-child .quiniela-lead-tier-gradient-canvas,
-  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:first-child .quiniela-lead-tier-gradient-canvas,
-  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:first-child .quiniela-lead-tier-gradient-canvas,
-  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:first-child .quiniela-lead-tier-gradient-canvas {
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td:first-child .quiniela-lead-tier-gradient-canvas,
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td:first-child .quiniela-lead-tier-gradient-canvas,
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td:first-child .quiniela-lead-tier-gradient-canvas,
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td:first-child .quiniela-lead-tier-gradient-canvas {
     display: none;
   }
 
-  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-bien td:first-child::before {
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-bien td:first-child::before {
     animation: none;
     background-image: linear-gradient(
       165deg,
@@ -8043,7 +8076,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
     background-position: 50% 50%;
   }
 
-  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-excelente td:first-child::before {
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-excelente td:first-child::before {
     animation: none;
     background-image: linear-gradient(
       165deg,
@@ -8055,7 +8088,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
     background-position: 50% 50%;
   }
 
-  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect td:first-child::before {
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect td:first-child::before {
     animation: none;
     background-image: linear-gradient(
       165deg,
@@ -8067,7 +8100,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
     background-position: 50% 50%;
   }
 
-  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-badge td:first-child::before {
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-badge td:first-child::before {
     animation: none;
     background-image: linear-gradient(
       180deg,
@@ -8078,11 +8111,11 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
     background-position: 50% 50%;
   }
 
-  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:first-child .quiniela-perfect-bonus-gradient-canvas {
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td:first-child .quiniela-perfect-bonus-gradient-canvas {
     display: none;
   }
 
-  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead-perfect-bonus td:first-child::before {
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--tier-perfect-bonus td:first-child::before {
     animation: none;
     border-top-color: color-mix(in srgb, #16a34a 70%, #2563eb);
     border-bottom-color: color-mix(in srgb, #16a34a 70%, #2563eb);
@@ -8106,7 +8139,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
 }
 
 @supports (width: 1cqi) {
-  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:first-child::before {
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"] td:first-child::before {
     width: calc(100cqi + 2 * var(--quiniela-lead-bleed-x));
   }
 
@@ -8114,7 +8147,7 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
     .partidos-match-card
     .quiniela-preds
     tbody
-    tr.quiniela-pred-row--lead-perfect-bonus
+    tr.quiniela-pred-row--tier-perfect-bonus
     td:first-child
     .quiniela-perfect-bonus-gradient-canvas {
     width: calc(100cqi + 2 * var(--quiniela-lead-bleed-x));
@@ -8124,28 +8157,28 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
     .partidos-match-card
     .quiniela-preds
     tbody
-    tr.quiniela-pred-row--lead-bien
+    tr.quiniela-pred-row--tier-bien
     td:first-child
     .quiniela-lead-tier-gradient-canvas,
   #panel-partidos
     .partidos-match-card
     .quiniela-preds
     tbody
-    tr.quiniela-pred-row--lead-badge
+    tr.quiniela-pred-row--tier-badge
     td:first-child
     .quiniela-lead-tier-gradient-canvas,
   #panel-partidos
     .partidos-match-card
     .quiniela-preds
     tbody
-    tr.quiniela-pred-row--lead-excelente
+    tr.quiniela-pred-row--tier-excelente
     td:first-child
     .quiniela-lead-tier-gradient-canvas,
   #panel-partidos
     .partidos-match-card
     .quiniela-preds
     tbody
-    tr.quiniela-pred-row--lead-perfect
+    tr.quiniela-pred-row--tier-perfect
     td:first-child
     .quiniela-lead-tier-gradient-canvas {
     width: calc(100cqi + 2 * var(--quiniela-lead-bleed-x));
@@ -9654,10 +9687,10 @@ span.quiniela-legend {
   }
 
   /*
-   * Fila líder: banda ajustada al ancho exacto de las celdas (sin sangría lateral)
+   * Filas tier: banda ajustada al ancho exacto de las celdas (sin sangría lateral)
    * para no ensanchar el scroll horizontal de la tabla.
    */
-  #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:first-child::before {
+  #panel-partidos .partidos-match-card .quiniela-preds tbody tr[class*="quiniela-pred-row--tier-"] td:first-child::before {
     left: 0;
     width: var(--quiniela-lead-band-width, 100%);
     box-shadow: none;
@@ -9667,35 +9700,35 @@ span.quiniela-legend {
     .partidos-match-card
     .quiniela-preds
     tbody
-    tr.quiniela-pred-row--lead-perfect-bonus
+    tr.quiniela-pred-row--tier-perfect-bonus
     td:first-child
     .quiniela-perfect-bonus-gradient-canvas,
   #panel-partidos
     .partidos-match-card
     .quiniela-preds
     tbody
-    tr.quiniela-pred-row--lead-bien
+    tr.quiniela-pred-row--tier-bien
     td:first-child
     .quiniela-lead-tier-gradient-canvas,
   #panel-partidos
     .partidos-match-card
     .quiniela-preds
     tbody
-    tr.quiniela-pred-row--lead-badge
+    tr.quiniela-pred-row--tier-badge
     td:first-child
     .quiniela-lead-tier-gradient-canvas,
   #panel-partidos
     .partidos-match-card
     .quiniela-preds
     tbody
-    tr.quiniela-pred-row--lead-excelente
+    tr.quiniela-pred-row--tier-excelente
     td:first-child
     .quiniela-lead-tier-gradient-canvas,
   #panel-partidos
     .partidos-match-card
     .quiniela-preds
     tbody
-    tr.quiniela-pred-row--lead-perfect
+    tr.quiniela-pred-row--tier-perfect
     td:first-child
     .quiniela-lead-tier-gradient-canvas {
     left: 0;
@@ -10301,6 +10334,46 @@ span.quiniela-legend {
   #panel-generales #generales-preds-host .group-preds-table-title {
     margin-bottom: 0.38rem;
     font-size: 0.92rem;
+  }
+
+  /* Tabla comparativa: columnas según contenido (nombres largos) + scroll horizontal */
+  #panel-generales #generales-preds-host .table-scroll--group-preds {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #panel-generales .table-generales-preds {
+    width: max-content;
+    min-width: 100%;
+    table-layout: auto;
+  }
+
+  #panel-generales .table-generales-preds .group-preds-name-col .quiniela-participant-line {
+    white-space: nowrap;
+  }
+
+  #panel-generales .table-generales-preds td.generales-preds-text,
+  #panel-generales .table-generales-preds td.generales-preds-text .group-preds-cell-wrap {
+    white-space: nowrap;
+    word-break: normal;
+  }
+
+  #panel-generales .table-generales-preds .generales-preds-cell--team .team-label {
+    white-space: nowrap;
+  }
+
+  #panel-generales .table-generales-preds .group-preds-cell-wrap {
+    min-width: min-content;
+  }
+
+  #panel-generales .table-generales-preds thead th {
+    white-space: nowrap;
+  }
+
+  #panel-generales .table-generales-preds th.group-preds-pts,
+  #panel-generales .table-generales-preds td.group-preds-pts {
+    width: 1%;
+    white-space: nowrap;
   }
 
   .quiniela-official-grid {

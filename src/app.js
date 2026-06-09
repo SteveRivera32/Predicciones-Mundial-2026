@@ -2216,12 +2216,67 @@ function buildGeneralesPredictionsTableHtml(currentParticipantId) {
 }
 
 /**
+ * Móvil: columnas de la tabla «Predicciones de todos» según el contenido (nombres largos).
+ * @param {ParentNode | null | undefined} host
+ */
+function syncGeneralesPredsTableMobileColumns(host) {
+  const table = host?.querySelector?.(".table-generales-preds");
+  if (!table) return;
+
+  let colgroup = table.querySelector("colgroup[data-generales-preds-cols]");
+  if (!colgroup) {
+    colgroup = document.createElement("colgroup");
+    colgroup.dataset.generalesPredsCols = "1";
+    for (let i = 0; i < 8; i++) {
+      colgroup.appendChild(document.createElement("col"));
+    }
+    table.insertBefore(colgroup, table.firstChild);
+  }
+
+  const cols = [...colgroup.querySelectorAll("col")];
+
+  if (!isMobileLayout()) {
+    table.style.removeProperty("width");
+    table.style.removeProperty("min-width");
+    cols.forEach((col) => {
+      col.style.removeProperty("min-width");
+      col.style.removeProperty("width");
+    });
+    return;
+  }
+
+  table.style.width = "max-content";
+  table.style.minWidth = "100%";
+
+  cols.forEach((col) => col.style.removeProperty("min-width"));
+  void table.offsetWidth;
+
+  for (let c = 0; c < cols.length; c++) {
+    let maxW = 0;
+    table
+      .querySelectorAll(
+        `:scope > thead > tr > :nth-child(${c + 1}), :scope > tbody > tr > :nth-child(${c + 1})`,
+      )
+      .forEach((cell) => {
+        maxW = Math.max(maxW, cell.scrollWidth);
+      });
+    if (maxW > 0) {
+      cols[c].style.minWidth = `${Math.ceil(maxW)}px`;
+    }
+  }
+}
+
+/**
  * @param {string} participantId
  */
 function renderGeneralesComparisonTable(participantId) {
   const host = $("#generales-preds-host");
   if (!host) return;
   host.innerHTML = buildGeneralesPredictionsTableHtml(participantId);
+  requestAnimationFrame(() => {
+    syncGeneralesPredsTableMobileColumns(host);
+    syncGroupPtsBadgeCanvases(host);
+  });
 }
 
 /**
@@ -4962,21 +5017,21 @@ function quinielaNoPointsTierExtraHtml(tier) {
  * @param {string} rowClassString clases del `<tr>`
  */
 function quinielaLeadRowGradientCanvasHtml(rowClassString) {
-  if (rowClassString.includes("quiniela-pred-row--lead-perfect-bonus")) {
+  if (rowClassString.includes("quiniela-pred-row--tier-perfect-bonus")) {
     return '<canvas class="quiniela-perfect-bonus-gradient-canvas" aria-hidden="true"></canvas>';
   }
-  if (rowClassString.includes("quiniela-pred-row--lead-bien")) {
+  if (rowClassString.includes("quiniela-pred-row--tier-bien")) {
     return '<canvas class="quiniela-lead-tier-gradient-canvas" data-pm26-lead-tier="bien" aria-hidden="true"></canvas>';
   }
-  if (rowClassString.includes("quiniela-pred-row--lead-badge")) {
+  if (rowClassString.includes("quiniela-pred-row--tier-badge")) {
     return '<canvas class="quiniela-lead-tier-gradient-canvas" data-pm26-lead-tier="badge" aria-hidden="true"></canvas>';
   }
-  if (rowClassString.includes("quiniela-pred-row--lead-excelente")) {
+  if (rowClassString.includes("quiniela-pred-row--tier-excelente")) {
     return '<canvas class="quiniela-lead-tier-gradient-canvas" data-pm26-lead-tier="excelente" aria-hidden="true"></canvas>';
   }
   if (
-    rowClassString.includes("quiniela-pred-row--lead-perfect") &&
-    !rowClassString.includes("quiniela-pred-row--lead-perfect-bonus")
+    rowClassString.includes("quiniela-pred-row--tier-perfect") &&
+    !rowClassString.includes("quiniela-pred-row--tier-perfect-bonus")
   ) {
     return '<canvas class="quiniela-lead-tier-gradient-canvas" data-pm26-lead-tier="perfect" aria-hidden="true"></canvas>';
   }
@@ -4984,8 +5039,8 @@ function quinielaLeadRowGradientCanvasHtml(rowClassString) {
 }
 
 /**
- * Primera celda (participante). Incluye canvas para filas líder con gradiente animado (chroma-js).
- * @param {string} rowClassString clases del `<tr>` (p. ej. `quiniela-pred-row--lead-perfect-bonus`)
+ * Primera celda (participante). Canvas de gradiente animado en filas con tier (chroma-js).
+ * @param {string} rowClassString clases del `<tr>` (p. ej. `quiniela-pred-row--lead quiniela-pred-row--tier-perfect-bonus`)
  */
 function quinielaParticipantFirstTdHtml(name, selfNote, tierExtra, rowClassString) {
   const canvas = quinielaLeadRowGradientCanvasHtml(rowClassString);
@@ -5048,10 +5103,13 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
       let cls = "quiniela-pred-row";
       if (d.p.id === session.participantId) cls += " quiniela-pred-row--self";
       if (showPtsColumn) {
+        cls += quinielaPredRowTierExtraClasses(d, {
+          officialCompleteForScoring,
+          comboApply: true,
+        });
         cls += quinielaPredRowLeadExtraClasses(d, {
           officialCompleteForScoring,
           maxPtsThisMatch,
-          comboApply: true,
         });
       }
 
@@ -5222,30 +5280,50 @@ function quinielaPtsTdClassList(d, ctx) {
 }
 
 /**
- * Fila(s) con máximo de puntos: borde superior/inferior según badge (BIEN / EXCELENTE / PERFECTO / PERFECTO+bono).
- * Multicolor animado solo con marcador «Perfecto» (no «Excelente») + bono improbable.
+ * Tier visual (color del badge) para cualquier fila con puntos durante el partido.
  * @param {{ predCommitted: boolean, pts: number|null, exact?: boolean, exactTier?: string|null, breakdown?: { improbablePts?: number, penaltyPts?: number } | null }} d
- * @param {{ officialCompleteForScoring: boolean, maxPtsThisMatch: number, comboApply: boolean }} ctx
+ * @param {{ officialCompleteForScoring: boolean, comboApply: boolean }} ctx
+ * @returns {"bien"|"excelente"|"perfect"|"badge"|"perfect-bonus"|null}
+ */
+function quinielaPredRowTierKind(d, ctx) {
+  const { officialCompleteForScoring, comboApply } = ctx;
+  const hasScore =
+    officialCompleteForScoring && d.predCommitted && d.pts !== null && typeof d.pts === "number";
+  if (!hasScore || d.pts <= 0) return null;
+  const imp = (d.breakdown?.improbablePts ?? 0) > 0;
+  const exact = d.exact === true;
+  if (exact && imp && d.exactTier !== "excelente") return "perfect-bonus";
+  if (exact && d.exactTier === "excelente") return "excelente";
+  if (exact) return "perfect";
+  if ((d.breakdown?.penaltyPts ?? 0) > 0) return "bien";
+  const combo = quinielaComboBadgeNoPointsTier(d.breakdown, { apply: comboApply });
+  if (combo === "excelente") return "excelente";
+  if (combo === "bien") return "bien";
+  return "badge";
+}
+
+/**
+ * Clase de tier (color) para todos los participantes con badge/puntos en juego.
+ * @param {{ predCommitted: boolean, pts: number|null, exact?: boolean, exactTier?: string|null, breakdown?: { improbablePts?: number, penaltyPts?: number } | null }} d
+ * @param {{ officialCompleteForScoring: boolean, comboApply: boolean }} ctx
+ */
+function quinielaPredRowTierExtraClasses(d, ctx) {
+  const kind = quinielaPredRowTierKind(d, ctx);
+  if (!kind) return "";
+  return ` quiniela-pred-row--tier-${kind}`;
+}
+
+/**
+ * Fila líder (máximo de puntos): solo tamaño ampliado; el color viene de `--tier-*`.
+ * @param {{ predCommitted: boolean, pts: number|null }} d
+ * @param {{ officialCompleteForScoring: boolean, maxPtsThisMatch: number }} ctx
  */
 function quinielaPredRowLeadExtraClasses(d, ctx) {
-  const { officialCompleteForScoring, maxPtsThisMatch, comboApply } = ctx;
+  const { officialCompleteForScoring, maxPtsThisMatch } = ctx;
   const hasScore =
     officialCompleteForScoring && d.predCommitted && d.pts !== null && typeof d.pts === "number";
   if (!hasScore || maxPtsThisMatch <= 0 || d.pts !== maxPtsThisMatch) return "";
-  const imp = (d.breakdown?.improbablePts ?? 0) > 0;
-  const exact = d.exact === true;
-  let kind = "badge";
-  if (exact && imp && d.exactTier !== "excelente") kind = "perfect-bonus";
-  else if (exact && d.exactTier === "excelente") kind = "excelente";
-  else if (exact) kind = "perfect";
-  else if ((d.breakdown?.penaltyPts ?? 0) > 0) kind = "bien";
-  else {
-    const combo = quinielaComboBadgeNoPointsTier(d.breakdown, { apply: comboApply });
-    if (combo === "excelente") kind = "excelente";
-    else if (combo === "bien") kind = "bien";
-    else kind = "badge";
-  }
-  return ` quiniela-pred-row--lead quiniela-pred-row--lead-${kind}`;
+  return " quiniela-pred-row--lead";
 }
 
 /**
@@ -5315,10 +5393,13 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
       let cls = "quiniela-pred-row partidos-ko-pred-row";
       if (d.p.id === session.participantId) cls += " quiniela-pred-row--self";
       if (showPtsColumn) {
+        cls += quinielaPredRowTierExtraClasses(d, {
+          officialCompleteForScoring,
+          comboApply: !koOfficialDraw,
+        });
         cls += quinielaPredRowLeadExtraClasses(d, {
           officialCompleteForScoring,
           maxPtsThisMatch: maxPtsThisMatchKo,
-          comboApply: !koOfficialDraw,
         });
       }
 
@@ -8150,4 +8231,8 @@ export function initApp() {
   }
 
   requestAnimationFrame(() => syncGroupPtsBadgeCanvases(document.body));
+
+  MOBILE_LAYOUT_MQ?.addEventListener?.("change", () => {
+    syncGeneralesPredsTableMobileColumns($("#generales-preds-host"));
+  });
 }
