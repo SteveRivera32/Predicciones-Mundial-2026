@@ -35,7 +35,62 @@ const TIER_SPEC = {
 const registered = new Set();
 /** @type {WeakMap<HTMLCanvasElement, ResizeObserver>} */
 const resizeObservers = new WeakMap();
+/** @type {WeakMap<HTMLTableElement, ResizeObserver>} */
+const leadBandObservers = new WeakMap();
 let rafId = 0;
+
+function leadBleedPx() {
+  const fs = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  return 1.15 * fs + 1;
+}
+
+/**
+ * Ancho de la banda de fila líder = ancho real de la tabla (scroll) + sangría.
+ * @param {HTMLTableElement} table
+ */
+function isMobileLeadBandLayout() {
+  return typeof window !== "undefined" && window.matchMedia?.("(max-width: 40rem)")?.matches === true;
+}
+
+function syncLeadRowBandWidthForTable(table) {
+  const leadRow = table.querySelector("tbody tr.quiniela-pred-row--lead");
+  if (!leadRow) {
+    table.style.removeProperty("--quiniela-lead-band-width");
+    return;
+  }
+  const tds = leadRow.querySelectorAll(":scope > td");
+  if (tds.length < 2) {
+    table.style.removeProperty("--quiniela-lead-band-width");
+    return;
+  }
+  const first = tds[0];
+  const last = tds[tds.length - 1];
+  const rowSpan = last.offsetLeft + last.offsetWidth - first.offsetLeft;
+  if (isMobileLeadBandLayout()) {
+    table.style.setProperty("--quiniela-lead-band-width", `${Math.ceil(rowSpan)}px`);
+    return;
+  }
+  const bleedX = leadBleedPx();
+  const contentSpan = Math.max(table.scrollWidth, rowSpan);
+  table.style.setProperty("--quiniela-lead-band-width", `${Math.ceil(contentSpan + 2 * bleedX)}px`);
+}
+
+/**
+ * @param {ParentNode | null | undefined} root
+ */
+function syncLeadRowBandWidths(root) {
+  if (!root) return;
+  root.querySelectorAll("#panel-partidos .partidos-match-card table.quiniela-preds").forEach((el) => {
+    if (!(el instanceof HTMLTableElement)) return;
+    syncLeadRowBandWidthForTable(el);
+    if (leadBandObservers.has(el)) return;
+    const wrap = el.closest(".quiniela-table-wrap");
+    const ro = new ResizeObserver(() => syncLeadRowBandWidthForTable(el));
+    ro.observe(el);
+    if (wrap instanceof HTMLElement) ro.observe(wrap);
+    leadBandObservers.set(el, ro);
+  });
+}
 
 function bleedPx() {
   const fs = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
@@ -253,6 +308,8 @@ function ensureLoop() {
 export function syncQuinielaPerfectBonusCanvases(root) {
   if (!root) return;
 
+  syncLeadRowBandWidths(root);
+
   root
     .querySelectorAll("canvas.quiniela-perfect-bonus-gradient-canvas, canvas.quiniela-lead-tier-gradient-canvas")
     .forEach((el) => {
@@ -267,6 +324,11 @@ export function syncQuinielaPerfectBonusCanvases(root) {
 }
 
 if (typeof window !== "undefined") {
+  const mobileMq = window.matchMedia?.("(max-width: 40rem)");
+  mobileMq?.addEventListener?.("change", () => {
+    syncLeadRowBandWidths(document.getElementById("quiniela-wrap"));
+  });
+
   const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   mq?.addEventListener?.("change", () => {
     if (registered.size) ensureLoop();

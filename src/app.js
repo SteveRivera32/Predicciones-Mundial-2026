@@ -69,7 +69,11 @@ import {
   isAnyTournamentMatchKickoffLocked,
   scheduleKickoffLockRefresh,
 } from "./locks.js";
-import { applyKickoffAutoStarts } from "./kickoff-autostart.js";
+import {
+  applyKickoffAutoStarts,
+  confirmPendingPredictionsForGroupMatch,
+  confirmPendingPredictionsForKoMatch,
+} from "./kickoff-autostart.js";
 import {
   formatKickoffShortSpanish,
   countdownLabelSpanish,
@@ -103,6 +107,13 @@ const STATS_COLOR_HINT_DISMISSED_KEY = "pm26-stats-color-hint-dismissed-v3";
 const FASE_GRUPOS_FILTER_KEY = "pm26-fase-grupos-gid";
 const FLOATING_RANK_POS_KEY = "pm26-floating-rank-pos";
 const FLOATING_RANK_ENABLED_KEY = "pm26-floating-rank-enabled";
+const MOBILE_LAYOUT_MQ =
+  typeof window !== "undefined" ? window.matchMedia("(max-width: 40rem)") : null;
+
+/** @returns {boolean} */
+function isMobileLayout() {
+  return MOBILE_LAYOUT_MQ?.matches === true;
+}
 const MAX_BEST_THIRD_TEAMS = 8;
 let tabsController = null;
 /** Evita setTab al sincronizar details desde la pestaña activa. */
@@ -2639,6 +2650,107 @@ function applyThirdYesButtonCap(pred, groupId, yesBtn) {
       : "Sí pasa";
 }
 
+let groupOrderPickerDocClickWired = false;
+
+/** @param {HTMLSelectElement} sel */
+function syncGroupOrderPickerTrigger(sel) {
+  const wrap = sel.closest(".group-order-combobox");
+  const trigger = wrap?.querySelector(".group-order-combobox__trigger");
+  if (!trigger) return;
+  const opt = sel.selectedOptions[0];
+  trigger.textContent = opt?.textContent ?? "— Elegir equipo —";
+}
+
+/** @param {HTMLElement} scope */
+function syncAllGroupOrderPickers(scope) {
+  scope.querySelectorAll('select[data-role="order"]').forEach((sel) => {
+    if (sel instanceof HTMLSelectElement) syncGroupOrderPickerTrigger(sel);
+  });
+}
+
+/** @param {HTMLOListElement} ol */
+function wireGroupOrderMobilePickers(ol) {
+  if (!isMobileLayout()) return;
+
+  function closeAllGroupOrderPickerLists(except) {
+    ol.querySelectorAll(".group-order-combobox__list").forEach((list) => {
+      const box = list.closest(".group-order-combobox");
+      if (except && box === except) return;
+      list.hidden = true;
+      const trigger = box?.querySelector(".group-order-combobox__trigger");
+      trigger?.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  ol.querySelectorAll('select[data-role="order"]').forEach((sel) => {
+    if (!(sel instanceof HTMLSelectElement) || sel.dataset.mobilePickerWired === "1") return;
+    sel.dataset.mobilePickerWired = "1";
+
+    const wrap = document.createElement("div");
+    wrap.className = "group-order-combobox";
+
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "group-order-combobox__trigger input input-sm";
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-expanded", "false");
+
+    const list = document.createElement("ul");
+    list.className = "group-order-combobox__list";
+    list.setAttribute("role", "listbox");
+    list.hidden = true;
+
+    Array.from(sel.options).forEach((opt) => {
+      const li = document.createElement("li");
+      li.className = "group-order-combobox__option";
+      li.setAttribute("role", "option");
+      li.dataset.value = opt.value;
+      li.textContent = opt.textContent;
+      list.appendChild(li);
+    });
+
+    const parent = sel.parentNode;
+    if (!parent) return;
+    parent.insertBefore(wrap, sel);
+    wrap.appendChild(sel);
+    wrap.appendChild(trigger);
+    wrap.appendChild(list);
+    sel.classList.add("group-order-combobox__native");
+
+    syncGroupOrderPickerTrigger(sel);
+
+    trigger.addEventListener("click", () => {
+      const willOpen = list.hidden;
+      closeAllGroupOrderPickerLists(willOpen ? wrap : null);
+      list.hidden = !willOpen;
+      trigger.setAttribute("aria-expanded", willOpen ? "true" : "false");
+    });
+
+    list.addEventListener("click", (e) => {
+      const li = e.target.closest(".group-order-combobox__option");
+      if (!li) return;
+      sel.value = li.dataset.value ?? "";
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      syncGroupOrderPickerTrigger(sel);
+      list.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+    });
+  });
+
+  if (!groupOrderPickerDocClickWired) {
+    groupOrderPickerDocClickWired = true;
+    document.addEventListener("click", (e) => {
+      if (e.target instanceof Element && e.target.closest(".group-order-combobox")) return;
+      document.querySelectorAll(".group-order-combobox__list").forEach((list) => {
+        list.hidden = true;
+      });
+      document.querySelectorAll(".group-order-combobox__trigger").forEach((trigger) => {
+        trigger.setAttribute("aria-expanded", "false");
+      });
+    });
+  }
+}
+
 function renderGrupos(participantId, predictions) {
   const wrap = $("#grupos-wrap");
   wrap.innerHTML = "";
@@ -2838,6 +2950,7 @@ function renderGrupos(participantId, predictions) {
             const hasThirdChoice = thirdPicked === true || thirdPicked === false;
             confirmBtn.disabled = !(uniquePicked === MAX_GROUP_TEAMS && hasThirdChoice);
           }
+          syncAllGroupOrderPickers(ol);
         });
         li.appendChild(sel);
         if (idx === 2) {
@@ -2912,6 +3025,7 @@ function renderGrupos(participantId, predictions) {
         ol.appendChild(li);
       });
       orderWrap.appendChild(ol);
+      wireGroupOrderMobilePickers(ol);
       const uniquePicked = new Set(order.filter(Boolean)).size;
       const thirdChoice = predictions.groupThirdAdvances?.[grp.id];
       const hasThirdChoice = thirdChoice === true || thirdChoice === false;
@@ -3479,8 +3593,19 @@ function initFloatingRanking() {
 
   function updateEnableButton() {
     if (!enableBtn) return;
-    enableBtn.textContent = `Ranking flotante: ${enabled ? "ON" : "OFF"}`;
+    const state = enabled ? "ON" : "OFF";
+    if (isMobileLayout()) {
+      enableBtn.textContent = `🏆 ${state}`;
+      enableBtn.title = `Ranking flotante: ${state}`;
+      enableBtn.setAttribute("aria-label", `Ranking flotante: ${state}`);
+    } else {
+      enableBtn.textContent = `Ranking flotante: ${state}`;
+      enableBtn.title = "";
+      enableBtn.setAttribute("aria-label", `Ranking flotante: ${state}`);
+    }
   }
+
+  MOBILE_LAYOUT_MQ?.addEventListener("change", updateEnableButton);
 
   function updateCardPlacement() {
     const gap = 8;
@@ -3607,43 +3732,21 @@ function initFloatingRanking() {
     if (!dragSmooth.rafId) dragSmooth.rafId = requestAnimationFrame(dragRafTick);
   }
 
-  toggle.addEventListener("pointerdown", (e) => {
-    dragSmooth.pointerId = e.pointerId;
-    dragSmooth.moved = false;
-    stopDragRaf();
+  function ensureHostDragCoords() {
     const rect = host.getBoundingClientRect();
-    dragSmooth.originClientX = e.clientX;
-    dragSmooth.originClientY = e.clientY;
-    dragSmooth.originHostLeft = rect.left;
-    dragSmooth.originHostTop = rect.top;
-    dragSmooth.currentX = dragSmooth.targetX = rect.left;
-    dragSmooth.currentY = dragSmooth.targetY = rect.top;
-    toggle.setPointerCapture(e.pointerId);
-    host.classList.add("floating-ranking--pressing");
-  });
+    applyHostPosPx(rect.left, rect.top);
+    return rect;
+  }
 
-  toggle.addEventListener("pointermove", (e) => {
-    if (dragSmooth.pointerId !== e.pointerId) return;
-    const dx = e.clientX - dragSmooth.originClientX;
-    const dy = e.clientY - dragSmooth.originClientY;
-    if (!dragSmooth.moved && Math.hypot(dx, dy) > 6) {
-      dragSmooth.moved = true;
-      host.classList.remove("floating-ranking--pressing");
-      host.classList.add("is-dragging");
-    }
-    if (!dragSmooth.moved) return;
-
-    const rawX = dragSmooth.originHostLeft + (e.clientX - dragSmooth.originClientX);
-    const rawY = dragSmooth.originHostTop + (e.clientY - dragSmooth.originClientY);
-    const p = clampHostPos(rawX, rawY);
-    dragSmooth.targetX = p.x;
-    dragSmooth.targetY = p.y;
-    scheduleDragRaf();
-  });
-
-  toggle.addEventListener("pointerup", (e) => {
+  function finishDragPointer(e) {
     if (dragSmooth.pointerId !== e.pointerId) return;
     stopDragRaf();
+    window.removeEventListener("pointermove", onDragPointerMove);
+    window.removeEventListener("pointerup", finishDragPointer);
+    window.removeEventListener("pointercancel", cancelDragPointer);
+    if (toggle.hasPointerCapture?.(e.pointerId)) {
+      toggle.releasePointerCapture(e.pointerId);
+    }
     host.classList.remove("is-dragging", "floating-ranking--pressing");
     if (dragSmooth.moved) {
       const p = clampHostPos(dragSmooth.targetX, dragSmooth.targetY);
@@ -3655,13 +3758,70 @@ function initFloatingRanking() {
       setOpen(card.hidden);
     }
     dragSmooth.pointerId = -1;
-  });
+  }
 
-  toggle.addEventListener("pointercancel", () => {
+  function cancelDragPointer(e) {
+    if (dragSmooth.pointerId !== e.pointerId) return;
     stopDragRaf();
+    window.removeEventListener("pointermove", onDragPointerMove);
+    window.removeEventListener("pointerup", finishDragPointer);
+    window.removeEventListener("pointercancel", cancelDragPointer);
+    if (toggle.hasPointerCapture?.(e.pointerId)) {
+      toggle.releasePointerCapture(e.pointerId);
+    }
     host.classList.remove("is-dragging", "floating-ranking--pressing");
     dragSmooth.pointerId = -1;
-  });
+  }
+
+  function onDragPointerMove(e) {
+    if (dragSmooth.pointerId !== e.pointerId) return;
+    const dx = e.clientX - dragSmooth.originClientX;
+    const dy = e.clientY - dragSmooth.originClientY;
+    if (!dragSmooth.moved && Math.hypot(dx, dy) > 6) {
+      dragSmooth.moved = true;
+      host.classList.remove("floating-ranking--pressing");
+      host.classList.add("is-dragging");
+    }
+    if (!dragSmooth.moved) return;
+    e.preventDefault();
+
+    const rawX = dragSmooth.originHostLeft + (e.clientX - dragSmooth.originClientX);
+    const rawY = dragSmooth.originHostTop + (e.clientY - dragSmooth.originClientY);
+    const p = clampHostPos(rawX, rawY);
+    dragSmooth.targetX = p.x;
+    dragSmooth.targetY = p.y;
+    scheduleDragRaf();
+  }
+
+  toggle.addEventListener(
+    "pointerdown",
+    (e) => {
+      if (e.button !== 0 && e.pointerType === "mouse") return;
+      e.preventDefault();
+      dragSmooth.pointerId = e.pointerId;
+      dragSmooth.moved = false;
+      stopDragRaf();
+      const rect = ensureHostDragCoords();
+      dragSmooth.originClientX = e.clientX;
+      dragSmooth.originClientY = e.clientY;
+      dragSmooth.originHostLeft = rect.left;
+      dragSmooth.originHostTop = rect.top;
+      dragSmooth.currentX = dragSmooth.targetX = rect.left;
+      dragSmooth.currentY = dragSmooth.targetY = rect.top;
+      if (toggle.setPointerCapture) {
+        try {
+          toggle.setPointerCapture(e.pointerId);
+        } catch {
+          /* algunos navegadores móviles no soportan captura en este botón */
+        }
+      }
+      window.addEventListener("pointermove", onDragPointerMove, { passive: false });
+      window.addEventListener("pointerup", finishDragPointer);
+      window.addEventListener("pointercancel", cancelDragPointer);
+      host.classList.add("floating-ranking--pressing");
+    },
+    { passive: false },
+  );
 
   /** Sin acotar al viewport, left/top guardados pueden dejar el botón fuera de pantalla. */
   const savedPosRaw = localStorage.getItem(FLOATING_RANK_POS_KEY);
@@ -4350,6 +4510,39 @@ function updateProximosNavShortcutButton(session) {
 }
 
 /**
+ * @param {{ kickoff?: string | null, id: string }} m
+ * @param {Set<string>} nextJornadaIds
+ * @param {boolean} matchInProgress
+ * @param {boolean} [shortLabel] SIGUIENTE en móvil vs SIGUIENTE PARTIDO en escritorio
+ */
+function partidosCornerBadgeHtml(m, nextJornadaIds, matchInProgress, shortLabel = false) {
+  if (!m.kickoff) return "";
+  const isJornadaProxima = nextJornadaIds.has(m.id);
+  if (matchInProgress) {
+    return `<span class="partidos-corner-badge partidos-corner-badge--en-juego" role="status">EN JUEGO</span>`;
+  }
+  if (isJornadaProxima) {
+    const label = shortLabel ? "SIGUIENTE" : "SIGUIENTE PARTIDO";
+    return `<span class="partidos-corner-badge" role="status">${escapeHtml(label)}</span>`;
+  }
+  return "";
+}
+
+/**
+ * Chip compacto de predicción (solo resumen móvil).
+ * @param {boolean} confirmed
+ * @param {boolean} [matchOfficiallyClosed]
+ */
+function partidosUserPredChipHtml(confirmed, matchOfficiallyClosed = false) {
+  if (matchOfficiallyClosed) {
+    return `<span class="partidos-acc__pred-chip partidos-acc__pred-chip--ended" role="status">Terminado</span>`;
+  }
+  const tone = confirmed ? "partidos-acc__pred-chip--ok" : "partidos-acc__pred-chip--warn";
+  const label = confirmed ? "Confirmada" : "Sin confirmar";
+  return `<span class="partidos-acc__pred-chip ${tone}" role="status">${escapeHtml(label)}</span>`;
+}
+
+/**
  * @param {boolean} confirmed
  * @param {"corner"|"inline"} variant corner = columna derecha con fecha (compacta); inline = sin kickoff
  * @param {boolean} [matchOfficiallyClosed] si true, sustituye confirmada/sin confirmar por «Partido terminado»
@@ -4374,18 +4567,13 @@ function partidosUserPredPillHtml(confirmed, variant, matchOfficiallyClosed = fa
  */
 function partidosMatchCornerHtml(m, nextJornadaIds, userPredConfirmed, matchOfficiallyClosed, matchInProgress = false) {
   if (!m.kickoff) return "";
-  const isJornadaProxima = nextJornadaIds.has(m.id);
   const dateS = formatKickoffShortSpanish(m.kickoff);
   const eta = countdownLabelSpanish(m.kickoff);
   const meta = `<div class="partidos-match-corner__meta">
     <div class="partidos-match-corner__date-line">${escapeHtml(dateS)}</div>
     <div class="partidos-match-corner__eta">${escapeHtml(eta)}</div>
   </div>`;
-  const badge = matchInProgress
-    ? `<span class="partidos-corner-badge partidos-corner-badge--en-juego" role="status">EN JUEGO</span>`
-    : isJornadaProxima
-      ? `<span class="partidos-corner-badge" role="status">${escapeHtml("SIGUIENTE PARTIDO")}</span>`
-      : "";
+  const badge = partidosCornerBadgeHtml(m, nextJornadaIds, matchInProgress);
   const predHtml = partidosUserPredPillHtml(userPredConfirmed, "corner", matchOfficiallyClosed);
   return `<aside class="partidos-match-corner" aria-label="Fecha, jornada y estado de tu predicción">
     <div class="partidos-match-corner__stack">
@@ -4452,6 +4640,158 @@ function partidosOfficialPreviewLineKo(m, official, officialSlotsDecided) {
     return `Marcador cargado: <strong>${escapeHtml(String(off.home))} — ${escapeHtml(String(off.away))}</strong> <span class="muted">(sin confirmar)</span>`;
   }
   return `<span class="muted">Resultado oficial: pendiente</span>`;
+}
+
+/** Marcador centrado con celdas resaltadas (solo resumen móvil, partido cerrado). */
+function partidosAccMobileClosedScoreHtml(home, away) {
+  if (home === "" || away === "") return "";
+  const homeCls = officialScoreOutcomeClass(home, away, "home");
+  const awayCls = officialScoreOutcomeClass(home, away, "away");
+  const hs = escapeHtml(String(home));
+  const as = escapeHtml(String(away));
+  return `<div class="partidos-acc__mobile-score" role="status" aria-label="Resultado ${hs} a ${as}">
+    <span class="quiniela-cell quiniela-cell--score partidos-acc__mobile-score-cell${homeCls}">${hs}</span>
+    <span class="partidos-acc__mobile-score-sep" aria-hidden="true">—</span>
+    <span class="quiniela-cell quiniela-cell--score partidos-acc__mobile-score-cell${awayCls}">${as}</span>
+  </div>`;
+}
+
+/**
+ * Resumen compacto del acordeón (visible solo en móvil vía CSS).
+ * @param {{
+ *   contextLabel: string,
+ *   homeTeamsHtml: string,
+ *   awayTeamsHtml: string,
+ *   m: { kickoff?: string | null, id: string },
+ *   nextJornadaIds: Set<string>,
+ *   matchInProgress: boolean,
+ *   userPredConfirmed: boolean,
+ *   matchOfficiallyClosed: boolean,
+ *   closedHomeScore?: string | number,
+ *   closedAwayScore?: string | number,
+ * }} opts
+ */
+function partidosAccSummaryMobileHtml(opts) {
+  const {
+    contextLabel,
+    homeTeamsHtml,
+    awayTeamsHtml,
+    m,
+    nextJornadaIds,
+    matchInProgress,
+    userPredConfirmed,
+    matchOfficiallyClosed,
+    closedHomeScore = "",
+    closedAwayScore = "",
+  } = opts;
+  const badge = partidosCornerBadgeHtml(m, nextJornadaIds, matchInProgress, true);
+  const predChip = partidosUserPredChipHtml(userPredConfirmed, matchOfficiallyClosed);
+  if (matchOfficiallyClosed) {
+    const closedScoreHtml = partidosAccMobileClosedScoreHtml(closedHomeScore, closedAwayScore);
+    return `<div class="partidos-acc__summary-mobile partidos-acc__summary-mobile--closed">
+    <div class="partidos-acc__mobile-head">
+      <span class="partidos-acc__context">${escapeHtml(contextLabel)}</span>
+      <span class="partidos-acc__pred-chip partidos-acc__pred-chip--ended" role="status">Terminado</span>
+    </div>
+    <div class="partidos-acc__mobile-teams">
+      <span class="partidos-acc__team partidos-acc__team--home">${homeTeamsHtml}</span>
+      <span class="vs">vs</span>
+      <span class="partidos-acc__team partidos-acc__team--away">${awayTeamsHtml}</span>
+    </div>
+    ${closedScoreHtml}
+  </div>`;
+  }
+  let metaBlock = "";
+  {
+    let leftMeta = "";
+    if (m.kickoff && !matchInProgress) {
+      const eta = countdownLabelSpanish(m.kickoff);
+      if (eta) {
+        leftMeta = `<span class="partidos-acc__eta muted">${escapeHtml(eta)}</span>`;
+      }
+    } else if (!m.kickoff) {
+      leftMeta = `<span class="partidos-acc__no-kick-inline muted">Sin fecha de inicio</span>`;
+    }
+    metaBlock = `<div class="partidos-acc__mobile-meta">
+      <div class="partidos-acc__mobile-status">
+        ${leftMeta ? `<span class="partidos-acc__mobile-eta-wrap">${leftMeta}</span>` : ""}
+        <span class="partidos-acc__mobile-pred">${predChip}</span>
+      </div>
+    </div>`;
+  }
+  return `<div class="partidos-acc__summary-mobile">
+    <div class="partidos-acc__mobile-head">
+      <span class="partidos-acc__context">${escapeHtml(contextLabel)}</span>
+      ${badge}
+    </div>
+    <div class="partidos-acc__mobile-teams">
+      <span class="partidos-acc__team partidos-acc__team--home">${homeTeamsHtml}</span>
+      <span class="vs">vs</span>
+      <span class="partidos-acc__team partidos-acc__team--away">${awayTeamsHtml}</span>
+    </div>
+    ${metaBlock}
+  </div>`;
+}
+
+/**
+ * Resumen del acordeón en escritorio (visible solo en PC vía CSS).
+ * @param {{
+ *   contextLabel: string,
+ *   homeTeamsHtml: string,
+ *   awayTeamsHtml: string,
+ *   accessibleTitle: string,
+ *   matchOfficiallyClosed: boolean,
+ *   closedHomeScore?: string | number,
+ *   closedAwayScore?: string | number,
+ *   noKickHtml?: string,
+ *   predInlineHtml?: string,
+ *   officialPreview?: string,
+ * }} opts
+ */
+function partidosAccSummaryDesktopHtml(opts) {
+  const {
+    contextLabel,
+    homeTeamsHtml,
+    awayTeamsHtml,
+    accessibleTitle,
+    matchOfficiallyClosed,
+    closedHomeScore = "",
+    closedAwayScore = "",
+    noKickHtml = "",
+    predInlineHtml = "",
+    officialPreview = "",
+  } = opts;
+  const closedScoreInner = matchOfficiallyClosed
+    ? partidosAccMobileClosedScoreHtml(closedHomeScore, closedAwayScore)
+    : "";
+  const scoreHtml = closedScoreInner
+    ? `<div class="partidos-acc__desktop-result"><span class="partidos-acc__desktop-result-label">Resultado:</span>${closedScoreInner}</div>`
+    : "";
+  const officialPreviewHtml =
+    !matchOfficiallyClosed && officialPreview
+      ? `<div class="partidos-acc__official-preview">${officialPreview}</div>`
+      : "";
+  const closedCls = matchOfficiallyClosed ? " partidos-acc__summary-desktop--closed" : "";
+  return `<div class="partidos-acc__summary-desktop${closedCls}">
+    <h2 class="visually-hidden">${escapeHtml(accessibleTitle)}</h2>
+    <span class="partidos-acc__context">${escapeHtml(contextLabel)}</span>
+    <div class="partidos-acc__desktop-teams">
+      <span class="partidos-acc__team partidos-acc__team--home">${homeTeamsHtml}</span>
+      <span class="vs">vs</span>
+      <span class="partidos-acc__team partidos-acc__team--away">${awayTeamsHtml}</span>
+    </div>
+    ${scoreHtml}
+    ${noKickHtml}
+    ${predInlineHtml}
+    ${officialPreviewHtml}
+  </div>`;
+}
+
+/** Fecha de inicio en el cuerpo del acordeón (visible solo en móvil vía CSS). */
+function partidosAccKickoffBodyHtml(m) {
+  if (!m.kickoff) return "";
+  const dateS = formatKickoffShortSpanish(m.kickoff);
+  return `<p class="partidos-acc__kickoff-date muted" role="note">${escapeHtml(dateS)}</p>`;
 }
 
 /**
@@ -5185,6 +5525,18 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
   const predInlineKo = !m.kickoff
     ? `<div class="partidos-acc__pred-row">${partidosUserPredPillHtml(userPredConfirmedKo, "inline", matchClosedKo)}</div>`
     : "";
+  const mobileSummaryKo = partidosAccSummaryMobileHtml({
+    contextLabel: knockoutPhaseTitle(m.roundId),
+    homeTeamsHtml: bracketTeamLineHtml(homeLab),
+    awayTeamsHtml: bracketTeamLineHtml(awayLab),
+    m,
+    nextJornadaIds,
+    matchInProgress: koInPlay,
+    userPredConfirmed: userPredConfirmedKo,
+    matchOfficiallyClosed: matchClosedKo,
+    closedHomeScore: matchClosedKo ? off.home : "",
+    closedAwayScore: matchClosedKo ? off.away : "",
+  });
   const kickClsKo = m.kickoff ? " partidos-match-card--has-kickoff" : "";
 
   const myPred = loadPredictions(session.participantId).knockoutScores ?? {};
@@ -5291,13 +5643,23 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
         <summary class="partidos-acc__summary">
           <span class="partidos-acc__chev" aria-hidden="true"></span>
           <div class="partidos-acc__summary-main">
-            <h2 class="partidos-acc__title quiniela-match-title">${escapeHtml(knockoutPhaseTitle(m.roundId))} · ${bracketTeamLineHtml(homeLab)} <span class="vs">vs</span> ${bracketTeamLineHtml(awayLab)}</h2>
-            ${noKickHtmlKo}
-            ${predInlineKo}
-            <div class="partidos-acc__official-preview">${officialPreviewKo}</div>
+            ${mobileSummaryKo}
+            ${partidosAccSummaryDesktopHtml({
+              contextLabel: knockoutPhaseTitle(m.roundId),
+              homeTeamsHtml: bracketTeamLineHtml(homeLab),
+              awayTeamsHtml: bracketTeamLineHtml(awayLab),
+              accessibleTitle: `${knockoutPhaseTitle(m.roundId)}: ${homeLab} vs ${awayLab}`,
+              matchOfficiallyClosed: matchClosedKo,
+              closedHomeScore: matchClosedKo ? off.home : "",
+              closedAwayScore: matchClosedKo ? off.away : "",
+              noKickHtml: noKickHtmlKo,
+              predInlineHtml: predInlineKo,
+              officialPreview: officialPreviewKo,
+            })}
           </div>
         </summary>
         <div class="partidos-acc__body">
+          ${partidosAccKickoffBodyHtml(m)}
           ${statusBanner}
           ${officialMini}
           <div class="quiniela-preds-head">Predicciones</div>
@@ -5453,6 +5815,7 @@ function bindPartidosAdminHandlers(scope, session) {
         groupMatchState: { [mid]: "started" },
         groupScores: { [mid]: { home: 0, away: 0 } },
       });
+      confirmPendingPredictionsForGroupMatch(mid);
       refreshAll(loadSession());
     });
   });
@@ -5637,6 +6000,7 @@ function bindPartidosAdminHandlers(scope, session) {
         knockoutMatchState: { [kid]: "started" },
         knockoutScores: { [kid]: { home: 0, away: 0, penaltyWinner: "" } },
       });
+      confirmPendingPredictionsForKoMatch(kid);
       refreshAll(loadSession());
     });
   });
@@ -6480,6 +6844,18 @@ function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds) 
   const predInlineHtml = !m.kickoff
     ? `<div class="partidos-acc__pred-row">${partidosUserPredPillHtml(userPredConfirmed, "inline", matchClosed)}</div>`
     : "";
+  const mobileSummary = partidosAccSummaryMobileHtml({
+    contextLabel: `Grupo ${m.groupId}`,
+    homeTeamsHtml: teamLabelHtml(m.home),
+    awayTeamsHtml: teamLabelHtml(m.away),
+    m,
+    nextJornadaIds,
+    matchInProgress,
+    userPredConfirmed,
+    matchOfficiallyClosed: matchClosed,
+    closedHomeScore: matchClosed ? off.home : "",
+    closedAwayScore: matchClosed ? off.away : "",
+  });
   const kickCls = m.kickoff ? " partidos-match-card--has-kickoff" : "";
 
   const vh = off.home === "" ? "" : escapeHtml(String(off.home));
@@ -6571,13 +6947,23 @@ function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds) 
         <summary class="partidos-acc__summary">
           <span class="partidos-acc__chev" aria-hidden="true"></span>
           <div class="partidos-acc__summary-main">
-            <h2 class="partidos-acc__title quiniela-match-title">Grupo ${escapeHtml(m.groupId)} · ${teamLabelHtml(m.home)} <span class="vs">vs</span> ${teamLabelHtml(m.away)}</h2>
-            ${noKickHtml}
-            ${predInlineHtml}
-            <div class="partidos-acc__official-preview">${officialPreview}</div>
+            ${mobileSummary}
+            ${partidosAccSummaryDesktopHtml({
+              contextLabel: `Grupo ${m.groupId}`,
+              homeTeamsHtml: teamLabelHtml(m.home),
+              awayTeamsHtml: teamLabelHtml(m.away),
+              accessibleTitle: `Grupo ${m.groupId}: ${m.home} vs ${m.away}`,
+              matchOfficiallyClosed: matchClosed,
+              closedHomeScore: matchClosed ? off.home : "",
+              closedAwayScore: matchClosed ? off.away : "",
+              noKickHtml,
+              predInlineHtml,
+              officialPreview,
+            })}
           </div>
         </summary>
         <div class="partidos-acc__body">
+          ${partidosAccKickoffBodyHtml(m)}
           ${quinielaMatchStatusBanner(matchStage, officialConfirmed, groupTeamsDecided, kickoffLocked)}
           ${officialHtml}
           <div class="quiniela-preds-head">Predicciones</div>
@@ -6850,6 +7236,26 @@ function renderQuiniela(session, official) {
 
   if (blocks.length > 0) restoreOpenPartidosAccordions(wrap, openAccordionMatchIds);
   restorePartidosInteractionAnchor(wrap, partidosInteractionAnchor, partidosViewportLock);
+
+  syncQuinielaPerfectBonusCanvases(wrap);
+  requestAnimationFrame(() => syncQuinielaPerfectBonusCanvases(wrap));
+
+  if (!wrap.dataset.partidosAccToggleBound) {
+    wrap.dataset.partidosAccToggleBound = "1";
+    wrap.addEventListener(
+      "toggle",
+      (e) => {
+        const det = e.target;
+        if (!(det instanceof HTMLDetailsElement) || !det.classList.contains("partidos-acc") || !det.open) {
+          return;
+        }
+        const card = det.closest("article.partidos-match-card");
+        syncQuinielaPerfectBonusCanvases(card ?? wrap);
+        requestAnimationFrame(() => syncQuinielaPerfectBonusCanvases(card ?? wrap));
+      },
+      true,
+    );
+  }
 
   redrawTeamStats();
 }

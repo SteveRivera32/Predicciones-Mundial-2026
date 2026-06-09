@@ -70,7 +70,7 @@ function draftToConfirmedKoScore(draft) {
 }
 
 /** @param {string} matchId @returns {boolean} */
-function applyKickoffConfirmPredictionsForGroupMatch(matchId) {
+export function confirmPendingPredictionsForGroupMatch(matchId) {
   let changed = false;
   for (const p of getParticipantsForDisplay()) {
     const store = loadPredictions(p.id);
@@ -86,7 +86,7 @@ function applyKickoffConfirmPredictionsForGroupMatch(matchId) {
 }
 
 /** @param {string} matchId @returns {boolean} */
-function applyKickoffConfirmPredictionsForKoMatch(matchId) {
+export function confirmPendingPredictionsForKoMatch(matchId) {
   let changed = false;
   for (const p of getParticipantsForDisplay()) {
     const store = loadPredictions(p.id);
@@ -132,7 +132,7 @@ export function applyKickoffAutoStarts() {
       changed = true;
     }
 
-    if (applyKickoffConfirmPredictionsForGroupMatch(m.id)) changed = true;
+    if (confirmPendingPredictionsForGroupMatch(m.id)) changed = true;
   }
 
   const labelO = allFilledOfficialKnockoutScores(official);
@@ -150,7 +150,7 @@ export function applyKickoffAutoStarts() {
       changed = true;
     }
 
-    if (applyKickoffConfirmPredictionsForKoMatch(m.id)) changed = true;
+    if (confirmPendingPredictionsForKoMatch(m.id)) changed = true;
   }
 
   if (Object.keys(groupMatchState).length || Object.keys(knockoutMatchState).length) {

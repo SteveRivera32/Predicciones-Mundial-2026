@@ -30,6 +30,14 @@ body {
   text-align: center;
 }
 
+.landing-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 28rem;
+}
+
 .landing-claim {
   margin: 0;
   max-width: 28rem;
@@ -37,6 +45,15 @@ body {
   line-height: 1.5;
   font-weight: 400;
   letter-spacing: 0.01em;
+}
+
+.landing-scroll-hint {
+  display: none;
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: rgba(197, 202, 214, 0.82);
+  text-align: center;
 }
 
 .landing-brand {
@@ -307,5 +324,11 @@ body {
 
   .social-group {
     scroll-snap-align: start;
+  }
+}
+
+@media (max-width: 40rem) {
+  .landing-scroll-hint {
+    display: block;
   }
 }
