@@ -1739,6 +1739,8 @@ const awardEntriesByRoleCache = new Map([
   ["outfield", getSquadEntriesByRole("outfield")],
 ]);
 const awardAllNames = new Set(SQUAD_ENTRIES.map((e) => e.name));
+/** @type {Map<string, string>} */
+const awardPlayerCountryByName = new Map(SQUAD_ENTRIES.map((e) => [e.name, e.country]));
 /** @type {{ name: string, groupId: string }[]} */
 const PODIUM_TEAM_ENTRIES = GROUPS.flatMap((grp) =>
   grp.teams.filter((t) => !isPlaceholderTeam(t)).map((name) => ({ name, groupId: grp.id })),
@@ -1768,6 +1770,49 @@ function normalizeAwardSearchText(s) {
     .replace(/\p{M}/gu, "");
 }
 
+/** @param {string} playerName */
+function playerLabelHtml(playerName) {
+  const name = String(playerName ?? "").trim();
+  if (!name) return "";
+  const country = awardPlayerCountryByName.get(name) ?? "";
+  return `
+    <span class="team-label">
+      ${getTeamFlagImgHtml(country || name)}
+      <span class="team-text">${escapeHtml(name)}</span>
+    </span>
+  `;
+}
+
+/** @param {string} role @param {string} value */
+function awardPickerDisplayHtml(role, value) {
+  const v = String(value ?? "").trim();
+  if (!v) return "";
+  return role === "team" ? teamLabelHtml(v) : playerLabelHtml(v);
+}
+
+/** @param {Element} box */
+function updateAwardComboboxDisplay(box) {
+  const role = box.dataset.awardRole ?? "outfield";
+  const hidden = /** @type {HTMLInputElement | null} */ (box.querySelector('input[type="hidden"]'));
+  const picked = box.querySelector(".award-combobox__picked");
+  if (!hidden || !picked) return;
+  const val = hidden.value.trim();
+  if (val) {
+    box.classList.add("has-value");
+    picked.innerHTML = awardPickerDisplayHtml(role, val);
+    picked.hidden = false;
+  } else {
+    box.classList.remove("has-value");
+    picked.innerHTML = "";
+    picked.hidden = true;
+  }
+}
+
+/** @param {ParentNode} root */
+function updateAllAwardComboboxDisplays(root) {
+  root.querySelectorAll(".award-combobox").forEach(updateAwardComboboxDisplay);
+}
+
 /**
  * @param {{ fieldName: string, role: string, currentValue: string, disabled: boolean, label: string, placeholder: string }} opts
  */
@@ -1778,17 +1823,20 @@ function buildSearchPickerHtml(opts) {
   return `
     <div class="award-combobox" data-award-field="${fieldName}" data-award-role="${role}">
       <input type="hidden" name="${fieldName}" value="${escapeHtml(cur)}">
-      <input
-        type="search"
-        class="input award-combobox__search"
-        placeholder="${escapeHtml(placeholder)}"
-        value="${escapeHtml(cur)}"
-        autocomplete="off"
-        ${dis}
-        aria-label="${escapeHtml(label)}"
-        aria-autocomplete="list"
-        aria-expanded="false"
-      />
+      <div class="award-combobox__field">
+        <span class="award-combobox__picked" hidden aria-hidden="true"></span>
+        <input
+          type="search"
+          class="input award-combobox__search"
+          placeholder="${escapeHtml(placeholder)}"
+          value="${escapeHtml(cur)}"
+          autocomplete="off"
+          ${dis}
+          aria-label="${escapeHtml(label)}"
+          aria-autocomplete="list"
+          aria-expanded="false"
+        />
+      </div>
       <ul class="award-combobox__list" role="listbox" hidden></ul>
     </div>`;
 }
@@ -1848,7 +1896,7 @@ function wireGeneralesAwardComboboxes(form, onCommit) {
         orphan = `<li class="award-combobox__option award-combobox__option--orphan award-combobox__option--team" role="option" data-value="${escapeHtml(cur)}"><span class="award-combobox__option-name">${teamLabelHtml(cur)}</span><span class="muted">· fuera de lista</span></li>`;
       }
     } else if (cur && !awardAllNames.has(cur)) {
-      orphan = `<li class="award-combobox__option award-combobox__option--orphan" role="option" data-value="${escapeHtml(cur)}">${escapeHtml(cur)} <span class="muted">· fuera de lista</span></li>`;
+      orphan = `<li class="award-combobox__option award-combobox__option--orphan award-combobox__option--player" role="option" data-value="${escapeHtml(cur)}"><span class="award-combobox__option-name">${playerLabelHtml(cur)}</span><span class="muted">· fuera de lista</span></li>`;
     }
 
     let matches;
@@ -1881,7 +1929,7 @@ function wireGeneralesAwardComboboxes(form, onCommit) {
         matches
           .map(
             (e) =>
-              `<li class="award-combobox__option" role="option" data-value="${escapeHtml(e.name)}"><span class="award-combobox__option-name">${escapeHtml(e.name)}</span><span class="award-combobox__option-country muted">${escapeHtml(e.country)}</span></li>`,
+              `<li class="award-combobox__option award-combobox__option--player" role="option" data-value="${escapeHtml(e.name)}"><span class="award-combobox__option-name">${playerLabelHtml(e.name)}</span><span class="award-combobox__option-country muted">${escapeHtml(e.country)}</span></li>`,
           )
           .join("");
     }
@@ -1894,9 +1942,11 @@ function wireGeneralesAwardComboboxes(form, onCommit) {
     const hidden = /** @type {HTMLInputElement | null} */ (
       form.querySelector(`input[type="hidden"][name="${field}"]`)
     );
-    const search = form.querySelector(`.award-combobox[data-award-field="${field}"] .award-combobox__search`);
+    const box = form.querySelector(`.award-combobox[data-award-field="${field}"]`);
+    const search = box?.querySelector(".award-combobox__search");
     if (hidden) hidden.value = value;
     if (search instanceof HTMLInputElement) search.value = value;
+    if (box) updateAwardComboboxDisplay(box);
   }
 
   function pickAward(box, value) {
@@ -1930,6 +1980,7 @@ function wireGeneralesAwardComboboxes(form, onCommit) {
 
     if (list) list.hidden = true;
     search.setAttribute("aria-expanded", "false");
+    updateAwardComboboxDisplay(box);
     onCommit();
   }
 
@@ -2004,6 +2055,8 @@ function wireGeneralesAwardComboboxes(form, onCommit) {
       });
     });
   }
+
+  updateAllAwardComboboxDisplays(form);
 }
 
 /** Sincroniza inputs visibles con los hidden tras re-render. */
@@ -2015,6 +2068,7 @@ function syncGeneralesPickerValues(form, general) {
     if (hidden) hidden.value = val;
     if (search instanceof HTMLInputElement) search.value = val;
   }
+  updateAllAwardComboboxDisplays(form);
 }
 
 function readGeneralFormPayload(form) {

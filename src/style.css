@@ -3156,8 +3156,54 @@ span.td-muted {
   width: 100%;
 }
 
+.award-combobox__field {
+  position: relative;
+}
+
+.award-combobox__picked {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: none;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.55rem 0.7rem;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.award-combobox.has-value:not(:focus-within) .award-combobox__picked {
+  display: flex;
+}
+
+.award-combobox.has-value:not(:focus-within) .award-combobox__search {
+  color: transparent;
+}
+
+.award-combobox__picked .team-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.award-combobox__picked .team-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.award-combobox__picked .team-flag-img {
+  width: 22px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
 .award-combobox__search {
   width: 100%;
+  position: relative;
+  z-index: 0;
 }
 
 .award-combobox__list {
@@ -3222,6 +3268,22 @@ span.td-muted {
 }
 
 .award-combobox__option--team .team-label {
+  gap: 0.35rem;
+}
+
+.award-combobox__option--player .award-combobox__option-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.award-combobox__option--player .team-flag-img {
+  width: 22px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.award-combobox__option--player .team-label {
   gap: 0.35rem;
 }
 
@@ -10211,6 +10273,7 @@ span.quiniela-legend {
   .table-scroll:has(.table-final-ranking)::after,
   .table-scroll:has(.table-group-order-ranking)::after,
   .table-scroll:has(.table-match-ranking)::after,
+  .table-scroll:has(.table-generales-preds)::after,
   .partidos-match-card .table-scroll.quiniela-table-wrap::after {
     content: "Desliza horizontalmente para ver más →";
     display: block;
@@ -10944,6 +11007,11 @@ span.quiniela-legend {
     padding: 0.38rem 0.48rem;
     font-size: 0.82rem;
     border-radius: 7px;
+  }
+
+  #panel-generales .award-combobox__picked {
+    padding: 0.38rem 0.48rem;
+    font-size: 0.82rem;
   }
 
   #panel-generales .generales-podium-step--1 .generales-podium-slot {
