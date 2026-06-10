@@ -1260,28 +1260,72 @@
             Entra con tu participante para ver las tablas.
           </p>
         </div>
-        <div class="field team-stats-source-wrap field--inline">
+        <div class="field team-tables-layout-wrap field--inline">
+          <span class="field-label">Modo</span>
+          <div class="radio-segment" role="radiogroup" aria-label="Modo de visualización">
+            <label class="radio-segment__option">
+              <input type="radio" name="team-stats-layout" value="single" checked />
+              <span>Una tabla</span>
+            </label>
+            <label class="radio-segment__option">
+              <input type="radio" name="team-stats-layout" value="compare" />
+              <span>Comparar tablas</span>
+            </label>
+          </div>
+        </div>
+        <div class="field team-stats-source-wrap team-stats-source-wrap--single field--inline" id="team-stats-single-controls">
+          <label class="field-label" for="team-stats-single-source">Tabla a mostrar</label>
+          <select id="team-stats-single-source" class="input input-sm" style="max-width: 18rem"></select>
+        </div>
+        <div class="field team-stats-source-wrap team-stats-source-wrap--compare field--inline" id="team-stats-compare-controls" hidden>
           <label class="field-label" for="team-stats-left-source"><span class="field-label-side-lr">Tabla izquierda</span><span class="field-label-side-tb">Tabla arriba</span></label>
           <select id="team-stats-left-source" class="input input-sm" style="max-width: 18rem"></select>
           <label class="field-label" for="team-stats-right-source"><span class="field-label-side-lr">Tabla derecha</span><span class="field-label-side-tb">Tabla abajo</span></label>
           <select id="team-stats-right-source" class="input input-sm" style="max-width: 18rem"></select>
         </div>
-        <div class="field team-stats-view-wrap field--inline">
-          <span class="field-label">Vista de tabla</span>
-          <div class="radio-segment" role="radiogroup" aria-label="Vista de tabla">
+        <div class="field team-stats-view-wrap field--inline" id="team-stats-single-pts-view-wrap">
+          <span class="field-label">Puntos</span>
+          <div class="radio-segment" role="radiogroup" aria-label="Mostrar puntos en la tabla">
             <label class="radio-segment__option">
-              <input type="radio" name="team-stats-view" value="full" checked />
+              <input type="radio" name="team-stats-single-pts" value="with-pts" checked />
+              <span>Con puntos</span>
+            </label>
+            <label class="radio-segment__option">
+              <input type="radio" name="team-stats-single-pts" value="without-pts" />
+              <span>Sin puntos</span>
+            </label>
+          </div>
+        </div>
+        <div class="field team-stats-view-wrap field--inline" id="team-stats-compare-view-wrap" hidden>
+          <span class="field-label">Vista de tabla</span>
+          <div class="radio-segment" role="radiogroup" aria-label="Vista de tabla comparativa">
+            <label class="radio-segment__option">
+              <input type="radio" name="team-stats-compare-view" value="full" checked />
               <span>Completa</span>
             </label>
             <label class="radio-segment__option">
-              <input type="radio" name="team-stats-view" value="simple" />
+              <input type="radio" name="team-stats-compare-view" value="simple" />
               <span>Simplificada</span>
             </label>
           </div>
         </div>
-        <div id="team-stats-compare" class="team-stats-compare">
+        <div id="team-stats-single" class="team-tables-single">
+          <section class="team-tables-single-panel team-stats-col">
+            <h2 class="subsection-title" id="team-stats-single-subtitle">Fase de grupos</h2>
+            <div id="team-stats-single-grid" class="team-tables-single-grid"></div>
+          </section>
+        </div>
+        <div id="team-stats-compare" class="team-stats-compare" hidden>
+          <div id="team-stats-compare-sync" class="team-tables-compare-sync" hidden>
+            <div class="team-tables-compare-sync-headers">
+              <h2 class="subsection-title" id="team-stats-sync-subtitle-left">Tabla izquierda</h2>
+              <h2 class="subsection-title" id="team-stats-sync-subtitle-right">Tabla derecha</h2>
+            </div>
+            <div id="team-stats-compare-sync-rows" class="team-tables-compare-sync-rows"></div>
+          </div>
           <section class="team-stats-col">
             <h2 class="subsection-title" id="team-stats-subtitle-official">Fase de grupos · Resultado oficial</h2>
+            <div class="team-stats-compare-table">
             <div class="table-scroll">
               <table class="table table-compact" aria-describedby="team-stats-intro">
                 <thead>
@@ -1298,9 +1342,12 @@
                 <tbody id="table-team-stats-official-body"></tbody>
               </table>
             </div>
+            </div>
+            <div id="team-stats-compare-left-grid" class="team-tables-single-grid team-tables-compare-grid" hidden></div>
           </section>
           <section class="team-stats-col">
             <h2 class="subsection-title" id="team-stats-subtitle-pred">Fase de grupos · Tu predicción</h2>
+            <div class="team-stats-compare-table">
             <div class="table-scroll">
               <table class="table table-compact" aria-describedby="team-stats-intro">
                 <thead>
@@ -1317,6 +1364,8 @@
                 <tbody id="table-team-stats-pred-body"></tbody>
               </table>
             </div>
+            </div>
+            <div id="team-stats-compare-right-grid" class="team-tables-single-grid team-tables-compare-grid" hidden></div>
           </section>
         </div>
       </section>
@@ -1336,15 +1385,64 @@
             </button>.
           </p>
         </div>
-        <div class="field team-stats-source-wrap field--inline">
+        <div class="field team-tables-layout-wrap field--inline">
+          <span class="field-label">Modo</span>
+          <div class="radio-segment" role="radiogroup" aria-label="Modo de visualización">
+            <label class="radio-segment__option">
+              <input type="radio" name="team-order-layout" value="single" checked />
+              <span>Una tabla</span>
+            </label>
+            <label class="radio-segment__option">
+              <input type="radio" name="team-order-layout" value="compare" />
+              <span>Comparar tablas</span>
+            </label>
+          </div>
+        </div>
+        <div class="field team-stats-source-wrap team-stats-source-wrap--single field--inline" id="team-order-single-controls">
+          <label class="field-label" for="team-order-single-source">Tabla a mostrar</label>
+          <select id="team-order-single-source" class="input input-sm" style="max-width: 18rem"></select>
+        </div>
+        <div class="field team-stats-source-wrap team-stats-source-wrap--compare field--inline" id="team-order-compare-controls" hidden>
           <label class="field-label" for="team-order-left-source"><span class="field-label-side-lr">Tabla izquierda</span><span class="field-label-side-tb">Tabla arriba</span></label>
           <select id="team-order-left-source" class="input input-sm" style="max-width: 18rem"></select>
           <label class="field-label" for="team-order-right-source"><span class="field-label-side-lr">Tabla derecha</span><span class="field-label-side-tb">Tabla abajo</span></label>
           <select id="team-order-right-source" class="input input-sm" style="max-width: 18rem"></select>
         </div>
-        <div id="team-order-compare" class="team-stats-compare">
+        <div class="field team-stats-view-wrap field--inline" id="team-order-single-pts-view-wrap">
+          <span class="field-label">Puntos</span>
+          <div class="radio-segment" role="radiogroup" aria-label="Mostrar puntos en la tabla">
+            <label class="radio-segment__option">
+              <input type="radio" name="team-order-single-pts" value="with-pts" checked />
+              <span>Con puntos</span>
+            </label>
+            <label class="radio-segment__option">
+              <input type="radio" name="team-order-single-pts" value="without-pts" />
+              <span>Sin puntos</span>
+            </label>
+          </div>
+        </div>
+        <div id="team-order-single" class="team-tables-single">
+          <section class="team-tables-single-panel team-stats-col">
+            <h2 class="subsection-title" id="team-order-single-subtitle">Fase de grupos</h2>
+            <div id="team-order-single-grid" class="team-tables-single-grid"></div>
+            <p class="team-tables-single-grand-total" id="team-order-single-grand-total" hidden></p>
+          </section>
+        </div>
+        <div id="team-order-compare" class="team-stats-compare" hidden>
+          <div id="team-order-compare-sync" class="team-tables-compare-sync" hidden>
+            <div class="team-tables-compare-sync-headers">
+              <h2 class="subsection-title" id="team-order-sync-subtitle-left">Tabla izquierda</h2>
+              <h2 class="subsection-title" id="team-order-sync-subtitle-right">Tabla derecha</h2>
+            </div>
+            <div id="team-order-compare-sync-rows" class="team-tables-compare-sync-rows"></div>
+            <div class="team-tables-compare-sync-footers">
+              <p class="team-tables-compare-grand-total" id="team-order-sync-total-left" hidden></p>
+              <p class="team-tables-compare-grand-total" id="team-order-sync-total-right" hidden></p>
+            </div>
+          </div>
           <section class="team-stats-col team-stats-col--official">
             <h2 class="subsection-title" id="team-order-subtitle-official">Fase de grupos · Orden oficial</h2>
+            <div class="team-stats-compare-table">
             <div class="table-scroll">
               <table class="table table-compact" aria-describedby="team-order-intro">
                 <thead>
@@ -1357,9 +1455,13 @@
                 <tbody id="table-team-order-official-body"></tbody>
               </table>
             </div>
+            </div>
+            <div id="team-order-compare-left-grid" class="team-tables-single-grid team-tables-compare-grid" hidden></div>
+            <p class="team-tables-compare-grand-total" id="team-order-compare-left-total" hidden></p>
           </section>
           <section class="team-stats-col team-stats-col--pred">
             <h2 class="subsection-title" id="team-order-subtitle-pred">Fase de grupos · Tu orden</h2>
+            <div class="team-stats-compare-table">
             <div class="table-scroll">
               <table class="table table-compact" aria-describedby="team-order-intro">
                 <thead>
@@ -1372,6 +1474,9 @@
                 <tbody id="table-team-order-pred-body"></tbody>
               </table>
             </div>
+            </div>
+            <div id="team-order-compare-right-grid" class="team-tables-single-grid team-tables-compare-grid" hidden></div>
+            <p class="team-tables-compare-grand-total" id="team-order-compare-right-total" hidden></p>
           </section>
         </div>
       </section>

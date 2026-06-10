@@ -104,8 +104,15 @@ const MATCH_HISTORY_VIEW_KEY = "pm26-match-history-view";
 const TEAM_STATS_LEFT_SOURCE_KEY = "pm26-team-stats-left-source";
 const TEAM_STATS_RIGHT_SOURCE_KEY = "pm26-team-stats-right-source";
 const TEAM_STATS_VIEW_KEY = "pm26-team-stats-view";
+const TEAM_STATS_SINGLE_PTS_KEY = "pm26-team-stats-single-pts";
+const TEAM_STATS_COMPARE_VIEW_KEY = "pm26-team-stats-compare-view";
+const TEAM_STATS_LAYOUT_KEY = "pm26-team-stats-layout";
+const TEAM_STATS_SINGLE_SOURCE_KEY = "pm26-team-stats-single-source";
 const TEAM_ORDER_LEFT_SOURCE_KEY = "pm26-team-order-left-source";
 const TEAM_ORDER_RIGHT_SOURCE_KEY = "pm26-team-order-right-source";
+const TEAM_ORDER_LAYOUT_KEY = "pm26-team-order-layout";
+const TEAM_ORDER_SINGLE_SOURCE_KEY = "pm26-team-order-single-source";
+const TEAM_ORDER_SINGLE_PTS_KEY = "pm26-team-order-single-pts";
 /** Último participante con sesión: si cambia, se reinician tablas comparadas (oficial | tú). */
 const COMPARE_TABLES_BOUND_PARTICIPANT_KEY = "pm26-compare-tables-bound-participant";
 const STATS_COLOR_HINT_DISMISSED_KEY = "pm26-stats-color-hint-dismissed-v3";
@@ -150,8 +157,10 @@ function resetCompareTableSourcesIfParticipantChanged(participantId) {
   try {
     localStorage.setItem(TEAM_STATS_LEFT_SOURCE_KEY, "official");
     localStorage.setItem(TEAM_STATS_RIGHT_SOURCE_KEY, participantId);
+    localStorage.setItem(TEAM_STATS_SINGLE_SOURCE_KEY, participantId);
     localStorage.setItem(TEAM_ORDER_LEFT_SOURCE_KEY, "official");
     localStorage.setItem(TEAM_ORDER_RIGHT_SOURCE_KEY, participantId);
+    localStorage.setItem(TEAM_ORDER_SINGLE_SOURCE_KEY, participantId);
     localStorage.setItem(COMPARE_TABLES_BOUND_PARTICIPANT_KEY, participantId);
   } catch {
     /* ignore */
@@ -7534,13 +7543,13 @@ function renderQuiniela(session, official) {
  * @param {{ simplified?: boolean }} [opts]
  */
 function buildTeamStatsTableBody(groupScores, opts = {}) {
-  const { simplified = false } = opts;
+  const { simplified = false, withPts = true } = opts;
   const rows = [];
   const standingsByGroup = computeGroupStandingsByGroup(groupScores);
 
   for (const grp of GROUPS) {
     const ordered = standingsByGroup[grp.id] ?? [];
-    const colSpan = simplified ? 3 : 7;
+    const colSpan = simplified ? (withPts ? 3 : 2) : withPts ? 7 : 6;
 
     rows.push(
       `<tr class="team-stats-divider"><td colspan="${colSpan}">Grupo ${escapeHtml(grp.id)}</td></tr>`,
@@ -7555,13 +7564,621 @@ function buildTeamStatsTableBody(groupScores, opts = {}) {
           ${simplified ? "" : `<td class="team-stats-extra-col">${s.wins}</td>`}
           ${simplified ? "" : `<td class="team-stats-extra-col">${s.draws}</td>`}
           ${simplified ? "" : `<td class="team-stats-extra-col">${s.losses}</td>`}
-          <td>${s.pts}</td>
+          ${withPts ? `<td>${s.pts}</td>` : ""}
         </tr>
       `);
     });
   }
 
   return rows.join("");
+}
+
+function buildTeamStatsSingleGroupCardHtml(grp, ordered, withPts = true) {
+  const tableClass = withPts
+    ? "table table-compact team-tables-single-table"
+    : "table table-compact team-tables-single-table team-tables-single-table--no-pts";
+  const rows = ordered
+    .map(
+      (s, idx) => `
+        <tr>
+          <td class="team-tables-single-pos">${idx + 1}</td>
+          <td class="team-tables-single-team">${teamLabelHtml(s.team)}</td>
+          ${withPts ? `<td class="team-tables-single-pts">${s.pts}</td>` : ""}
+        </tr>
+      `,
+    )
+    .join("");
+  return `
+    <div class="team-tables-single-group" data-group-id="${escapeHtml(grp.id)}">
+      <div class="team-tables-single-group__head">Grupo ${escapeHtml(grp.id)}</div>
+      <table class="${tableClass}">
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function buildTeamStatsSingleGridHtml(groupScores, opts = {}) {
+  const { withPts = true } = opts;
+  const standingsByGroup = computeGroupStandingsByGroup(groupScores);
+  return GROUPS.map((grp) =>
+    buildTeamStatsSingleGroupCardHtml(grp, standingsByGroup[grp.id] ?? [], withPts),
+  ).join("");
+}
+
+function buildTeamStatsCompareSyncHtml(leftScores, rightScores) {
+  const leftStandings = computeGroupStandingsByGroup(leftScores);
+  const rightStandings = computeGroupStandingsByGroup(rightScores);
+  return GROUPS.map(
+    (grp) => `
+    <div class="team-tables-compare-sync-row">
+      <div class="team-tables-compare-sync-cell">${buildTeamStatsSingleGroupCardHtml(grp, leftStandings[grp.id] ?? [], false)}</div>
+      <div class="team-tables-compare-sync-cell">${buildTeamStatsSingleGroupCardHtml(grp, rightStandings[grp.id] ?? [], false)}</div>
+    </div>
+  `,
+  ).join("");
+}
+
+function buildTeamOrderSingleOfficialGroupCard(grp, officialSnapshot, opts = {}) {
+  const { reservePtsCol = false, syncHead = false } = opts;
+  const order = Array.isArray(officialSnapshot.orderByGroup?.[grp.id])
+    ? officialSnapshot.orderByGroup[grp.id]
+    : [];
+  const rows = [0, 1, 2, 3]
+    .map((i) => {
+      const t = order[i] ?? "";
+      return `
+        <tr>
+          <td class="team-tables-single-pos">${i + 1}</td>
+          <td class="team-tables-single-team">${t ? teamLabelHtml(t) : '<span class="muted">—</span>'}</td>
+          ${reservePtsCol ? '<td class="team-tables-single-pts"><span class="muted">—</span></td>' : ""}
+        </tr>
+      `;
+    })
+    .join("");
+  const tableClass = reservePtsCol
+    ? "table table-compact team-tables-single-table team-tables-single-table--order"
+    : "table table-compact team-tables-single-table team-tables-single-table--order team-tables-single-table--no-pts";
+  const headClass = syncHead
+    ? "team-tables-single-group__head team-tables-single-group__head--sync"
+    : "team-tables-single-group__head";
+  return `
+    <div class="team-tables-single-group" data-group-id="${escapeHtml(grp.id)}">
+      <div class="${headClass}">Grupo ${escapeHtml(grp.id)}</div>
+      <table class="${tableClass}">
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function buildTeamOrderSinglePredGroupCard(grp, orderByGroup, officialSnapshot, participantId, opts = {}) {
+  const { withPts = true, syncHead = false } = opts;
+  const pStore = loadPredictions(participantId);
+  const officialOrder = officialSnapshot.orderByGroup?.[grp.id] ?? [];
+  const hasOfficialData = officialSnapshot.hasOfficialDataByGroup?.[grp.id] === true;
+  const officialThird = officialSnapshot.thirdAdvanceByGroup?.[grp.id];
+  const officialThirdDefined = officialThird === true || officialThird === false;
+  const voteCountsByPos = getGroupOrderVoteCountsByPosition(grp.id);
+  const order = Array.isArray(orderByGroup?.[grp.id]) ? orderByGroup[grp.id] : [];
+  const predOrder = [0, 1, 2, 3].map((i) => (typeof order[i] === "string" ? order[i] : ""));
+  const predThird = pStore.groupThirdAdvances?.[grp.id];
+  const officialQualifiers = new Set([officialOrder[0], officialOrder[1]].filter(Boolean));
+  const top2InExactOrder =
+    hasOfficialData &&
+    Boolean(predOrder[0]) &&
+    Boolean(predOrder[1]) &&
+    predOrder[0] === officialOrder[0] &&
+    predOrder[1] === officialOrder[1];
+  const fullOrderHit =
+    hasOfficialData &&
+    [0, 1, 2, 3].every(
+      (i) => Boolean(predOrder[i]) && Boolean(officialOrder[i]) && predOrder[i] === officialOrder[i],
+    );
+  const perfectOrderPts = GROUP_QUALIFIERS_ORDER_BONUS + GROUP_PERFECT_ORDER_BONUS;
+  const thirdAdvanceHit =
+    hasOfficialData &&
+    officialThirdDefined &&
+    (predThird === true || predThird === false) &&
+    predThird === officialThird;
+  let groupBadge = "";
+  if (withPts) {
+    if (fullOrderHit && thirdAdvanceHit) {
+      groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-perfecto-label">Perfecto</span>${pointsBadgeHtml(perfectOrderPts + GROUP_PERFECTO_ORDER_AND_THIRD_BONUS, {
+        title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden de 1.º y 2.º, +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo y +${GROUP_PERFECTO_ORDER_AND_THIRD_BONUS} por acierto de 3.º pasa`,
+      })}</span>`;
+    } else if (fullOrderHit) {
+      groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-excelente-label">Excelente</span>${pointsBadgeHtml(perfectOrderPts, {
+        title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden de 1.º y 2.º y +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo`,
+      })}</span>`;
+    } else if (top2InExactOrder) {
+      groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-bien-label">Bien</span>${pointsBadgeHtml(GROUP_QUALIFIERS_ORDER_BONUS, {
+        title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden correcto de 1.º y 2.º`,
+      })}</span>`;
+    }
+  }
+
+  const rows = [0, 1, 2, 3]
+    .map((i) => {
+      const t = predOrder[i] ?? "";
+      let ptsCell = "";
+      if (withPts) {
+        const rowBasePts =
+          hasOfficialData && i < 2 && Boolean(t) && officialQualifiers.has(t) ? 1 : 0;
+        const rowBonusPts =
+          hasOfficialData &&
+          Boolean(t) &&
+          Boolean(officialOrder[i]) &&
+          t === officialOrder[i] &&
+          hasUniquePickBonus(voteCountsByPos[i], t)
+            ? 1
+            : 0;
+        const rowPts = rowBasePts + rowBonusPts;
+        ptsCell = `<td class="team-tables-single-pts">${pointsBadgeHtml(rowPts, {
+          bonus: rowBonusPts > 0,
+          title:
+            rowBonusPts > 0
+              ? rowBasePts > 0
+                ? "Acierto en posición con bono por minoría (+1 base +1 bono)"
+                : "Acierto en posición con bono por minoría (+1 bono)"
+              : "Clasificado directo acertado (+1)",
+        }) || '<span class="muted">—</span>'}</td>`;
+      }
+      return `
+        <tr>
+          <td class="team-tables-single-pos">${i + 1}</td>
+          <td class="team-tables-single-team">${t ? teamLabelHtml(t) : '<span class="muted">—</span>'}</td>
+          ${ptsCell}
+        </tr>
+      `;
+    })
+    .join("");
+
+  const baseGroupTotal = hasOfficialData
+    ? computeGroupOrderPoints(
+        predOrder,
+        officialOrder,
+        predThird,
+        officialThirdDefined ? officialThird : undefined,
+      )
+    : 0;
+  const minorityBonusTotal = hasOfficialData
+    ? [0, 1, 2, 3].reduce((acc, i) => {
+        const t = predOrder[i];
+        const isExact = Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
+        if (isExact && hasUniquePickBonus(voteCountsByPos[i], t)) return acc + 1;
+        return acc;
+      }, 0)
+    : 0;
+  const groupTotal = baseGroupTotal + minorityBonusTotal;
+  const totalClass = teamOrderGroupTotalClass(groupTotal, false);
+  const totalHtml =
+    !syncHead && withPts && hasOfficialData && groupTotal > 0
+      ? `<span class="team-tables-single-group__total"><strong class="${totalClass}">${groupTotal}</strong></span>`
+      : "";
+  const headClass = syncHead
+    ? "team-tables-single-group__head team-tables-single-group__head--sync"
+    : withPts && (groupBadge || totalHtml)
+      ? "team-tables-single-group__head team-tables-single-group__head--rich"
+      : "team-tables-single-group__head";
+  const headBadge = syncHead ? "" : groupBadge;
+  const tableClass = withPts
+    ? "table table-compact team-tables-single-table team-tables-single-table--order"
+    : "table table-compact team-tables-single-table team-tables-single-table--order team-tables-single-table--no-pts";
+
+  return {
+    html: `
+      <div class="team-tables-single-group" data-group-id="${escapeHtml(grp.id)}">
+        <div class="${headClass}">
+          <span class="team-tables-single-group__title">Grupo ${escapeHtml(grp.id)}</span>
+          ${headBadge ? `<span class="team-tables-single-group__badge">${headBadge}</span>` : ""}
+          ${totalHtml}
+        </div>
+        <table class="${tableClass}">
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `,
+    groupTotal,
+  };
+}
+
+function buildTeamOrderSingleGroupCardHtml(grp, sourceId, sessionParticipantId, opts = {}) {
+  const { withPts = true, reservePtsCol = false, syncHead = false } = opts;
+  const officialSnapshot = getLiveOfficialGroupSnapshot();
+  const showPtsCol = withPts || reservePtsCol;
+  if (sourceId === "official") {
+    return buildTeamOrderSingleOfficialGroupCard(grp, officialSnapshot, {
+      reservePtsCol: showPtsCol,
+    });
+  }
+  const orderByGroup = loadPredictions(sourceId).groupOrder ?? {};
+  return buildTeamOrderSinglePredGroupCard(grp, orderByGroup, officialSnapshot, sourceId, {
+    withPts: showPtsCol,
+    syncHead,
+  }).html;
+}
+
+function buildTeamOrderCompareSyncHtml(leftSource, rightSource, sessionParticipantId) {
+  const leftMeta = buildTeamOrderSingleGridHtml(leftSource, sessionParticipantId, { withPts: true });
+  const rightMeta = buildTeamOrderSingleGridHtml(rightSource, sessionParticipantId, { withPts: true });
+  const rows = GROUPS.map(
+    (grp) => `
+    <div class="team-tables-compare-sync-row">
+      <div class="team-tables-compare-sync-cell">${buildTeamOrderSingleGroupCardHtml(grp, leftSource, sessionParticipantId, { withPts: true, reservePtsCol: true, syncHead: true })}</div>
+      <div class="team-tables-compare-sync-cell">${buildTeamOrderSingleGroupCardHtml(grp, rightSource, sessionParticipantId, { withPts: true, reservePtsCol: true, syncHead: true })}</div>
+    </div>
+  `,
+  ).join("");
+  return { html: rows, leftMeta, rightMeta };
+}
+
+function buildTeamOrderSingleGridHtml(sourceId, sessionParticipantId, opts = {}) {
+  const { withPts = true, syncHead = false, reservePtsCol = false } = opts;
+  const officialSnapshot = getLiveOfficialGroupSnapshot();
+  const showPtsCol = withPts || reservePtsCol;
+  if (sourceId === "official") {
+    return {
+      html: GROUPS.map((grp) =>
+        buildTeamOrderSingleOfficialGroupCard(grp, officialSnapshot, { reservePtsCol: showPtsCol, syncHead }),
+      ).join(""),
+      grandTotal: GROUPS.length * MAX_PER_GROUP,
+      grandTotalLabel: "Total posible",
+      showGrandTotal: withPts,
+    };
+  }
+
+  const orderByGroup = loadPredictions(sourceId).groupOrder ?? {};
+  let grandTotal = 0;
+  const html = GROUPS.map((grp) => {
+    const card = buildTeamOrderSinglePredGroupCard(grp, orderByGroup, officialSnapshot, sourceId, {
+      withPts: showPtsCol,
+      syncHead,
+    });
+    grandTotal += card.groupTotal;
+    return card.html;
+  }).join("");
+  return {
+    html,
+    grandTotal,
+    grandTotalLabel: "Total final",
+    showGrandTotal: withPts,
+  };
+}
+
+function getTeamTablesLayoutValue(name, storageKey) {
+  const checked = document.querySelector(`input[name="${name}"]:checked`);
+  if (checked?.value === "compare" || checked?.value === "single") return checked.value;
+  const saved = localStorage.getItem(storageKey);
+  return saved === "compare" ? "compare" : "single";
+}
+
+function getTeamStatsWithPtsPreference() {
+  const checked = document.querySelector('input[name="team-stats-single-pts"]:checked');
+  if (checked?.value === "without-pts") return false;
+  if (checked?.value === "with-pts") return true;
+  let saved = localStorage.getItem(TEAM_STATS_SINGLE_PTS_KEY);
+  if (!saved) saved = localStorage.getItem(TEAM_STATS_VIEW_KEY);
+  return saved !== "without-pts";
+}
+
+function getTeamOrderWithPtsPreference() {
+  const checked = document.querySelector('input[name="team-order-single-pts"]:checked');
+  if (checked?.value === "without-pts") return false;
+  if (checked?.value === "with-pts") return true;
+  const saved = localStorage.getItem(TEAM_ORDER_SINGLE_PTS_KEY);
+  return saved !== "without-pts";
+}
+
+function getTeamStatsCompareSimplified() {
+  if (isMobileLayout()) return true;
+  const checked = document.querySelector('input[name="team-stats-compare-view"]:checked');
+  if (checked?.value === "simple") return true;
+  if (checked?.value === "full") return false;
+  let saved = localStorage.getItem(TEAM_STATS_COMPARE_VIEW_KEY);
+  if (!saved) saved = localStorage.getItem(TEAM_STATS_VIEW_KEY);
+  return saved === "simple";
+}
+
+function ensureTeamStatsLayoutSelect() {
+  const radios = [...document.querySelectorAll('input[name="team-stats-layout"]')];
+  if (radios.length === 0 || radios[0].dataset.ready === "1") return;
+  const saved = localStorage.getItem(TEAM_STATS_LAYOUT_KEY);
+  const preferred = saved === "compare" ? "compare" : "single";
+  radios.forEach((r) => {
+    r.checked = r.value === preferred;
+    r.addEventListener("change", () => {
+      const checked = document.querySelector('input[name="team-stats-layout"]:checked');
+      const next = checked?.value === "compare" ? "compare" : "single";
+      localStorage.setItem(TEAM_STATS_LAYOUT_KEY, next);
+      redrawTeamStats();
+    });
+    r.dataset.ready = "1";
+  });
+}
+
+function ensureTeamOrderLayoutSelect() {
+  const radios = [...document.querySelectorAll('input[name="team-order-layout"]')];
+  if (radios.length === 0 || radios[0].dataset.ready === "1") return;
+  const saved = localStorage.getItem(TEAM_ORDER_LAYOUT_KEY);
+  const preferred = saved === "compare" ? "compare" : "single";
+  radios.forEach((r) => {
+    r.checked = r.value === preferred;
+    r.addEventListener("change", () => {
+      const checked = document.querySelector('input[name="team-order-layout"]:checked');
+      const next = checked?.value === "compare" ? "compare" : "single";
+      localStorage.setItem(TEAM_ORDER_LAYOUT_KEY, next);
+      redrawTeamOrder();
+    });
+    r.dataset.ready = "1";
+  });
+}
+
+function ensureTeamStatsSingleSelect() {
+  const single = $("#team-stats-single-source");
+  if (!single || single.dataset.ready === "1") return;
+  single.innerHTML = teamStatsSourceOptionsHtml();
+  single.addEventListener("change", () => {
+    localStorage.setItem(TEAM_STATS_SINGLE_SOURCE_KEY, single.value);
+    redrawTeamStats();
+  });
+  single.dataset.ready = "1";
+}
+
+function ensureTeamOrderSingleSelect() {
+  const single = $("#team-order-single-source");
+  if (!single || single.dataset.ready === "1") return;
+  single.innerHTML = teamOrderSourceOptionsHtml();
+  single.addEventListener("change", () => {
+    localStorage.setItem(TEAM_ORDER_SINGLE_SOURCE_KEY, single.value);
+    redrawTeamOrder();
+  });
+  single.dataset.ready = "1";
+}
+
+function ensureTeamOrderSinglePtsSelect() {
+  const radios = [...document.querySelectorAll('input[name="team-order-single-pts"]')];
+  if (radios.length === 0 || radios[0].dataset.ready === "1") return;
+  const saved = localStorage.getItem(TEAM_ORDER_SINGLE_PTS_KEY);
+  const preferred = saved === "without-pts" ? "without-pts" : "with-pts";
+  radios.forEach((r) => {
+    r.checked = r.value === preferred;
+    r.addEventListener("change", () => {
+      const checked = document.querySelector('input[name="team-order-single-pts"]:checked');
+      const next = checked?.value === "without-pts" ? "without-pts" : "with-pts";
+      localStorage.setItem(TEAM_ORDER_SINGLE_PTS_KEY, next);
+      redrawTeamOrder();
+    });
+    r.dataset.ready = "1";
+  });
+}
+
+function refreshTeamStatsSingleSourceValue(defaultParticipantId) {
+  const single = $("#team-stats-single-source");
+  if (!single) return;
+  const valid = (val) => [...single.options].some((o) => o.value === val);
+  const saved = localStorage.getItem(TEAM_STATS_SINGLE_SOURCE_KEY);
+  if (saved && valid(saved)) {
+    single.value = saved;
+  } else if (defaultParticipantId && valid(defaultParticipantId)) {
+    single.value = defaultParticipantId;
+  } else {
+    single.value = single.options[0]?.value ?? "official";
+  }
+}
+
+function refreshTeamOrderSingleSourceValue(defaultParticipantId) {
+  const single = $("#team-order-single-source");
+  if (!single) return;
+  const valid = (val) => [...single.options].some((o) => o.value === val);
+  const saved = localStorage.getItem(TEAM_ORDER_SINGLE_SOURCE_KEY);
+  if (saved && valid(saved)) {
+    single.value = saved;
+  } else if (defaultParticipantId && valid(defaultParticipantId)) {
+    single.value = defaultParticipantId;
+  } else {
+    single.value = single.options[0]?.value ?? "official";
+  }
+}
+
+function applyTeamTablesSinglePanelTone(panelEl, sourceId, sessionParticipantId) {
+  if (!panelEl) return;
+  panelEl.classList.remove(
+    "team-stats-col-tone--official",
+    "team-stats-col-tone--self",
+    "team-stats-col-tone--other",
+    "team-order-col--official",
+    "team-order-col--self",
+    "team-order-col--other",
+  );
+  const tone =
+    sourceId === "official"
+      ? "team-stats-col-tone--official team-order-col--official"
+      : sourceId === sessionParticipantId
+        ? "team-stats-col-tone--self team-order-col--self"
+        : "team-stats-col-tone--other team-order-col--other";
+  panelEl.classList.add(...tone.split(" "));
+}
+
+function syncTeamTablesCompareCompactClass(panelEl, useCompact) {
+  panelEl?.classList.toggle("team-tables-compare--compact", useCompact);
+}
+
+function setTeamTablesCompareGrandTotal(el, gridMeta) {
+  if (!el) return;
+  if (!gridMeta?.showGrandTotal) {
+    el.textContent = "";
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML = `<strong>${escapeHtml(gridMeta.grandTotalLabel)}:</strong> <strong>${gridMeta.grandTotal}</strong>`;
+}
+
+function renderTeamStatsCompareHosts({
+  useCompact,
+  leftScores,
+  rightScores,
+  simplified,
+  withPts,
+  officialBody,
+  predBody,
+  leftGrid,
+  rightGrid,
+  syncWrap,
+  syncRows,
+  syncSubLeft,
+  syncSubRight,
+  leftSubtitle,
+  rightSubtitle,
+}) {
+  if (useCompact) {
+    if (syncWrap) syncWrap.hidden = true;
+    if (syncRows) syncRows.innerHTML = "";
+    if (leftGrid) {
+      leftGrid.innerHTML = buildTeamStatsSingleGridHtml(leftScores, { withPts });
+      leftGrid.hidden = false;
+    }
+    if (rightGrid) {
+      rightGrid.innerHTML = buildTeamStatsSingleGridHtml(rightScores, { withPts });
+      rightGrid.hidden = false;
+    }
+    if (officialBody) officialBody.innerHTML = "";
+    if (predBody) predBody.innerHTML = "";
+    return;
+  }
+  if (syncWrap) syncWrap.hidden = true;
+  if (syncRows) syncRows.innerHTML = "";
+  if (leftGrid) {
+    leftGrid.innerHTML = "";
+    leftGrid.hidden = true;
+  }
+  if (rightGrid) {
+    rightGrid.innerHTML = "";
+    rightGrid.hidden = true;
+  }
+  if (officialBody) officialBody.innerHTML = buildTeamStatsTableBody(leftScores, { simplified, withPts });
+  if (predBody) predBody.innerHTML = buildTeamStatsTableBody(rightScores, { simplified, withPts });
+}
+
+function renderTeamOrderCompareHosts({
+  useCompact,
+  leftSource,
+  rightSource,
+  sessionParticipantId,
+  withPts,
+  officialBody,
+  predBody,
+  leftGrid,
+  rightGrid,
+  leftTotal,
+  rightTotal,
+  syncWrap,
+  syncRows,
+  syncSubLeft,
+  syncSubRight,
+  syncTotalLeft,
+  syncTotalRight,
+  leftSubtitle,
+  rightSubtitle,
+}) {
+  const officialSnapshot = getLiveOfficialGroupSnapshot();
+  if (useCompact) {
+    const leftGridMeta = buildTeamOrderSingleGridHtml(leftSource, sessionParticipantId, {
+      withPts,
+      syncHead: true,
+      reservePtsCol: withPts,
+    });
+    const rightGridMeta = buildTeamOrderSingleGridHtml(rightSource, sessionParticipantId, {
+      withPts,
+      syncHead: true,
+      reservePtsCol: withPts,
+    });
+    if (syncWrap) syncWrap.hidden = true;
+    if (syncRows) syncRows.innerHTML = "";
+    if (leftGrid) {
+      leftGrid.innerHTML = leftGridMeta.html;
+      leftGrid.hidden = false;
+    }
+    if (rightGrid) {
+      rightGrid.innerHTML = rightGridMeta.html;
+      rightGrid.hidden = false;
+    }
+    setTeamTablesCompareGrandTotal(leftTotal, leftGridMeta);
+    setTeamTablesCompareGrandTotal(rightTotal, rightGridMeta);
+    if (officialBody) officialBody.innerHTML = "";
+    if (predBody) predBody.innerHTML = "";
+    return;
+  }
+  if (syncWrap) syncWrap.hidden = true;
+  if (syncRows) syncRows.innerHTML = "";
+  if (leftGrid) {
+    leftGrid.innerHTML = "";
+    leftGrid.hidden = true;
+  }
+  if (rightGrid) {
+    rightGrid.innerHTML = "";
+    rightGrid.hidden = true;
+  }
+  if (leftTotal) {
+    leftTotal.textContent = "";
+    leftTotal.hidden = true;
+  }
+  if (rightTotal) {
+    rightTotal.textContent = "";
+    rightTotal.hidden = true;
+  }
+  if (leftSource === "official") {
+    if (officialBody) officialBody.innerHTML = buildTeamOrderOfficialTableBody(officialSnapshot, { withPts });
+  } else {
+    const leftOrder = loadPredictions(leftSource).groupOrder ?? {};
+    if (officialBody) {
+      officialBody.innerHTML = buildTeamOrderPredTableBody(
+        leftOrder,
+        officialSnapshot,
+        leftSource,
+        sessionParticipantId,
+        { withPts },
+      );
+    }
+  }
+  if (rightSource === "official") {
+    if (predBody) predBody.innerHTML = buildTeamOrderOfficialTableBody(officialSnapshot, { withPts });
+  } else {
+    const rightOrder = loadPredictions(rightSource).groupOrder ?? {};
+    if (predBody) {
+      predBody.innerHTML = buildTeamOrderPredTableBody(
+        rightOrder,
+        officialSnapshot,
+        rightSource,
+        sessionParticipantId,
+        { withPts },
+      );
+    }
+  }
+}
+
+function setTeamTablesLayoutVisibility(panelId, layout) {
+  const isCompare = layout === "compare";
+  const prefix = panelId === "team-stats" ? "team-stats" : "team-order";
+  const compareEl = $(`#${prefix}-compare`);
+  const singleEl = $(`#${prefix}-single`);
+  const compareControls = $(`#${prefix}-compare-controls`);
+  const singleControls = $(`#${prefix}-single-controls`);
+  const panel = $(`#panel-${panelId}`);
+
+  if (compareEl) compareEl.hidden = !isCompare;
+  if (singleEl) singleEl.hidden = isCompare;
+  if (compareControls) compareControls.hidden = !isCompare;
+  if (singleControls) singleControls.hidden = isCompare;
+
+  if (panelId === "team-stats") {
+    const compareViewWrap = $("#team-stats-compare-view-wrap");
+    if (compareViewWrap) compareViewWrap.hidden = !isCompare || isMobileLayout();
+  }
+
+  panel?.classList.toggle("team-tables-panel--compare", isCompare);
+  panel?.classList.toggle("team-tables-panel--single", !isCompare);
 }
 
 function getOfficialConfirmedGroupScores() {
@@ -7625,17 +8242,36 @@ function ensureTeamStatsSourceSelects() {
   }
 }
 
-function ensureTeamStatsViewSelect() {
-  const radios = [...document.querySelectorAll('input[name="team-stats-view"]')];
+function ensureTeamStatsSinglePtsSelect() {
+  const radios = [...document.querySelectorAll('input[name="team-stats-single-pts"]')];
   if (radios.length === 0 || radios[0].dataset.ready === "1") return;
-  const saved = localStorage.getItem(TEAM_STATS_VIEW_KEY);
+  let saved = localStorage.getItem(TEAM_STATS_SINGLE_PTS_KEY);
+  if (!saved) saved = localStorage.getItem(TEAM_STATS_VIEW_KEY);
+  const preferred = saved === "without-pts" ? "without-pts" : "with-pts";
+  radios.forEach((r) => {
+    r.checked = r.value === preferred;
+    r.addEventListener("change", () => {
+      const checked = document.querySelector('input[name="team-stats-single-pts"]:checked');
+      const next = checked?.value === "without-pts" ? "without-pts" : "with-pts";
+      localStorage.setItem(TEAM_STATS_SINGLE_PTS_KEY, next);
+      redrawTeamStats();
+    });
+    r.dataset.ready = "1";
+  });
+}
+
+function ensureTeamStatsCompareViewSelect() {
+  const radios = [...document.querySelectorAll('input[name="team-stats-compare-view"]')];
+  if (radios.length === 0 || radios[0].dataset.ready === "1") return;
+  let saved = localStorage.getItem(TEAM_STATS_COMPARE_VIEW_KEY);
+  if (!saved) saved = localStorage.getItem(TEAM_STATS_VIEW_KEY);
   const preferred = saved === "simple" ? "simple" : "full";
   radios.forEach((r) => {
     r.checked = r.value === preferred;
     r.addEventListener("change", () => {
-      const checked = document.querySelector('input[name="team-stats-view"]:checked');
+      const checked = document.querySelector('input[name="team-stats-compare-view"]:checked');
       const next = checked?.value === "simple" ? "simple" : "full";
-      localStorage.setItem(TEAM_STATS_VIEW_KEY, next);
+      localStorage.setItem(TEAM_STATS_COMPARE_VIEW_KEY, next);
       redrawTeamStats();
     });
     r.dataset.ready = "1";
@@ -7663,12 +8299,15 @@ function refreshTeamStatsSelectValues(defaultParticipantId) {
 function rebuildTeamStatsSelectOptions() {
   const left = $("#team-stats-left-source");
   const right = $("#team-stats-right-source");
+  const single = $("#team-stats-single-source");
   if (!left || !right) return;
   const session = loadSession();
   const html = teamStatsSourceOptionsHtml();
   left.innerHTML = html;
   right.innerHTML = html;
+  if (single) single.innerHTML = html;
   refreshTeamStatsSelectValues(session?.participantId ?? "");
+  refreshTeamStatsSingleSourceValue(session?.participantId ?? "");
 }
 
 function teamStatsSourceSubtitle(sourceId, sessionParticipantId) {
@@ -7713,12 +8352,14 @@ function buildTeamOrderTableBody(orderByGroup) {
   return rows.join("");
 }
 
-function buildTeamOrderOfficialTableBody(officialSnapshot) {
+function buildTeamOrderOfficialTableBody(officialSnapshot, opts = {}) {
+  const { withPts = true } = opts;
   const rows = [];
   const perGroupPossible = MAX_PER_GROUP;
   let totalPossible = 0;
+  const dividerCols = withPts ? 3 : 2;
   for (const grp of GROUPS) {
-    rows.push(`<tr class="team-stats-divider"><td colspan="3">Grupo ${escapeHtml(grp.id)}</td></tr>`);
+    rows.push(`<tr class="team-stats-divider"><td colspan="${dividerCols}">Grupo ${escapeHtml(grp.id)}</td></tr>`);
     const order = Array.isArray(officialSnapshot.orderByGroup?.[grp.id])
       ? officialSnapshot.orderByGroup[grp.id]
       : [];
@@ -7728,25 +8369,29 @@ function buildTeamOrderOfficialTableBody(officialSnapshot) {
         <tr>
           <td>${i + 1}</td>
           <td>${t ? teamLabelHtml(t) : '<span class="muted">—</span>'}</td>
-          <td class="team-order-points-cell"><span class="muted">—</span></td>
+          ${withPts ? '<td class="team-order-points-cell"><span class="muted">—</span></td>' : ""}
         </tr>
       `);
     }
-    const groupPossible = perGroupPossible;
-    totalPossible += perGroupPossible;
+    if (withPts) {
+      const groupPossible = perGroupPossible;
+      totalPossible += perGroupPossible;
+      rows.push(`
+        <tr class="team-order-total-row">
+          <td colspan="2"><strong>Total posible</strong></td>
+          <td class="team-order-total-num"><strong>${groupPossible}</strong></td>
+        </tr>
+      `);
+    }
+  }
+  if (withPts) {
     rows.push(`
-      <tr class="team-order-total-row">
+      <tr class="team-order-total-row team-order-total-row--final">
         <td colspan="2"><strong>Total posible</strong></td>
-        <td class="team-order-total-num"><strong>${groupPossible}</strong></td>
+        <td class="team-order-total-num"><strong>${totalPossible}</strong></td>
       </tr>
     `);
   }
-  rows.push(`
-    <tr class="team-order-total-row team-order-total-row--final">
-      <td colspan="2"><strong>Total posible</strong></td>
-      <td class="team-order-total-num"><strong>${totalPossible}</strong></td>
-    </tr>
-  `);
   return rows.join("");
 }
 
@@ -7785,10 +8430,12 @@ function applyTeamOrderColumnTone(bodyEl, sourceId, sessionParticipantId) {
   col.classList.add(teamOrderSourceToneClass(sourceId, sessionParticipantId));
 }
 
-function buildTeamOrderPredTableBody(orderByGroup, officialSnapshot, participantId, sessionParticipantId) {
+function buildTeamOrderPredTableBody(orderByGroup, officialSnapshot, participantId, sessionParticipantId, opts = {}) {
+  const { withPts = true } = opts;
   const rows = [];
   const pStore = loadPredictions(participantId);
   let grandTotal = 0;
+  const dividerCols = withPts ? 3 : 2;
 
   for (const grp of GROUPS) {
     const officialOrder = officialSnapshot.orderByGroup?.[grp.id] ?? [];
@@ -7821,87 +8468,99 @@ function buildTeamOrderPredTableBody(orderByGroup, officialSnapshot, participant
       (predThird === true || predThird === false) &&
       predThird === officialThird;
     let groupBadge = "";
-    if (fullOrderHit && thirdAdvanceHit) {
-      groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-perfecto-label">Perfecto</span>${pointsBadgeHtml(perfectOrderPts + GROUP_PERFECTO_ORDER_AND_THIRD_BONUS, {
-        title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden de 1.º y 2.º, +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo y +${GROUP_PERFECTO_ORDER_AND_THIRD_BONUS} por acierto de 3.º pasa`,
-      })}</span>`;
-    } else if (fullOrderHit) {
-      groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-excelente-label">Excelente</span>${pointsBadgeHtml(perfectOrderPts, {
-        title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden de 1.º y 2.º y +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo`,
-      })}</span>`;
-    } else if (top2InExactOrder) {
-      groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-bien-label">Bien</span>${pointsBadgeHtml(GROUP_QUALIFIERS_ORDER_BONUS, {
-        title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden correcto de 1.º y 2.º`,
-      })}</span>`;
+    if (withPts) {
+      if (fullOrderHit && thirdAdvanceHit) {
+        groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-perfecto-label">Perfecto</span>${pointsBadgeHtml(perfectOrderPts + GROUP_PERFECTO_ORDER_AND_THIRD_BONUS, {
+          title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden de 1.º y 2.º, +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo y +${GROUP_PERFECTO_ORDER_AND_THIRD_BONUS} por acierto de 3.º pasa`,
+        })}</span>`;
+      } else if (fullOrderHit) {
+        groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-excelente-label">Excelente</span>${pointsBadgeHtml(perfectOrderPts, {
+          title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden de 1.º y 2.º y +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo`,
+        })}</span>`;
+      } else if (top2InExactOrder) {
+        groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-bien-label">Bien</span>${pointsBadgeHtml(GROUP_QUALIFIERS_ORDER_BONUS, {
+          title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden correcto de 1.º y 2.º`,
+        })}</span>`;
+      }
     }
 
-    rows.push(`<tr class="team-stats-divider"><td colspan="3"><div class="team-order-group-head"><span>Grupo ${escapeHtml(grp.id)}</span>${groupBadge}</div></td></tr>`);
+    rows.push(
+      withPts
+        ? `<tr class="team-stats-divider"><td colspan="${dividerCols}"><div class="team-order-group-head"><span>Grupo ${escapeHtml(grp.id)}</span>${groupBadge}</div></td></tr>`
+        : `<tr class="team-stats-divider"><td colspan="${dividerCols}">Grupo ${escapeHtml(grp.id)}</td></tr>`,
+    );
 
     for (let i = 0; i < 4; i++) {
       const t = predOrder[i] ?? "";
-      const rowBasePts =
-        hasOfficialData && i < 2 && Boolean(t) && officialQualifiers.has(t)
-          ? 1
-          : 0;
-      const rowBonusPts =
-        hasOfficialData &&
-        Boolean(t) &&
-        Boolean(officialOrder[i]) &&
-        t === officialOrder[i] &&
-        hasUniquePickBonus(voteCountsByPos[i], t)
-          ? 1
-          : 0;
-      const rowPts = rowBasePts + rowBonusPts;
+      let ptsCell = "";
+      if (withPts) {
+        const rowBasePts =
+          hasOfficialData && i < 2 && Boolean(t) && officialQualifiers.has(t) ? 1 : 0;
+        const rowBonusPts =
+          hasOfficialData &&
+          Boolean(t) &&
+          Boolean(officialOrder[i]) &&
+          t === officialOrder[i] &&
+          hasUniquePickBonus(voteCountsByPos[i], t)
+            ? 1
+            : 0;
+        const rowPts = rowBasePts + rowBonusPts;
+        ptsCell = `<td class="team-order-points-cell">${pointsBadgeHtml(rowPts, {
+          bonus: rowBonusPts > 0,
+          title:
+            rowBonusPts > 0
+              ? rowBasePts > 0
+                ? "Acierto en posición con bono por minoría (+1 base +1 bono)"
+                : "Acierto en posición con bono por minoría (+1 bono)"
+              : "Clasificado directo acertado (+1)",
+        }) || '<span class="muted">—</span>'}</td>`;
+      }
       rows.push(`
         <tr>
           <td>${i + 1}</td>
           <td>${t ? teamLabelHtml(t) : '<span class="muted">—</span>'}</td>
-          <td class="team-order-points-cell">${pointsBadgeHtml(rowPts, {
-            bonus: rowBonusPts > 0,
-            title:
-              rowBonusPts > 0
-                ? rowBasePts > 0
-                  ? "Acierto en posición con bono por minoría (+1 base +1 bono)"
-                  : "Acierto en posición con bono por minoría (+1 bono)"
-                : "Clasificado directo acertado (+1)",
-          }) || '<span class="muted">—</span>'}</td>
+          ${ptsCell}
         </tr>
       `);
     }
 
-    const baseGroupTotal = hasOfficialData
-      ? computeGroupOrderPoints(
-          predOrder,
-          officialOrder,
-          predThird,
-          officialThirdDefined ? officialThird : undefined,
-        )
-      : 0;
-    const minorityBonusTotal = hasOfficialData
-      ? [0, 1, 2, 3].reduce((acc, i) => {
-          const t = predOrder[i];
-          const isExact = Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
-          if (isExact && hasUniquePickBonus(voteCountsByPos[i], t)) return acc + 1;
-          return acc;
-        }, 0)
-      : 0;
-    const groupTotal = baseGroupTotal + minorityBonusTotal;
-    grandTotal += groupTotal;
-    const totalClass = teamOrderGroupTotalClass(groupTotal, false);
+    if (withPts) {
+      const baseGroupTotal = hasOfficialData
+        ? computeGroupOrderPoints(
+            predOrder,
+            officialOrder,
+            predThird,
+            officialThirdDefined ? officialThird : undefined,
+          )
+        : 0;
+      const minorityBonusTotal = hasOfficialData
+        ? [0, 1, 2, 3].reduce((acc, i) => {
+            const t = predOrder[i];
+            const isExact = Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
+            if (isExact && hasUniquePickBonus(voteCountsByPos[i], t)) return acc + 1;
+            return acc;
+          }, 0)
+        : 0;
+      const groupTotal = baseGroupTotal + minorityBonusTotal;
+      grandTotal += groupTotal;
+      const totalClass = teamOrderGroupTotalClass(groupTotal, false);
+      rows.push(`
+        <tr class="team-order-total-row">
+          <td colspan="2"><strong>Total grupo</strong></td>
+          <td class="team-order-total-num"><strong class="${totalClass}">${groupTotal}</strong></td>
+        </tr>
+      `);
+    }
+  }
+
+  if (withPts) {
     rows.push(`
-      <tr class="team-order-total-row">
-        <td colspan="2"><strong>Total grupo</strong></td>
-        <td class="team-order-total-num"><strong class="${totalClass}">${groupTotal}</strong></td>
+      <tr class="team-order-total-row team-order-total-row--final">
+        <td colspan="2"><strong>Total final</strong></td>
+        <td class="team-order-total-num"><strong>${grandTotal}</strong></td>
       </tr>
     `);
   }
-
-  rows.push(`
-    <tr class="team-order-total-row team-order-total-row--final">
-      <td colspan="2"><strong>Total final</strong></td>
-      <td class="team-order-total-num"><strong>${grandTotal}</strong></td>
-    </tr>
-  `);
   return rows.join("");
 }
 
@@ -7949,12 +8608,15 @@ function refreshTeamOrderSelectValues(defaultParticipantId) {
 function rebuildTeamOrderSelectOptions() {
   const left = $("#team-order-left-source");
   const right = $("#team-order-right-source");
+  const single = $("#team-order-single-source");
   if (!left || !right) return;
   const session = loadSession();
   const html = teamOrderSourceOptionsHtml();
   left.innerHTML = html;
   right.innerHTML = html;
+  if (single) single.innerHTML = html;
   refreshTeamOrderSelectValues(session?.participantId ?? "");
+  refreshTeamOrderSingleSourceValue(session?.participantId ?? "");
 }
 
 function redrawTeamStats() {
@@ -7965,30 +8627,88 @@ function redrawTeamStats() {
   const officialSub = $("#team-stats-subtitle-official");
   const predSub = $("#team-stats-subtitle-pred");
   const compareWrap = $("#team-stats-compare");
+  const singleGrid = $("#team-stats-single-grid");
+  const singleSub = $("#team-stats-single-subtitle");
+  const singlePanel = $("#team-stats-single")?.querySelector(".team-tables-single-panel");
   const panel = $("#panel-team-stats");
   const session = loadSession();
 
   if (!intro || !officialBody || !predBody) return;
 
+  ensureTeamStatsLayoutSelect();
+  const layout = getTeamTablesLayoutValue("team-stats-layout", TEAM_STATS_LAYOUT_KEY);
+  localStorage.setItem(TEAM_STATS_LAYOUT_KEY, layout);
+  setTeamTablesLayoutVisibility("team-stats", layout);
+
   if (!session) {
     if (loginHint) loginHint.hidden = false;
     officialBody.innerHTML = "";
     predBody.innerHTML = "";
+    if (singleGrid) singleGrid.innerHTML = "";
+    const leftCompareGrid = $("#team-stats-compare-left-grid");
+    const rightCompareGrid = $("#team-stats-compare-right-grid");
+    if (leftCompareGrid) {
+      leftCompareGrid.innerHTML = "";
+      leftCompareGrid.hidden = true;
+    }
+    if (rightCompareGrid) {
+      rightCompareGrid.innerHTML = "";
+      rightCompareGrid.hidden = true;
+    }
+    const statsCompareSync = $("#team-stats-compare-sync");
+    const statsCompareSyncRows = $("#team-stats-compare-sync-rows");
+    if (statsCompareSync) statsCompareSync.hidden = true;
+    if (statsCompareSyncRows) statsCompareSyncRows.innerHTML = "";
     if (officialSub) officialSub.textContent = "Fase de grupos · Resultado oficial";
     if (predSub) predSub.textContent = "Fase de grupos · Predicción";
+    if (singleSub) singleSub.textContent = "Fase de grupos";
     compareWrap?.classList.remove("team-stats-compare--self-selected");
+    panel?.classList.remove("team-tables-compare--compact");
     return;
   }
 
   if (loginHint) loginHint.hidden = true;
 
   ensureTeamStatsSourceSelects();
-  ensureTeamStatsViewSelect();
+  ensureTeamStatsSingleSelect();
+  ensureTeamStatsSinglePtsSelect();
+  ensureTeamStatsCompareViewSelect();
   refreshTeamStatsSelectValues(session.participantId);
+  refreshTeamStatsSingleSourceValue(session.participantId);
+
+  const officialScores = getOfficialConfirmedGroupScores();
+
+  if (layout === "single") {
+    const singleSel = $("#team-stats-single-source");
+    const singleSource = singleSel?.value ?? session.participantId;
+    const withPts = getTeamStatsWithPtsPreference();
+    localStorage.setItem(TEAM_STATS_SINGLE_SOURCE_KEY, singleSource);
+    localStorage.setItem(TEAM_STATS_SINGLE_PTS_KEY, withPts ? "with-pts" : "without-pts");
+    const scores =
+      singleSource === "official"
+        ? officialScores
+        : (loadPredictions(singleSource).groupScores ?? {});
+    officialBody.innerHTML = "";
+    predBody.innerHTML = "";
+    if (singleGrid) singleGrid.innerHTML = buildTeamStatsSingleGridHtml(scores, { withPts });
+    if (singleSub) {
+      singleSub.textContent = teamStatsSourceSubtitle(singleSource, session.participantId);
+      singleSub.classList.toggle(
+        "team-stats-subtitle--foreign",
+        singleSource !== "official" && singleSource !== session.participantId,
+      );
+    }
+    panel?.classList.remove("team-stats--simple", "team-tables-compare--compact");
+    panel?.classList.toggle("team-stats-single--without-pts", !withPts);
+    applyTeamTablesSinglePanelTone(singlePanel, singleSource, session.participantId);
+    syncGroupPtsBadgeCanvases(singleGrid ?? document.body);
+    return;
+  }
+
   const leftSel = $("#team-stats-left-source");
   const rightSel = $("#team-stats-right-source");
-  const viewChecked = document.querySelector('input[name="team-stats-view"]:checked');
-  const simplified = viewChecked?.value === "simple";
+  if (singleGrid) singleGrid.innerHTML = "";
+  panel?.classList.remove("team-stats-single--without-pts", "team-stats-compare--without-pts");
   const leftSource = leftSel?.value ?? "official";
   const rightSource = rightSel?.value ?? session.participantId;
   localStorage.setItem(TEAM_STATS_LEFT_SOURCE_KEY, leftSource);
@@ -7996,12 +8716,16 @@ function redrawTeamStats() {
   const isSelfSelected = rightSource === session.participantId;
   compareWrap?.classList.toggle("team-stats-compare--self-selected", isSelfSelected);
 
-  const officialScores = getOfficialConfirmedGroupScores();
   const leftScores = leftSource === "official" ? officialScores : (loadPredictions(leftSource).groupScores ?? {});
   const rightScores =
     rightSource === "official" ? officialScores : (loadPredictions(rightSource).groupScores ?? {});
 
+  const withPts = getTeamStatsWithPtsPreference();
+  localStorage.setItem(TEAM_STATS_SINGLE_PTS_KEY, withPts ? "with-pts" : "without-pts");
+  const simplified = getTeamStatsCompareSimplified();
+  localStorage.setItem(TEAM_STATS_COMPARE_VIEW_KEY, simplified ? "simple" : "full");
   panel?.classList.toggle("team-stats--simple", simplified);
+  panel?.classList.toggle("team-stats-compare--without-pts", !withPts);
   if (officialSub) {
     officialSub.textContent = teamStatsSourceSubtitle(leftSource, session.participantId);
     officialSub.classList.toggle(
@@ -8016,10 +8740,30 @@ function redrawTeamStats() {
       rightSource !== "official" && rightSource !== session.participantId,
     );
   }
-  officialBody.innerHTML = buildTeamStatsTableBody(leftScores, { simplified });
-  predBody.innerHTML = buildTeamStatsTableBody(rightScores, { simplified });
+  const useCompactCompare = isMobileLayout();
+  syncTeamTablesCompareCompactClass(panel, useCompactCompare);
+  const leftSubtitleText = teamStatsSourceSubtitle(leftSource, session.participantId);
+  const rightSubtitleText = teamStatsSourceSubtitle(rightSource, session.participantId);
+  renderTeamStatsCompareHosts({
+    useCompact: useCompactCompare,
+    leftScores,
+    rightScores,
+    simplified,
+    withPts,
+    officialBody,
+    predBody,
+    leftGrid: $("#team-stats-compare-left-grid"),
+    rightGrid: $("#team-stats-compare-right-grid"),
+    syncWrap: $("#team-stats-compare-sync"),
+    syncRows: $("#team-stats-compare-sync-rows"),
+    syncSubLeft: $("#team-stats-sync-subtitle-left"),
+    syncSubRight: $("#team-stats-sync-subtitle-right"),
+    leftSubtitle: leftSubtitleText,
+    rightSubtitle: rightSubtitleText,
+  });
   applyTeamStatsColumnTone(officialBody, leftSource, session.participantId);
   applyTeamStatsColumnTone(predBody, rightSource, session.participantId);
+  syncGroupPtsBadgeCanvases(compareWrap ?? document.body);
 }
 
 function redrawTeamOrder() {
@@ -8028,63 +8772,162 @@ function redrawTeamOrder() {
   const officialSub = $("#team-order-subtitle-official");
   const predSub = $("#team-order-subtitle-pred");
   const compareWrap = $("#team-order-compare");
+  const singleGrid = $("#team-order-single-grid");
+  const singleSub = $("#team-order-single-subtitle");
+  const singleGrandTotal = $("#team-order-single-grand-total");
+  const singlePanel = $("#team-order-single")?.querySelector(".team-tables-single-panel");
   const session = loadSession();
 
   if (!officialBody || !predBody) return;
+
+  ensureTeamOrderLayoutSelect();
+  const layout = getTeamTablesLayoutValue("team-order-layout", TEAM_ORDER_LAYOUT_KEY);
+  localStorage.setItem(TEAM_ORDER_LAYOUT_KEY, layout);
+  setTeamTablesLayoutVisibility("team-order", layout);
+
   if (!session) {
     officialBody.innerHTML = "";
     predBody.innerHTML = "";
+    if (singleGrid) singleGrid.innerHTML = "";
+    const leftCompareGrid = $("#team-order-compare-left-grid");
+    const rightCompareGrid = $("#team-order-compare-right-grid");
+    if (leftCompareGrid) {
+      leftCompareGrid.innerHTML = "";
+      leftCompareGrid.hidden = true;
+    }
+    if (rightCompareGrid) {
+      rightCompareGrid.innerHTML = "";
+      rightCompareGrid.hidden = true;
+    }
+    if (singleGrandTotal) {
+      singleGrandTotal.textContent = "";
+      singleGrandTotal.hidden = true;
+    }
+    const leftCompareTotal = $("#team-order-compare-left-total");
+    const rightCompareTotal = $("#team-order-compare-right-total");
+    if (leftCompareTotal) {
+      leftCompareTotal.textContent = "";
+      leftCompareTotal.hidden = true;
+    }
+    if (rightCompareTotal) {
+      rightCompareTotal.textContent = "";
+      rightCompareTotal.hidden = true;
+    }
+    const orderCompareSync = $("#team-order-compare-sync");
+    const orderCompareSyncRows = $("#team-order-compare-sync-rows");
+    if (orderCompareSync) orderCompareSync.hidden = true;
+    if (orderCompareSyncRows) orderCompareSyncRows.innerHTML = "";
+    const orderSyncTotalLeft = $("#team-order-sync-total-left");
+    const orderSyncTotalRight = $("#team-order-sync-total-right");
+    if (orderSyncTotalLeft) {
+      orderSyncTotalLeft.textContent = "";
+      orderSyncTotalLeft.hidden = true;
+    }
+    if (orderSyncTotalRight) {
+      orderSyncTotalRight.textContent = "";
+      orderSyncTotalRight.hidden = true;
+    }
     if (officialSub) officialSub.textContent = "Fase de grupos · Orden oficial";
     if (predSub) predSub.textContent = "Fase de grupos · Orden";
+    if (singleSub) singleSub.textContent = "Fase de grupos";
     compareWrap?.classList.remove("team-stats-compare--self-selected");
+    $("#panel-team-order")?.classList.remove("team-tables-compare--compact");
     return;
   }
 
   ensureTeamOrderSourceSelects();
+  ensureTeamOrderSingleSelect();
+  ensureTeamOrderSinglePtsSelect();
   refreshTeamOrderSelectValues(session.participantId);
+  refreshTeamOrderSingleSourceValue(session.participantId);
+
+  if (layout === "single") {
+    const singleSel = $("#team-order-single-source");
+    const singleSource = singleSel?.value ?? session.participantId;
+    const withPts = getTeamOrderWithPtsPreference();
+    localStorage.setItem(TEAM_ORDER_SINGLE_SOURCE_KEY, singleSource);
+    localStorage.setItem(TEAM_ORDER_SINGLE_PTS_KEY, withPts ? "with-pts" : "without-pts");
+    officialBody.innerHTML = "";
+    predBody.innerHTML = "";
+    const grid = buildTeamOrderSingleGridHtml(singleSource, session.participantId, { withPts });
+    if (singleGrid) singleGrid.innerHTML = grid.html;
+    if (singleSub) {
+      singleSub.textContent = teamOrderSourceSubtitle(singleSource, "left", session.participantId);
+      singleSub.classList.toggle(
+        "team-stats-subtitle--foreign",
+        singleSource !== "official" && singleSource !== session.participantId,
+      );
+    }
+    if (singleGrandTotal) {
+      if (grid.showGrandTotal) {
+        singleGrandTotal.hidden = false;
+        singleGrandTotal.innerHTML = `<strong>${escapeHtml(grid.grandTotalLabel)}:</strong> <strong>${grid.grandTotal}</strong>`;
+      } else {
+        singleGrandTotal.textContent = "";
+        singleGrandTotal.hidden = true;
+      }
+    }
+    $("#panel-team-order")?.classList.remove("team-tables-compare--compact");
+    $("#panel-team-order")?.classList.toggle("team-order-single--without-pts", !withPts);
+    applyTeamTablesSinglePanelTone(singlePanel, singleSource, session.participantId);
+    syncGroupPtsBadgeCanvases(singleGrid ?? document.body);
+    return;
+  }
+
   const leftSel = $("#team-order-left-source");
   const rightSel = $("#team-order-right-source");
   const leftSource = leftSel?.value ?? "official";
   const rightSource = rightSel?.value ?? session.participantId;
+  const orderPanel = $("#panel-team-order");
+  orderPanel?.classList.remove("team-order-single--without-pts", "team-order-compare--without-pts");
+  if (singleGrid) singleGrid.innerHTML = "";
+  if (singleGrandTotal) {
+    singleGrandTotal.textContent = "";
+    singleGrandTotal.hidden = true;
+  }
   localStorage.setItem(TEAM_ORDER_LEFT_SOURCE_KEY, leftSource);
   localStorage.setItem(TEAM_ORDER_RIGHT_SOURCE_KEY, rightSource);
   const isSelfSelected = rightSource === session.participantId;
   compareWrap?.classList.toggle("team-stats-compare--self-selected", isSelfSelected);
 
-  const officialSnapshot = getLiveOfficialGroupSnapshot();
-  if (leftSource === "official") {
-    officialBody.innerHTML = buildTeamOrderOfficialTableBody(officialSnapshot);
-  } else {
-    const leftOrder = loadPredictions(leftSource).groupOrder ?? {};
-    officialBody.innerHTML = buildTeamOrderPredTableBody(
-      leftOrder,
-      officialSnapshot,
-      leftSource,
-      session.participantId,
-    );
-  }
-  if (rightSource === "official") {
-    predBody.innerHTML = buildTeamOrderOfficialTableBody(officialSnapshot);
-  } else {
-    const rightOrder = loadPredictions(rightSource).groupOrder ?? {};
-    predBody.innerHTML = buildTeamOrderPredTableBody(
-      rightOrder,
-      officialSnapshot,
-      rightSource,
-      session.participantId,
-    );
-  }
+  const leftSubtitleText = teamOrderSourceSubtitle(leftSource, "left", session.participantId);
+  const rightSubtitleText = teamOrderSourceSubtitle(rightSource, "right", session.participantId);
+  const withPts = getTeamOrderWithPtsPreference();
+  localStorage.setItem(TEAM_ORDER_SINGLE_PTS_KEY, withPts ? "with-pts" : "without-pts");
+  const useCompactCompare = isMobileLayout();
+  syncTeamTablesCompareCompactClass(orderPanel, useCompactCompare);
+  orderPanel?.classList.toggle("team-order-compare--without-pts", !withPts);
+  renderTeamOrderCompareHosts({
+    useCompact: useCompactCompare,
+    leftSource,
+    rightSource,
+    sessionParticipantId: session.participantId,
+    withPts,
+    officialBody,
+    predBody,
+    leftGrid: $("#team-order-compare-left-grid"),
+    rightGrid: $("#team-order-compare-right-grid"),
+    leftTotal: $("#team-order-compare-left-total"),
+    rightTotal: $("#team-order-compare-right-total"),
+    syncWrap: $("#team-order-compare-sync"),
+    syncRows: $("#team-order-compare-sync-rows"),
+    syncSubLeft: $("#team-order-sync-subtitle-left"),
+    syncSubRight: $("#team-order-sync-subtitle-right"),
+    syncTotalLeft: $("#team-order-sync-total-left"),
+    syncTotalRight: $("#team-order-sync-total-right"),
+    leftSubtitle: leftSubtitleText,
+    rightSubtitle: rightSubtitleText,
+  });
   applyTeamOrderColumnTone(officialBody, leftSource, session.participantId);
   applyTeamOrderColumnTone(predBody, rightSource, session.participantId);
+  syncGroupPtsBadgeCanvases(compareWrap ?? document.body);
 
   if (officialSub) {
-    const txt = teamOrderSourceSubtitle(leftSource, "left", session.participantId);
-    officialSub.textContent = txt;
+    officialSub.textContent = leftSubtitleText;
     officialSub.classList.toggle("team-stats-subtitle--foreign", leftSource !== "official" && leftSource !== session.participantId);
   }
   if (predSub) {
-    const txt = teamOrderSourceSubtitle(rightSource, "right", session.participantId);
-    predSub.textContent = txt;
+    predSub.textContent = rightSubtitleText;
     predSub.classList.toggle("team-stats-subtitle--foreign", rightSource !== "official" && rightSource !== session.participantId);
   }
 }
@@ -8375,6 +9218,15 @@ export function initApp() {
   initDrawerExpandableSubmenus(tabsController);
   bindRulesQuickButton();
   ensureMatchHistoryViewSelect();
+
+  if (MOBILE_LAYOUT_MQ) {
+    MOBILE_LAYOUT_MQ.addEventListener("change", () => {
+      const panelStats = $("#panel-team-stats");
+      const panelOrder = $("#panel-team-order");
+      if (panelStats && !panelStats.hidden) redrawTeamStats();
+      if (panelOrder && !panelOrder.hidden) redrawTeamOrder();
+    });
+  }
 
   /** Evita solapar varios refreshAll (WS + pestañas); reentrancia rompe el DOM y bloquea la UI. */
   let externalSyncRefreshChain = Promise.resolve();
