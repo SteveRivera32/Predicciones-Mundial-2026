@@ -92,6 +92,21 @@ export function formatKickoffShortSpanish(isoKickoff) {
 }
 
 /**
+ * Solo día y mes para agrupar jornadas (p. ej. «11 de junio»).
+ * @param {string} isoKickoff
+ * @param {string} [timeZone]
+ */
+export function formatKickoffDayLabelSpanish(isoKickoff, timeZone = TOURNAMENT_DAY_TZ) {
+  const t = Date.parse(isoKickoff);
+  if (Number.isNaN(t)) return "";
+  return new Intl.DateTimeFormat("es-MX", {
+    timeZone,
+    day: "numeric",
+    month: "long",
+  }).format(new Date(t));
+}
+
+/**
  * @param {string} isoKickoff
  */
 export function countdownLabelSpanish(isoKickoff) {

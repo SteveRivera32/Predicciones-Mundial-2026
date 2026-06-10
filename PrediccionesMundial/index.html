@@ -519,7 +519,7 @@
                   <button type="button" class="tab drawer-nav-chip" data-tab="match-ranking" aria-selected="false" title="Ranking de predicción de partidos" aria-label="Ranking de predicción de partidos">
                     🏆 Ranking
                   </button>
-                  <button type="button" class="tab drawer-nav-chip" data-tab="match-history" aria-selected="false" title="Historial de partidos" aria-label="Historial de partidos">
+                  <button type="button" class="tab drawer-nav-chip" data-tab="match-history" aria-selected="false" title="Historial" aria-label="Historial">
                     🕘 Historial
                   </button>
                 </div>
@@ -1467,7 +1467,7 @@
       </section>
 
       <section id="panel-match-history" class="panel" data-panel="match-history" hidden tabindex="-1">
-        <h1 class="panel-title">Historial de partidos</h1>
+        <h1 class="panel-title">Historial</h1>
         <div class="panel-intro panel-intro--ranking-full" id="match-history-intro">
           <p class="panel-intro__p match-history-intro-lead">
             Aquí se muestra el historial de
@@ -1478,26 +1478,45 @@
               aria-label="Ir a Partidos"
             >
               PARTIDOS
-            </button>.
+            </button>
+            y predicciones.
           </p>
         </div>
-        <div class="table-scroll">
-          <table class="table table-compact table-match-history" aria-describedby="match-history-intro">
-            <thead>
-              <tr>
-                <th>Fase</th>
-                <th>Partido</th>
-                <th>Estado</th>
-                <th>Predicción</th>
-                <th>Tu predicción</th>
-                <th>Resultado oficial</th>
-                <th>Puntos</th>
-              </tr>
-            </thead>
-            <tbody id="table-match-history-body"></tbody>
-          </table>
+        <div class="field match-history-view-wrap field--inline">
+          <span class="field-label">Vista</span>
+          <div class="radio-segment" role="radiogroup" aria-label="Tipo de historial">
+            <label class="radio-segment__option">
+              <input type="radio" name="match-history-view" value="partidos" checked />
+              <span>Partidos</span>
+            </label>
+            <label class="radio-segment__option">
+              <input type="radio" name="match-history-view" value="predicciones" />
+              <span>Predicciones</span>
+            </label>
+          </div>
         </div>
-        <p class="muted match-history-totals" id="match-history-totals"></p>
+        <div id="match-history-view-partidos">
+          <div class="table-scroll">
+            <table class="table table-compact table-match-history" aria-describedby="match-history-intro">
+              <thead>
+                <tr>
+                  <th>Fase</th>
+                  <th>Partido</th>
+                  <th>Estado</th>
+                  <th>Predicción</th>
+                  <th>Tu predicción</th>
+                  <th>Resultado oficial</th>
+                  <th>Puntos</th>
+                </tr>
+              </thead>
+              <tbody id="table-match-history-body"></tbody>
+            </table>
+          </div>
+          <p class="muted match-history-totals" id="match-history-totals"></p>
+        </div>
+        <div id="match-history-view-predicciones" hidden>
+          <div class="pred-history-root" id="match-history-preds-root" aria-live="polite"></div>
+        </div>
       </section>
 
       <section id="panel-partidos" class="panel" data-panel="partidos" hidden tabindex="-1">
@@ -1540,9 +1559,9 @@
               type="button"
               class="rules-uso-label rules-uso-label--partidos rules-uso-label--nav"
               data-pm26-tab="match-history"
-              aria-label="Ir a Historial de partidos"
+              aria-label="Ir a Historial"
             >
-              HISTORIAL DE PARTIDOS
+              HISTORIAL
             </button>.
           </p>
           <p class="panel-intro__p partidos-intro-login muted" id="partidos-intro-login" hidden>

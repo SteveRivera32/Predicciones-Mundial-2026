@@ -77,6 +77,8 @@ import {
 } from "./kickoff-autostart.js";
 import {
   formatKickoffShortSpanish,
+  formatKickoffDayLabelSpanish,
+  calendarDayKeyForKickoff,
   countdownLabelSpanish,
   getNextMatchDayHighlightIds,
   daysUntilKickoffLocal,
@@ -97,6 +99,8 @@ const PARTIDOS_VISTA_SIGUIENTES_VALUE = "proximos-nav";
 const PARTIDOS_VISTA_TERMINADOS_VALUE = "terminados";
 const MATCH_RANK_SCOPE_KEY = "pm26-match-rank-scope";
 const MATCH_RANK_GROUP_KEY = "pm26-match-rank-group";
+/** Vista del panel historial: tabla con puntos o predicciones por fecha. */
+const MATCH_HISTORY_VIEW_KEY = "pm26-match-history-view";
 const TEAM_STATS_LEFT_SOURCE_KEY = "pm26-team-stats-left-source";
 const TEAM_STATS_RIGHT_SOURCE_KEY = "pm26-team-stats-right-source";
 const TEAM_STATS_VIEW_KEY = "pm26-team-stats-view";
@@ -6790,15 +6794,183 @@ function buildMatchHistory(participantId) {
   return { rowsHtml: rows.join(""), total, totalPossible };
 }
 
+/** @returns {"partidos" | "predicciones"} */
+function getMatchHistoryView() {
+  try {
+    const v = localStorage.getItem(MATCH_HISTORY_VIEW_KEY);
+    return v === "predicciones" ? "predicciones" : "partidos";
+  } catch {
+    return "partidos";
+  }
+}
+
+/** @param {"partidos" | "predicciones"} view */
+function setMatchHistoryView(view) {
+  try {
+    localStorage.setItem(MATCH_HISTORY_VIEW_KEY, view);
+  } catch {
+    /* ignore */
+  }
+}
+
+function applyMatchHistoryViewVisibility(view) {
+  const partidosView = $("#match-history-view-partidos");
+  const predsView = $("#match-history-view-predicciones");
+  const showPreds = view === "predicciones";
+  if (partidosView) partidosView.hidden = showPreds;
+  if (predsView) predsView.hidden = !showPreds;
+}
+
+function syncMatchHistoryViewRadios() {
+  const view = getMatchHistoryView();
+  document.querySelectorAll('input[name="match-history-view"]').forEach((r) => {
+    r.checked = r.value === view;
+  });
+}
+
+/**
+ * Marcador de predicción con el mismo layout que Partidos: bandera país · goles · goles · país bandera.
+ * @param {string} homeTeamHtml
+ * @param {string} awayTeamHtml
+ * @param {{ home?: string | number, away?: string | number, penaltyWinner?: string }} pred
+ * @param {string} [roundId]
+ */
+function predictionHistoryScoreGridHtml(homeTeamHtml, awayTeamHtml, pred, roundId) {
+  const h = pred?.home === "" || pred?.home == null ? "—" : escapeHtml(String(pred.home));
+  const a = pred?.away === "" || pred?.away == null ? "—" : escapeHtml(String(pred.away));
+  const bothFilled = pred?.home !== "" && pred?.home != null && pred?.away !== "" && pred?.away != null;
+  const homeCls = bothFilled ? officialScoreOutcomeClass(pred.home, pred.away, "home") : "";
+  const awayCls = bothFilled ? officialScoreOutcomeClass(pred.home, pred.away, "away") : "";
+  let penHtml = "";
+  if (
+    roundId &&
+    knockoutRoundRequiresPenaltyPickOnDraw(roundId) &&
+    bothFilled &&
+    predictionOutcomeSign(pred) === "d" &&
+    (pred?.penaltyWinner === "home" || pred?.penaltyWinner === "away")
+  ) {
+    penHtml =
+      pred.penaltyWinner === "home"
+        ? '<p class="pred-history-match__pen muted">Ganador en penales: local</p>'
+        : '<p class="pred-history-match__pen muted">Ganador en penales: visitante</p>';
+  }
+  return `<div class="quiniela-official-grid quiniela-official-grid--readonly pred-history-match-grid" role="group" aria-label="Tu predicción">
+    <div class="quiniela-cell quiniela-cell--team">${homeTeamHtml}</div>
+    <div class="quiniela-cell quiniela-cell--score${homeCls}">${h}</div>
+    <div class="quiniela-cell quiniela-cell--score${awayCls}">${a}</div>
+    <div class="quiniela-cell quiniela-cell--team">${awayTeamHtml}</div>
+  </div>${penHtml}`;
+}
+
+/**
+ * @param {string} participantId
+ * @returns {string}
+ */
+function buildPredictionHistoryHtml(participantId) {
+  const pStore = loadPredictions(participantId);
+  /** @type {Array<{ m: (typeof GROUP_MATCHES)[number] | ReturnType<typeof getKnockoutMatchesFlat>[number], kind: "group" | "ko", dayKey: string, sortT: number }>} */
+  const items = [
+    ...GROUP_MATCHES.map((m) => ({
+      m,
+      kind: /** @type {const} */ ("group"),
+      dayKey: calendarDayKeyForKickoff(m.kickoff),
+      sortT: m.kickoff ? Date.parse(m.kickoff) : Number.POSITIVE_INFINITY,
+    })),
+    ...getKnockoutMatchesFlat().map((m) => ({
+      m,
+      kind: /** @type {const} */ ("ko"),
+      dayKey: calendarDayKeyForKickoff(m.kickoff),
+      sortT: m.kickoff ? Date.parse(m.kickoff) : Number.POSITIVE_INFINITY,
+    })),
+  ];
+  items.sort((a, b) => {
+    if (a.dayKey !== b.dayKey) {
+      if (!a.dayKey) return 1;
+      if (!b.dayKey) return -1;
+      return a.dayKey.localeCompare(b.dayKey);
+    }
+    if (a.sortT !== b.sortT) return a.sortT - b.sortT;
+    return String(a.m.id).localeCompare(String(b.m.id));
+  });
+
+  /** @type {Map<string, string[]>} */
+  const byDay = new Map();
+  for (const item of items) {
+    const key = item.dayKey || "__sin_fecha__";
+    if (!byDay.has(key)) byDay.set(key, []);
+    const { m, kind } = item;
+    let contextLabel;
+    let homeHtml;
+    let awayHtml;
+    let pred;
+    let roundId;
+    if (kind === "group") {
+      contextLabel = `Grupo ${m.groupId}`;
+      homeHtml = teamLabelHtml(m.home);
+      awayHtml = teamLabelHtml(m.away);
+      pred = pStore.groupScores?.[m.id] ?? { home: "", away: "" };
+    } else {
+      const { ri, mi } = getKoRoundMatchIndex(m.id);
+      const homeLab = resolveKnockoutSlotLabel(ri, mi, "home", pStore.knockoutScores ?? {});
+      const awayLab = resolveKnockoutSlotLabel(ri, mi, "away", pStore.knockoutScores ?? {});
+      contextLabel = knockoutPhaseTitle(m.roundId);
+      homeHtml = bracketTeamLineHtml(homeLab);
+      awayHtml = bracketTeamLineHtml(awayLab);
+      pred = pStore.knockoutScores?.[m.id] ?? { home: "", away: "" };
+      roundId = m.roundId;
+    }
+    const kickoffMeta = m.kickoff
+      ? `<span class="pred-history-match__time muted">${escapeHtml(formatKickoffShortSpanish(m.kickoff))}</span>`
+      : "";
+    const matchHtml = `<article class="card pred-history-match">
+      <div class="pred-history-match__head">
+        <span class="pred-history-match__context">${escapeHtml(contextLabel)}</span>
+        ${kickoffMeta}
+      </div>
+      ${predictionHistoryScoreGridHtml(homeHtml, awayHtml, pred, roundId)}
+    </article>`;
+    byDay.get(key).push(matchHtml);
+  }
+
+  if (byDay.size === 0) {
+    return '<p class="muted">No hay partidos en el calendario.</p>';
+  }
+
+  const daySections = [];
+  for (const [dayKey, matches] of byDay) {
+    const sampleKickoff = items.find((it) => (it.dayKey || "__sin_fecha__") === dayKey)?.m.kickoff;
+    const title =
+      dayKey === "__sin_fecha__"
+        ? "Sin fecha"
+        : sampleKickoff
+          ? formatKickoffDayLabelSpanish(sampleKickoff)
+          : dayKey;
+    daySections.push(`<section class="pred-history-day">
+      <h2 class="pred-history-day__title">${escapeHtml(title)}</h2>
+      <div class="pred-history-day__matches">${matches.join("")}</div>
+    </section>`);
+  }
+  return daySections.join("");
+}
+
 function redrawMatchHistory() {
-  const intro = $("#match-history-intro");
+  ensureMatchHistoryViewSelect();
   const body = $("#table-match-history-body");
   const totals = $("#match-history-totals");
+  const predsRoot = $("#match-history-preds-root");
   const session = loadSession();
-  if (!intro || !body || !totals) return;
+  const view = getMatchHistoryView();
+  syncMatchHistoryViewRadios();
+  applyMatchHistoryViewVisibility(view);
+  if (!body || !totals) return;
   if (!session) {
     body.innerHTML = "";
     totals.textContent = "";
+    if (predsRoot) predsRoot.innerHTML = "";
+    return;
+  }
+  if (view === "predicciones") {
+    if (predsRoot) predsRoot.innerHTML = buildPredictionHistoryHtml(session.participantId);
     return;
   }
   const hist = buildMatchHistory(session.participantId);
@@ -6810,6 +6982,22 @@ function redrawMatchHistory() {
     totalClass += " team-order-total-value--gold";
   }
   totals.innerHTML = `Total puntos: <strong class="${totalClass}">${hist.total}</strong> · Total posible (sin bono): <strong>${hist.totalPossible}</strong>`;
+}
+
+function ensureMatchHistoryViewSelect() {
+  const radios = [...document.querySelectorAll('input[name="match-history-view"]')];
+  if (radios.length === 0 || radios[0].dataset.ready === "1") return;
+  const preferred = getMatchHistoryView();
+  radios.forEach((r) => {
+    r.checked = r.value === preferred;
+    r.addEventListener("change", () => {
+      const checked = document.querySelector('input[name="match-history-view"]:checked');
+      const next = checked?.value === "predicciones" ? "predicciones" : "partidos";
+      setMatchHistoryView(next);
+      redrawMatchHistory();
+    });
+    r.dataset.ready = "1";
+  });
 }
 
 function setPartidosGroupToolbarVisible(visible) {
@@ -8096,6 +8284,10 @@ function refreshAll(session, opts = {}) {
     $("#table-team-order-ranking-body").innerHTML = "";
     $("#table-match-ranking-body").innerHTML = "";
     $("#table-match-history-body").innerHTML = "";
+    const predsRoot = $("#match-history-preds-root");
+    if (predsRoot) predsRoot.innerHTML = "";
+    $("#match-history-totals").textContent = "";
+    applyMatchHistoryViewVisibility(getMatchHistoryView());
     $("#table-final-ranking-body").innerHTML = "";
     renderFinalRanking(null);
     redrawMatchRanking();
@@ -8182,6 +8374,7 @@ export function initApp() {
   });
   initDrawerExpandableSubmenus(tabsController);
   bindRulesQuickButton();
+  ensureMatchHistoryViewSelect();
 
   /** Evita solapar varios refreshAll (WS + pestañas); reentrancia rompe el DOM y bloquea la UI. */
   let externalSyncRefreshChain = Promise.resolve();
