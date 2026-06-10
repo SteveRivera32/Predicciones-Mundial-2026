@@ -2785,6 +2785,94 @@ span.td-muted {
   margin-bottom: 0;
 }
 
+@media (max-width: 40rem) {
+  #panel-reglas .panel-title {
+    font-size: 1.1rem;
+  }
+
+  #panel-reglas .panel-intro {
+    font-size: 0.82rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .prose-rules {
+    font-size: 0.86rem;
+    line-height: 1.48;
+  }
+
+  .rule-block {
+    padding: 0.7rem 0.8rem 0.75rem;
+    margin-bottom: 0.7rem;
+  }
+
+  .rule-block__header {
+    gap: 0.35rem 0.55rem;
+    margin-bottom: 0.45rem;
+    padding-bottom: 0.4rem;
+  }
+
+  .rules-snapshot {
+    padding: 0.65rem 0.75rem 0.6rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .rules-snapshot__grid {
+    gap: 0.45rem 0.6rem;
+  }
+
+  .rules-snapshot__item {
+    padding: 0.4rem 0.48rem;
+  }
+
+  .rules-toc {
+    gap: 0.3rem 0.45rem;
+    margin-bottom: 0.9rem;
+    padding: 0.4rem 0;
+  }
+
+  .rules-toc__links a {
+    font-size: 0.72em;
+    padding: 0.18rem 0.38rem;
+  }
+
+  .rule-list {
+    gap: 0.32rem;
+    padding-left: 1rem;
+  }
+
+  .rules-lines-compact {
+    padding-left: 1rem;
+  }
+
+  .prose-rules .group-preds-pt-badge {
+    font-size: 0.56rem;
+    padding: 0.1rem 0.2rem;
+  }
+
+  .prose-rules .rules-max-cap {
+    font-size: 0.56rem;
+    padding: 0.14rem 0.3rem;
+  }
+
+  .prose-rules .rules-max-cap .group-preds-pt-badge.rules-max-cap__plus {
+    font-size: 0.56rem;
+    padding: 0.08rem 0.18rem;
+  }
+
+  .prose-rules .table-rules--partidos-matrix tbody td.num .group-preds-pt-badge {
+    font-size: 0.64rem;
+    padding: 0.1rem 0.2rem;
+  }
+
+  #reglas-podio ul.rules-lines-compact + h3.rules-inline-sec-title,
+  #reglas-grupos ul.rule-list + h3.rules-inline-sec-title,
+  #reglas-marcadores h3.rules-marcador-phase-head ~ h3.rules-marcador-phase-head,
+  #reglas-improbable ul.rule-list--bonus + .rules-bono-sec-head,
+  #reglas-improbable ul.rule-list--bonus + h3.rules-bono-adicionales-title {
+    margin-top: 1.35rem;
+  }
+}
+
 .muted {
   color: var(--muted);
   font-size: 0.95rem;
