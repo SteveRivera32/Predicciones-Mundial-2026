@@ -334,12 +334,15 @@ export function getParticipants() {
 /**
  * Participantes visibles como jugadores (rankings, tablas «predicciones de todos», quiniela, selects).
  * La cuenta técnica `admin` no compite ni se lista; el resto (incl. Tivo) sí.
- * En Arena todos los usuarios registrados compiten (incl. un usuario llamado «admin»).
+ * En Arena los administradores no compiten ni aparecen en tablas (solo su sesión).
  * @returns {Participant[]}
  */
 export function getParticipantsForDisplay() {
   const list = getParticipants();
-  if (isArenaMode()) return list;
+  if (isArenaMode()) {
+    const me = getArenaUserId();
+    return list.filter((p) => !(isArenaAdmin() && p.id === me));
+  }
   return list.filter((p) => p.id !== ADMIN_PARTICIPANT_ID);
 }
 

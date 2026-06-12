@@ -73,6 +73,13 @@ export function initDb() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_device_bindings_user ON device_bindings(user_id);
+
+    CREATE TABLE IF NOT EXISTS device_bans (
+      device_id TEXT PRIMARY KEY,
+      banned_at TEXT NOT NULL DEFAULT (datetime('now')),
+      banned_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      note TEXT
+    );
   `);
 
   db.exec(`
@@ -219,6 +226,12 @@ export function countUsers() {
   return /** @type {{ n: number }} */ (getDb().prepare("SELECT COUNT(*) AS n FROM users").get()).n;
 }
 
+export function countCompetingUsers() {
+  return /** @type {{ n: number }} */ (
+    getDb().prepare("SELECT COUNT(*) AS n FROM users WHERE is_admin = 0").get()
+  ).n;
+}
+
 export function countAdmins() {
   return /** @type {{ n: number }} */ (
     getDb().prepare("SELECT COUNT(*) AS n FROM users WHERE is_admin = 1").get()
@@ -251,6 +264,78 @@ export function getDeviceBindingByDeviceId(deviceId) {
       )
       .get(deviceId) ?? null
   );
+}
+
+/** @param {string} deviceId */
+export function isDeviceBanned(deviceId) {
+  return Boolean(
+    getDb().prepare(`SELECT 1 FROM device_bans WHERE device_id = ? LIMIT 1`).get(deviceId),
+  );
+}
+
+/** @param {string} deviceId @param {number | null} [bannedByUserId] @param {string} [note] */
+export function banDeviceId(deviceId, bannedByUserId = null, note = "") {
+  getDb()
+    .prepare(
+      `INSERT INTO device_bans (device_id, banned_by_user_id, note)
+       VALUES (?, ?, ?)
+       ON CONFLICT(device_id) DO UPDATE SET
+         banned_at = datetime('now'),
+         banned_by_user_id = excluded.banned_by_user_id,
+         note = excluded.note`,
+    )
+    .run(deviceId, bannedByUserId, note || null);
+}
+
+/** @param {number} userId */
+export function getDeviceIdForUser(userId) {
+  const row = getDb()
+    .prepare(`SELECT device_id FROM device_bindings WHERE user_id = ?`)
+    .get(userId);
+  return row?.device_id ?? null;
+}
+
+/**
+ * Banea el dispositivo vinculado y elimina la cuenta.
+ * @param {number} userId
+ * @param {number} bannedByUserId
+ */
+export function banArenaUserById(userId, bannedByUserId) {
+  const user = findUserById(userId);
+  if (!user) return { ok: false, error: "not_found" };
+  if (user.is_admin && countAdmins() <= 1) {
+    return { ok: false, error: "last_admin" };
+  }
+  const deviceId = getDeviceIdForUser(userId);
+  if (deviceId) {
+    banDeviceId(deviceId, bannedByUserId, `usuario:${user.username}`);
+  }
+  const deleted = deleteUserById(userId);
+  if (!deleted.ok) return deleted;
+  return { ok: true, username: user.username, deviceBanned: Boolean(deviceId) };
+}
+
+export function listArenaUsersForAdmin() {
+  return getDb()
+    .prepare(
+      `SELECT u.id, u.username, u.display_name, u.is_admin, u.is_privadas, u.created_at,
+              db.device_id,
+              EXISTS(SELECT 1 FROM device_bans b WHERE b.device_id = db.device_id) AS device_banned
+       FROM users u
+       LEFT JOIN device_bindings db ON db.user_id = u.id
+       ORDER BY u.display_name COLLATE NOCASE, u.username COLLATE NOCASE`,
+    )
+    .all()
+    .map((row) => ({
+      id: row.id,
+      username: row.username,
+      displayName: row.display_name,
+      isAdmin: Boolean(row.is_admin),
+      isPrivadas: Boolean(row.is_privadas),
+      createdAt: row.created_at,
+      deviceBanned: Boolean(row.device_banned),
+      hasDevice: Boolean(row.device_id),
+    }));
 }
 
 /** @param {string} deviceId @param {number} userId */
@@ -316,7 +401,11 @@ export function searchUsersByQuery(query, limit = 25) {
 
 export function getAllArenaParticipants() {
   return getDb()
-    .prepare(`SELECT username, display_name, is_admin FROM users ORDER BY id ASC`)
+    .prepare(
+      `SELECT username, display_name FROM users
+       WHERE is_admin = 0
+       ORDER BY id ASC`,
+    )
     .all()
     .map((row) => ({
       id: row.username,
@@ -330,7 +419,8 @@ export function getAllPredictionsByUsername() {
     .prepare(
       `SELECT u.username, p.data
        FROM users u
-       LEFT JOIN predictions p ON p.user_id = u.id`,
+       LEFT JOIN predictions p ON p.user_id = u.id
+       WHERE u.is_admin = 0`,
     )
     .all();
   /** @type {Record<string, object>} */

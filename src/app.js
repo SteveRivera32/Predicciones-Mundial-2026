@@ -45,8 +45,9 @@ import {
   isArenaGeneralesAndGroupsLocked,
   arenaLogout,
   arenaDeleteMyAccount,
-  arenaSearchUsers,
+  arenaAdminListUsers,
   arenaAdminDeleteUser,
+  arenaAdminBanUser,
   isArenaInteractionPaused,
   scheduleArenaDeferredRefresh,
 } from "./arena-mode.js";
@@ -1940,6 +1941,24 @@ function setArenaAccountError(el, message) {
   el.textContent = message;
 }
 
+/** @type {Array<{ username: string, displayName: string, isAdmin: boolean, isPrivadas?: boolean, deviceBanned?: boolean, hasDevice?: boolean }>} */
+let arenaAdminUsersCache = [];
+
+function filterArenaAdminUsers(users, query) {
+  const q = normalizeForSearch(query);
+  if (!q) return users;
+  return users.filter(
+    (u) =>
+      normalizeForSearch(u.username).includes(q) || normalizeForSearch(u.displayName).includes(q),
+  );
+}
+
+async function reloadArenaAdminUsersList() {
+  arenaAdminUsersCache = await arenaAdminListUsers();
+  const q = String($("#arena-admin-user-search")?.value ?? "").trim();
+  renderArenaAdminUserResults(filterArenaAdminUsers(arenaAdminUsersCache, q));
+}
+
 function renderArenaAdminUserResults(users) {
   const wrap = $("#arena-admin-user-results");
   const errEl = $("#arena-admin-user-error");
@@ -1948,20 +1967,40 @@ function renderArenaAdminUserResults(users) {
   const session = loadSession();
   const myId = session?.participantId ?? "";
   if (!users.length) {
-    wrap.innerHTML = `<p class="muted">Sin resultados. Escribe al menos 2 caracteres.</p>`;
+    wrap.innerHTML = `<p class="muted">${
+      arenaAdminUsersCache.length
+        ? "Ningún jugador coincide con la búsqueda."
+        : "No hay participantes registrados."
+    }</p>`;
     return;
   }
-  wrap.innerHTML = `<ul class="admin-settings-list" aria-label="Usuarios encontrados">
+  wrap.innerHTML = `<ul class="admin-settings-list" aria-label="Participantes de Arena">
     ${users
       .map((u) => {
         const isSelf = u.username === myId;
-        const adminTag = u.isAdmin ? ' <span class="muted">(admin)</span>' : "";
-        return `<li class="admin-settings-row">
+        const tags = [
+          u.isAdmin ? "admin" : "",
+          u.isPrivadas ? "privadas" : "",
+          u.deviceBanned ? "dispositivo baneado" : "",
+        ]
+          .filter(Boolean)
+          .map((t) => `<span class="arena-admin-user-tag">${escapeHtml(t)}</span>`)
+          .join("");
+        const actions = isSelf
+          ? `<span class="muted arena-admin-user-self-hint">Tu cuenta</span>`
+          : `<div class="arena-admin-user-actions">
+              <button type="button" class="btn btn-sm" data-arena-delete-user="${escapeHtmlAttr(u.username)}">Eliminar</button>
+              <button type="button" class="btn btn-sm admin-settings-danger-btn" data-arena-ban-user="${escapeHtmlAttr(u.username)}"${
+                u.isAdmin ? " disabled" : ""
+              }>Banear</button>
+            </div>`;
+        return `<li class="admin-settings-row admin-settings-row--arena-user">
           <span class="admin-settings-row-meta">
-            <strong>${escapeHtml(u.displayName)}${adminTag}${isSelf ? " (tú)" : ""}</strong>
+            <strong>${escapeHtml(u.displayName)}${isSelf ? " (tú)" : ""}</strong>
             <span class="muted">${escapeHtml(u.username)}</span>
+            ${tags ? `<span class="arena-admin-user-tags">${tags}</span>` : ""}
           </span>
-          <button type="button" class="btn btn-sm" data-arena-delete-user="${escapeHtmlAttr(u.username)}">Eliminar</button>
+          ${actions}
         </li>`;
       })
       .join("")}
@@ -1974,7 +2013,7 @@ function renderArenaAdminUserResults(users) {
       const label = match?.displayName ?? username;
       if (
         !confirm(
-          `¿Eliminar a ${label} (${username})? Se borrarán sus predicciones y mensajes de chat.`,
+          `¿Eliminar a ${label} (${username})? Se borrarán sus predicciones y mensajes de chat. Podrá volver a registrarse en el mismo dispositivo.`,
         )
       ) {
         return;
@@ -1983,16 +2022,36 @@ function renderArenaAdminUserResults(users) {
       try {
         await arenaAdminDeleteUser(username);
         setArenaAccountError(errEl, "");
-        const q = String($("#arena-admin-user-search")?.value ?? "").trim();
-        if (q.length >= 2) {
-          const next = await arenaSearchUsers(q);
-          renderArenaAdminUserResults(next);
-        } else {
-          wrap.innerHTML = "";
-        }
+        await reloadArenaAdminUsersList();
         refreshAll(loadSession());
       } catch (e) {
         setArenaAccountError(errEl, e instanceof Error ? e.message : "No se pudo eliminar el usuario.");
+        btn.disabled = false;
+      }
+    });
+  });
+  wrap.querySelectorAll("[data-arena-ban-user]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const username = btn.getAttribute("data-arena-ban-user");
+      if (!username) return;
+      const match = users.find((u) => u.username === username);
+      const label = match?.displayName ?? username;
+      if (
+        !confirm(
+          `¿Banear a ${label} (${username})?\n\nSe eliminará su cuenta y su dispositivo no podrá crear otra cuenta en Arena.`,
+        )
+      ) {
+        return;
+      }
+      if (!confirm("Última confirmación: ¿banear este usuario y su dispositivo?")) return;
+      btn.disabled = true;
+      try {
+        await arenaAdminBanUser(username);
+        setArenaAccountError(errEl, "");
+        await reloadArenaAdminUsersList();
+        refreshAll(loadSession());
+      } catch (e) {
+        setArenaAccountError(errEl, e instanceof Error ? e.message : "No se pudo banear al usuario.");
         btn.disabled = false;
       }
     });
@@ -2017,7 +2076,19 @@ function openArenaAccountOverlay() {
   const resultsWrap = $("#arena-admin-user-results");
   if (adminWrap) adminWrap.hidden = !isArenaAdmin();
   if (searchInput) searchInput.value = "";
-  if (resultsWrap) resultsWrap.innerHTML = "";
+  if (resultsWrap) resultsWrap.innerHTML = `<p class="muted">Cargando participantes…</p>`;
+  arenaAdminUsersCache = [];
+  if (isArenaAdmin()) {
+    void reloadArenaAdminUsersList().catch((e) => {
+      setArenaAccountError(
+        $("#arena-admin-user-error"),
+        e instanceof Error ? e.message : "No se pudo cargar la lista de participantes.",
+      );
+      if (resultsWrap) resultsWrap.innerHTML = "";
+    });
+  } else if (resultsWrap) {
+    resultsWrap.innerHTML = "";
+  }
   const deleteBtn = $("#btn-arena-delete-my-account");
   if (deleteBtn) {
     deleteBtn.hidden = isArenaPrivadasMirrorUser();
@@ -2065,23 +2136,11 @@ function bindArenaAccountSettings() {
 
   searchInput?.addEventListener("input", () => {
     if (searchTimer != null) window.clearTimeout(searchTimer);
-    searchTimer = window.setTimeout(async () => {
+    searchTimer = window.setTimeout(() => {
       searchTimer = null;
       const q = String(searchInput.value ?? "").trim();
-      if (q.length < 2) {
-        renderArenaAdminUserResults([]);
-        return;
-      }
-      try {
-        const users = await arenaSearchUsers(q);
-        renderArenaAdminUserResults(users);
-      } catch (e) {
-        setArenaAccountError(
-          $("#arena-admin-user-error"),
-          e instanceof Error ? e.message : "Error al buscar usuarios.",
-        );
-      }
-    }, 280);
+      renderArenaAdminUserResults(filterArenaAdminUsers(arenaAdminUsersCache, q));
+    }, 120);
   });
 }
 

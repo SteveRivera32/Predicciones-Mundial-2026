@@ -106,21 +106,22 @@
           <p id="arena-account-self-error" class="form-error" role="alert" hidden></p>
         </div>
         <div id="arena-account-admin-wrap" class="arena-account-admin" hidden>
-          <p class="admin-settings-danger-title">Administrar usuarios</p>
+          <p class="admin-settings-danger-title">Administrar participantes</p>
           <p class="muted admin-settings-danger-desc">
-            Busca por nombre visible o usuario y elimina cuentas de prueba o abusivas.
+            Lista de todos los jugadores. <strong>Eliminar</strong> borra la cuenta (puede registrarse de nuevo).
+            <strong>Banear</strong> borra la cuenta y bloquea su dispositivo para que no cree otra.
           </p>
           <label class="field">
-            <span class="field-label">Buscar usuario</span>
+            <span class="field-label">Buscar jugador</span>
             <input
               id="arena-admin-user-search"
               class="input"
               type="search"
               autocomplete="off"
-              placeholder="Ej. María García o arena_012"
+              placeholder="Nombre visible o usuario…"
             />
           </label>
-          <div id="arena-admin-user-results" class="admin-settings-list-wrap"></div>
+          <div id="arena-admin-user-results" class="admin-settings-list-wrap admin-settings-list-wrap--arena-users"></div>
           <p id="arena-admin-user-error" class="form-error" role="alert" hidden></p>
         </div>
         <button type="button" id="arena-account-close" class="btn btn-sm admin-settings-close">Cerrar</button>

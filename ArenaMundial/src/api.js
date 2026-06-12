@@ -79,6 +79,10 @@ export function deleteMyAccount() {
   return apiFetch("/me", { method: "DELETE" });
 }
 
+export function listAdminUsers() {
+  return apiFetch("/admin/users");
+}
+
 export function searchAdminUsers(q) {
   return apiFetch(`/admin/users/search?q=${encodeURIComponent(String(q ?? ""))}`);
 }
@@ -86,6 +90,12 @@ export function searchAdminUsers(q) {
 export function deleteAdminUser(username) {
   return apiFetch(`/admin/users/${encodeURIComponent(String(username ?? ""))}`, {
     method: "DELETE",
+  });
+}
+
+export function banAdminUser(username) {
+  return apiFetch(`/admin/users/${encodeURIComponent(String(username ?? ""))}/ban`, {
+    method: "POST",
   });
 }
 

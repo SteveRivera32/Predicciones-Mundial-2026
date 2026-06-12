@@ -31,6 +31,10 @@ import {
   getDeviceBindingByDeviceId,
   bindDeviceToUser,
   registerArenaUserWithDevice,
+  isDeviceBanned,
+  banArenaUserById,
+  listArenaUsersForAdmin,
+  countCompetingUsers,
 } from "./db.mjs";
 import { resolveDeviceId } from "./device-cookie.mjs";
 import {
@@ -89,10 +93,19 @@ function usernameValid(s) {
   return /^[a-z0-9_]{3,20}$/.test(s);
 }
 
+function rejectBannedDevice(res, deviceId) {
+  if (!isDeviceBanned(deviceId)) return false;
+  res.status(403).json({
+    error: "este dispositivo no puede usar Arena; contacta al administrador si crees que es un error",
+  });
+  return true;
+}
+
 // ── Auth ────────────────────────────────────────────────────────────────────
 
 app.get("/api/arena/auth/device-binding", authTrafficGuard, (req, res) => {
   const deviceId = resolveDeviceId(req, res);
+  if (rejectBannedDevice(res, deviceId)) return;
   const binding = getDeviceBindingByDeviceId(deviceId);
   if (!binding) {
     res.json({ bound: false });
@@ -159,6 +172,7 @@ app.post("/api/arena/auth/register", authTrafficGuard, async (req, res) => {
     const password = String(req.body?.password ?? "");
     const displayNameRaw = String(req.body?.displayName ?? "").trim();
     const deviceId = resolveDeviceId(req, res);
+    if (rejectBannedDevice(res, deviceId)) return;
 
     if (!usernameValid(username)) {
       res.status(400).json({ error: "usuario: 3–20 caracteres, letras, números o _" });
@@ -228,6 +242,7 @@ app.post("/api/arena/auth/login", authTrafficGuard, async (req, res) => {
     return;
   }
   const deviceId = resolveDeviceId(req, res);
+  if (rejectBannedDevice(res, deviceId)) return;
   const deviceBinding = getDeviceBindingByDeviceId(deviceId);
   if (deviceBinding && deviceBinding.user_id !== user.id) {
     res.status(403).json({
@@ -287,18 +302,54 @@ app.delete("/api/arena/me", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/api/arena/admin/users", requireAuth, requireAdmin, (_req, res) => {
+  res.json({ users: listArenaUsersForAdmin() });
+});
+
 app.get("/api/arena/admin/users/search", requireAuth, requireAdmin, (req, res) => {
   const q = String(req.query.q ?? "").trim();
-  if (q.length < 2) {
-    res.json({ users: [] });
+  const norm = q.toLowerCase();
+  let users = listArenaUsersForAdmin();
+  if (norm.length >= 1) {
+    users = users.filter(
+      (u) =>
+        u.username.toLowerCase().includes(norm) ||
+        String(u.displayName ?? "")
+          .toLowerCase()
+          .includes(norm),
+    );
+  }
+  res.json({ users: users.slice(0, 80) });
+});
+
+app.post("/api/arena/admin/users/:username/ban", requireAuth, requireAdmin, (req, res) => {
+  const username = String(req.params.username ?? "")
+    .trim()
+    .toLowerCase();
+  const target = findUserByUsername(username);
+  if (!target) {
+    res.status(404).json({ error: "usuario no encontrado" });
     return;
   }
-  const users = searchUsersByQuery(q, 30).map((row) => ({
-    username: row.username,
-    displayName: row.display_name,
-    isAdmin: Boolean(row.is_admin),
-  }));
-  res.json({ users });
+  if (target.id === req.userId) {
+    res.status(403).json({ error: "no puedes banearte a ti mismo" });
+    return;
+  }
+  const result = banArenaUserById(target.id, req.userId);
+  if (!result.ok) {
+    if (result.error === "last_admin") {
+      res.status(403).json({ error: "no se puede banear al último administrador" });
+      return;
+    }
+    res.status(404).json({ error: "usuario no encontrado" });
+    return;
+  }
+  invalidateSharedCache();
+  res.json({
+    ok: true,
+    username: result.username,
+    deviceBanned: result.deviceBanned,
+  });
 });
 
 app.delete("/api/arena/admin/users/:username", requireAuth, requireAdmin, (req, res) => {
@@ -356,7 +407,7 @@ app.get("/api/arena/rankings", (_req, res) => {
   const now = Date.now();
   if (!sharedCache.rankings.data || now - sharedCache.rankings.at > SHARED_CACHE_MS) {
     sharedCache.rankings = {
-      data: { rankings: getRankingsSummary(100), totalUsers: countUsers() },
+      data: { rankings: getRankingsSummary(100), totalUsers: countCompetingUsers() },
       etag: bumpEtag(),
       at: now,
     };
@@ -443,14 +494,20 @@ app.get("/api/arena/chat/limits", requireAuth, (_req, res) => {
   });
 });
 
-app.get("/api/arena/sync", requireAuth, (_req, res) => {
+app.get("/api/arena/sync", requireAuth, (req, res) => {
   const { data: official, updatedAt } = getOfficialResults();
+  const predictions = getAllPredictionsByUsername();
+  const me = findUserById(req.userId);
+  if (me?.is_admin) {
+    const mine = getUserPredictions(req.userId);
+    predictions[me.username] = mine.data;
+  }
   res.setHeader("Cache-Control", "no-store");
   res.json({
     participants: getAllArenaParticipants(),
     official,
     officialUpdatedAt: updatedAt,
-    predictions: getAllPredictionsByUsername(),
+    predictions,
   });
 });
 

@@ -10063,6 +10063,38 @@ span.quiniela-legend {
   font-size: 0.8rem;
 }
 
+.admin-settings-list-wrap--arena-users {
+  max-height: min(52vh, 22rem);
+  overflow: auto;
+}
+
+.admin-settings-row--arena-user .arena-admin-user-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+}
+
+.arena-admin-user-tag {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  text-transform: lowercase;
+}
+
+.arena-admin-user-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.arena-admin-user-self-hint {
+  font-size: 0.82rem;
+}
+
 .admin-settings-protected {
   font-size: 0.82rem;
 }

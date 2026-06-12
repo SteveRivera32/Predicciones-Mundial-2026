@@ -206,15 +206,31 @@ let deleteUserFn = null;
 
 
 
-/** @param {{ deleteMyAccount?: () => Promise<void>, searchUsers?: (q: string) => Promise<Array<{ username: string, displayName: string, isAdmin: boolean }>>, deleteUser?: (username: string) => Promise<void> }} api */
+/** @type {((username: string) => Promise<{ deviceBanned?: boolean }>) | null} */
 
-export function setArenaAccountApi({ deleteMyAccount, searchUsers, deleteUser }) {
+let banUserFn = null;
+
+
+
+/** @type {(() => Promise<Array<{ username: string, displayName: string, isAdmin: boolean, isPrivadas?: boolean, deviceBanned?: boolean, hasDevice?: boolean }>>) | null} */
+
+let listUsersFn = null;
+
+
+
+/** @param {{ deleteMyAccount?: () => Promise<void>, searchUsers?: (q: string) => Promise<Array<{ username: string, displayName: string, isAdmin: boolean }>>, listUsers?: () => Promise<Array<{ username: string, displayName: string, isAdmin: boolean, isPrivadas?: boolean, deviceBanned?: boolean, hasDevice?: boolean }>>, deleteUser?: (username: string) => Promise<void>, banUser?: (username: string) => Promise<{ deviceBanned?: boolean }> }} api */
+
+export function setArenaAccountApi({ deleteMyAccount, searchUsers, listUsers, deleteUser, banUser }) {
 
   deleteMyAccountFn = deleteMyAccount ?? null;
 
   searchUsersFn = searchUsers ?? null;
 
+  listUsersFn = listUsers ?? null;
+
   deleteUserFn = deleteUser ?? null;
+
+  banUserFn = banUser ?? null;
 
 }
 
@@ -243,6 +259,24 @@ export function arenaAdminDeleteUser(username) {
   if (!deleteUserFn) return Promise.reject(new Error("no disponible"));
 
   return deleteUserFn(username);
+
+}
+
+
+
+export function arenaAdminListUsers() {
+
+  return listUsersFn?.() ?? Promise.resolve([]);
+
+}
+
+
+
+export function arenaAdminBanUser(username) {
+
+  if (!banUserFn) return Promise.reject(new Error("no disponible"));
+
+  return banUserFn(username);
 
 }
 
