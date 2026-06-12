@@ -151,6 +151,7 @@ export function isPrivadasArenaMirrorId(id) {
 }
 /** Administradores con permisos sobre resultados oficiales/Ajustes. */
 const OFFICIAL_RESULTS_ADMIN_IDS = new Set(["tivo", "admin"]);
+
 /** Super-admin de pruebas: además puede editar predicciones de todos y forzar cruces sin definir. */
 const SUPER_ADMIN_PARTICIPANT_IDS = new Set(["admin"]);
 /** Iniciar, terminar, reiniciar y desconfirmar partidos en Predicciones de partidos. */
@@ -199,8 +200,23 @@ function applyBuiltinPinDefaults(list) {
   });
 }
 
-function pinPairsJson(participants) {
-  return JSON.stringify(participants.map((p) => [p.id, p.pin ?? null]));
+/** PIN efectivo (builtin en código manda sobre copias viejas del servidor). */
+function effectivePinForParticipant(p) {
+  if (!p?.id) return null;
+  const b = builtinById.get(p.id);
+  if (b?.pin != null && b.pin !== "") return b.pin;
+  return p.pin ?? null;
+}
+
+function effectivePinsSignature(list) {
+  const normalized = applyBuiltinPinDefaults(
+    reconcileParticipantsWithBuiltin(Array.isArray(list) ? list : []),
+  );
+  return JSON.stringify(
+    normalized
+      .map((p) => [p.id, effectivePinForParticipant(p)])
+      .sort((a, b) => a[0].localeCompare(b[0])),
+  );
 }
 
 /**
@@ -247,19 +263,23 @@ function mergeAndPersistBuiltinPins(current, opts) {
   const withBuiltin = reconcileParticipantsWithBuiltin(current);
   const merged = isArenaMode() ? withBuiltin : applyBuiltinPinDefaults(withBuiltin);
   const rosterChanged = participantIdsSignature(current) !== participantIdsSignature(merged);
-  const pinsChanged = pinPairsJson(current) !== pinPairsJson(merged);
+  const pinsChanged = effectivePinsSignature(current) !== effectivePinsSignature(merged);
   if (!rosterChanged && !pinsChanged) return merged;
 
   if (rosterChanged) {
     prunePredictionsToParticipantIds(merged.map((p) => p.id));
   }
 
-  for (const p of current) {
-    const m = merged.find((x) => x.id === p.id);
-    if (!m) continue;
-    const before = p.pin ?? null;
-    const after = m.pin ?? null;
-    if (before !== after) clearPinVerifiedForParticipant(p.id);
+  const prevEffectivePins = new Map(
+    applyBuiltinPinDefaults(reconcileParticipantsWithBuiltin(current)).map((p) => [
+      p.id,
+      effectivePinForParticipant(p),
+    ]),
+  );
+  for (const m of merged) {
+    const before = prevEffectivePins.get(m.id);
+    const after = effectivePinForParticipant(m);
+    if (before !== undefined && before !== after) clearPinVerifiedForParticipant(m.id);
   }
 
   if (opts.remoteWrite) {
@@ -326,10 +346,13 @@ export function getParticipantsForDisplay() {
 /** @param {unknown[]} list */
 export function hydrateParticipantsFromRemote(list) {
   remoteParticipantsMode = true;
-  const prevEffective = applyBuiltinPinDefaults(reconcileParticipantsWithBuiltin(remoteParticipantsList)).map((p) => ({
-    id: p.id,
-    pin: p.pin ?? null,
-  }));
+  const prevPinsSig = effectivePinsSignature(remoteParticipantsList);
+  const prevEffectivePins = new Map(
+    applyBuiltinPinDefaults(reconcileParticipantsWithBuiltin(remoteParticipantsList)).map((p) => [
+      p.id,
+      effectivePinForParticipant(p),
+    ]),
+  );
   if (!Array.isArray(list) || list.length === 0) {
     if (isArenaMode()) {
       remoteParticipantsList = [];
@@ -353,11 +376,11 @@ export function hydrateParticipantsFromRemote(list) {
   if (!isArenaMode()) {
     remoteParticipantsList = applyBuiltinPinDefaults(remoteParticipantsList);
   }
-  const nextEffective = remoteParticipantsList.map((p) => ({ id: p.id, pin: p.pin ?? null }));
-  const prevPinMap = new Map(prevEffective.map((p) => [p.id, p.pin]));
-  for (const now of nextEffective) {
-    if (prevPinMap.get(now.id) !== now.pin) {
-      clearPinVerifiedForParticipant(now.id);
+  if (effectivePinsSignature(remoteParticipantsList) !== prevPinsSig) {
+    for (const p of applyBuiltinPinDefaults(reconcileParticipantsWithBuiltin(remoteParticipantsList))) {
+      const before = prevEffectivePins.get(p.id);
+      const after = effectivePinForParticipant(p);
+      if (before !== undefined && before !== after) clearPinVerifiedForParticipant(p.id);
     }
   }
   if (
