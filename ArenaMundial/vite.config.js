@@ -5,6 +5,13 @@ import { defineConfig } from "vite";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
 
+const allowedHosts = [
+  "tivotabo.com",
+  "www.tivotabo.com",
+  ".tivotabo.com",
+  "168.228.192.202",
+];
+
 /** @type {import('vite').Plugin} */
 function arenaDevFallback() {
   return {
@@ -62,6 +69,7 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 5174,
     host: true,
+    allowedHosts,
     open: "/ArenaMundial/login/index.html",
     proxy: {
       "/api/arena": {
