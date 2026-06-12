@@ -7,16 +7,32 @@ import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { emptyOfficialResults } from "../../src/official-results-store.js";
-import { emptyPredictions } from "../../src/predictions-store.js";
+import { emptyOfficialResults, normalizeOfficialResultsData } from "../../src/official-results-store.js";
+import { emptyPredictions, normalizePredictionsData } from "../../src/predictions-store.js";
 import { normalizeForSearch } from "../../src/search-normalize.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = process.env.ARENA_DATA_DIR || path.join(__dirname, "data");
+export const ARENA_DATA_DIR = process.env.ARENA_DATA_DIR || path.join(__dirname, "data");
+const DATA_DIR = ARENA_DATA_DIR;
 const DB_PATH = path.join(DATA_DIR, "arena.db");
 
 /** @type {import("better-sqlite3").Database | null} */
 let db = null;
+
+/** @type {(() => void) | null} */
+let arenaDataChangedHandler = null;
+
+export function setArenaDataChangedHandler(fn) {
+  arenaDataChangedHandler = typeof fn === "function" ? fn : null;
+}
+
+function notifyArenaDataChanged() {
+  try {
+    arenaDataChangedHandler?.();
+  } catch (e) {
+    console.error("[arena] notify data changed:", e);
+  }
+}
 
 export function getDb() {
   if (!db) throw new Error("DB no inicializada");
@@ -119,6 +135,7 @@ export function setOfficialResultsWithUpdatedAt(data, updatedAt) {
   const json = JSON.stringify(data);
   const at = toOfficialTimestamp(updatedAt);
   getDb().prepare("UPDATE official SET data = ?, updated_at = ? WHERE id = 1").run(json, at);
+  notifyArenaDataChanged();
   return getOfficialResults();
 }
 
@@ -148,6 +165,7 @@ export function setUserPredictions(userId, data) {
        ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
     )
     .run(userId, json);
+  notifyArenaDataChanged();
   return getUserPredictions(userId);
 }
 
@@ -157,7 +175,7 @@ export function findUserByUsername(username) {
     .get(username);
 }
 
-/** Usuario o nombre visible ya usado (sin distinguir mayúsculas). */
+/** Usuario o nombre visible ya usado por una cuenta Arena (no espejos de privadas). */
 export function isPublicNameTaken(name) {
   const n = String(name ?? "").trim();
   if (!n) return false;
@@ -165,7 +183,8 @@ export function isPublicNameTaken(name) {
     getDb()
       .prepare(
         `SELECT 1 FROM users
-         WHERE username = ? COLLATE NOCASE OR display_name = ? COLLATE NOCASE
+         WHERE is_privadas = 0
+           AND (username = ? COLLATE NOCASE OR display_name = ? COLLATE NOCASE)
          LIMIT 1`,
       )
       .get(n, n),
@@ -184,7 +203,14 @@ export function createUser({ username, passwordHash, displayName, isAdmin = fals
     )
     .run(username, passwordHash, displayName, isAdmin ? 1 : 0, isPrivadas ? 1 : 0);
   const userId = Number(result.lastInsertRowid);
-  setUserPredictions(userId, emptyPredictions());
+  const empty = emptyPredictions();
+  getDb()
+    .prepare(
+      `INSERT INTO predictions (user_id, data, updated_at)
+       VALUES (?, ?, datetime('now'))`,
+    )
+    .run(userId, JSON.stringify(empty));
+  notifyArenaDataChanged();
   return findUserById(userId);
 }
 
@@ -206,6 +232,7 @@ export function upsertPrivadasUser({ username, passwordHash, displayName }) {
         `UPDATE users SET password_hash = ?, display_name = ?, is_privadas = 1 WHERE id = ?`,
       )
       .run(passwordHash, displayName, existing.id);
+    notifyArenaDataChanged();
     return findUserById(existing.id);
   }
   return createUser({
@@ -224,6 +251,13 @@ export function isPrivadasUser(userId) {
 
 export function countUsers() {
   return /** @type {{ n: number }} */ (getDb().prepare("SELECT COUNT(*) AS n FROM users").get()).n;
+}
+
+/** Cuentas Arena propias (excluye espejos sincronizados desde la quiniela privada). */
+export function countArenaUsers() {
+  return /** @type {{ n: number }} */ (
+    getDb().prepare("SELECT COUNT(*) AS n FROM users WHERE is_privadas = 0").get()
+  ).n;
 }
 
 export function countCompetingUsers() {
@@ -249,6 +283,7 @@ export function deleteUserById(userId) {
     return { ok: false, error: "last_admin" };
   }
   getDb().prepare("DELETE FROM users WHERE id = ?").run(userId);
+  notifyArenaDataChanged();
   return { ok: true, username: user.username };
 }
 
@@ -257,13 +292,29 @@ export function getDeviceBindingByDeviceId(deviceId) {
   return (
     getDb()
       .prepare(
-        `SELECT db.device_id, db.user_id, u.username, u.display_name, u.is_privadas
+        `SELECT db.device_id, db.user_id, u.username, u.display_name, u.is_privadas, u.is_admin
          FROM device_bindings db
          JOIN users u ON u.id = db.user_id
          WHERE db.device_id = ?`,
       )
       .get(deviceId) ?? null
   );
+}
+
+/**
+ * Vinculación que aplica la regla «una cuenta Arena por dispositivo».
+ * Espejos de privadas y sesiones de admin no cuentan.
+ * @param {ReturnType<typeof getDeviceBindingByDeviceId>} binding
+ */
+export function isCountableDeviceBinding(binding) {
+  if (!binding) return false;
+  return !binding.is_privadas && !binding.is_admin;
+}
+
+/** @param {string} deviceId */
+export function getCountableDeviceBindingByDeviceId(deviceId) {
+  const binding = getDeviceBindingByDeviceId(deviceId);
+  return isCountableDeviceBinding(binding) ? binding : null;
 }
 
 /** @param {string} deviceId */
@@ -357,7 +408,7 @@ export function bindDeviceToUser(deviceId, userId) {
 export function registerArenaUserWithDevice({ username, passwordHash, displayName, isAdmin = false, deviceId }) {
   const database = getDb();
   const run = database.transaction(() => {
-    const existing = getDeviceBindingByDeviceId(deviceId);
+    const existing = getCountableDeviceBindingByDeviceId(deviceId);
     if (existing) {
       return { ok: false, error: "device_bound", username: existing.username };
     }
@@ -423,6 +474,11 @@ export function getAllPredictionsByUsername() {
        WHERE u.is_admin = 0`,
     )
     .all();
+  return predictionsRowsToMap(rows);
+}
+
+/** @param {Array<{ username: string, data: string | null }>} rows */
+function predictionsRowsToMap(rows) {
   /** @type {Record<string, object>} */
   const map = {};
   for (const row of rows) {
@@ -433,6 +489,49 @@ export function getAllPredictionsByUsername() {
     }
   }
   return map;
+}
+
+/**
+ * Vista previa para tablas: jugadores con predicciones actualizadas recientemente.
+ * @param {string | null | undefined} excludeUsername
+ * @param {number} [limit]
+ */
+export function getPreviewPredictionsByUsername(excludeUsername, limit = 49) {
+  const lim = Math.max(1, Math.min(200, Number(limit) || 49));
+  const ex = String(excludeUsername ?? "").trim().toLowerCase();
+  const rows = getDb()
+    .prepare(
+      `SELECT u.username, p.data
+       FROM users u
+       INNER JOIN predictions p ON p.user_id = u.id
+       WHERE u.is_admin = 0
+         AND (? = '' OR u.username != ? COLLATE NOCASE)
+       ORDER BY p.updated_at DESC, u.id ASC
+       LIMIT ?`,
+    )
+    .all(ex, ex, lim);
+  return predictionsRowsToMap(rows);
+}
+
+/**
+ * Búsqueda por nombre/usuario con predicciones (mín. 2 caracteres en el handler).
+ * @param {string} query
+ * @param {number} [limit]
+ */
+export function searchPredictionsByQuery(query, limit = 25) {
+  const users = searchUsersByQuery(query, limit);
+  if (users.length === 0) return {};
+  const usernames = users.map((u) => u.username);
+  const placeholders = usernames.map(() => "?").join(", ");
+  const rows = getDb()
+    .prepare(
+      `SELECT u.username, p.data
+       FROM users u
+       LEFT JOIN predictions p ON p.user_id = u.id
+       WHERE u.username IN (${placeholders}) AND u.is_admin = 0`,
+    )
+    .all(...usernames);
+  return predictionsRowsToMap(rows);
 }
 
 /** Ranking ligero: lista ordenada por actividad (puntuación completa se calculará en el cliente). */
@@ -470,6 +569,7 @@ export function insertChatMessage(userId, body) {
     .run(userId, body);
   const id = Number(result.lastInsertRowid);
   pruneOldChatMessages();
+  notifyArenaDataChanged();
   return getChatMessageById(id);
 }
 
@@ -549,4 +649,188 @@ function mapChatRow(row) {
 export function getLatestChatMessageId() {
   const row = getDb().prepare(`SELECT MAX(id) AS n FROM chat_messages`).get();
   return Number(row?.n ?? 0);
+}
+
+export function exportArenaBackupData() {
+  const database = getDb();
+  const { data: official, updatedAt: officialUpdatedAt } = getOfficialResults();
+  const users = database
+    .prepare(
+      `SELECT u.username, u.display_name, u.is_admin, u.is_privadas, u.password_hash, u.created_at,
+              p.data AS predictions_json, p.updated_at AS predictions_updated_at
+       FROM users u
+       LEFT JOIN predictions p ON p.user_id = u.id
+       ORDER BY u.id ASC`,
+    )
+    .all()
+    .map((row) => {
+      let predictions = emptyPredictions();
+      if (row.predictions_json) {
+        try {
+          predictions = normalizePredictionsData(JSON.parse(row.predictions_json));
+        } catch {
+          predictions = emptyPredictions();
+        }
+      }
+      return {
+        username: row.username,
+        displayName: row.display_name,
+        isAdmin: Boolean(row.is_admin),
+        isPrivadas: Boolean(row.is_privadas),
+        passwordHash: row.password_hash,
+        createdAt: row.created_at,
+        predictions,
+        predictionsUpdatedAt: row.predictions_updated_at ?? null,
+      };
+    });
+
+  const deviceBindings = database
+    .prepare(
+      `SELECT db.device_id, u.username
+       FROM device_bindings db
+       INNER JOIN users u ON u.id = db.user_id`,
+    )
+    .all()
+    .map((row) => ({
+      deviceId: row.device_id,
+      username: row.username,
+    }));
+
+  const deviceBans = database
+    .prepare(
+      `SELECT b.device_id, b.banned_at, b.note, u.username AS banned_by_username
+       FROM device_bans b
+       LEFT JOIN users u ON u.id = b.banned_by_user_id`,
+    )
+    .all()
+    .map((row) => ({
+      deviceId: row.device_id,
+      bannedAt: row.banned_at,
+      note: row.note ?? null,
+      bannedByUsername: row.banned_by_username ?? null,
+    }));
+
+  const chatMessages = database
+    .prepare(
+      `SELECT m.body, m.created_at, u.username
+       FROM chat_messages m
+       INNER JOIN users u ON u.id = m.user_id
+       ORDER BY m.id ASC`,
+    )
+    .all()
+    .map((row) => ({
+      username: row.username,
+      body: row.body,
+      createdAt: row.created_at,
+    }));
+
+  return {
+    official,
+    officialUpdatedAt,
+    users,
+    deviceBindings,
+    deviceBans,
+    chatMessages,
+  };
+}
+
+/**
+ * @param {ReturnType<typeof exportArenaBackupData>} payload
+ */
+export function restoreArenaFromBackupData(payload) {
+  const official = normalizeOfficialResultsData(payload.official ?? emptyOfficialResults());
+  const officialUpdatedAt =
+    typeof payload.officialUpdatedAt === "string" && payload.officialUpdatedAt
+      ? payload.officialUpdatedAt
+      : new Date().toISOString();
+  const users = Array.isArray(payload.users) ? payload.users : [];
+  if (users.length === 0) {
+    throw new Error("backup sin usuarios");
+  }
+  if (!users.some((u) => u && !u.isPrivadas && u.isAdmin)) {
+    throw new Error("backup sin administrador");
+  }
+
+  const database = getDb();
+  const run = database.transaction(() => {
+    database.prepare("DELETE FROM chat_messages").run();
+    database.prepare("DELETE FROM device_bans").run();
+    database.prepare("DELETE FROM device_bindings").run();
+    database.prepare("DELETE FROM predictions").run();
+    database.prepare("DELETE FROM users").run();
+
+    const insertUser = database.prepare(
+      `INSERT INTO users (username, email, password_hash, display_name, is_admin, is_privadas, created_at)
+       VALUES (?, NULL, ?, ?, ?, ?, COALESCE(?, datetime('now')))`,
+    );
+    const insertPrediction = database.prepare(
+      `INSERT INTO predictions (user_id, data, updated_at)
+       VALUES (?, ?, COALESCE(?, datetime('now')))`,
+    );
+    /** @type {Map<string, number>} */
+    const idByUsername = new Map();
+
+    for (const raw of users) {
+      const username = String(raw?.username ?? "").trim().toLowerCase();
+      const passwordHash = String(raw?.passwordHash ?? "");
+      const displayName = String(raw?.displayName ?? raw?.username ?? "").trim() || username;
+      if (!username || !passwordHash) continue;
+      const result = insertUser.run(
+        username,
+        passwordHash,
+        displayName,
+        raw?.isAdmin ? 1 : 0,
+        raw?.isPrivadas ? 1 : 0,
+        raw?.createdAt ?? null,
+      );
+      const userId = Number(result.lastInsertRowid);
+      idByUsername.set(username, userId);
+      const predictions = normalizePredictionsData(raw?.predictions ?? emptyPredictions());
+      insertPrediction.run(userId, JSON.stringify(predictions), raw?.predictionsUpdatedAt ?? null);
+    }
+
+    database
+      .prepare("UPDATE official SET data = ?, updated_at = ? WHERE id = 1")
+      .run(JSON.stringify(official), officialUpdatedAt);
+
+    const insertBinding = database.prepare(
+      `INSERT INTO device_bindings (device_id, user_id, bound_at)
+       VALUES (?, ?, datetime('now'))`,
+    );
+    for (const raw of Array.isArray(payload.deviceBindings) ? payload.deviceBindings : []) {
+      const deviceId = String(raw?.deviceId ?? "");
+      const username = String(raw?.username ?? "").trim().toLowerCase();
+      const userId = idByUsername.get(username);
+      if (!deviceId || !userId) continue;
+      insertBinding.run(deviceId, userId);
+    }
+
+    const insertBan = database.prepare(
+      `INSERT INTO device_bans (device_id, banned_at, banned_by_user_id, note)
+       VALUES (?, COALESCE(?, datetime('now')), ?, ?)`,
+    );
+    for (const raw of Array.isArray(payload.deviceBans) ? payload.deviceBans : []) {
+      const deviceId = String(raw?.deviceId ?? "");
+      if (!deviceId) continue;
+      const bannedBy =
+        raw?.bannedByUsername != null
+          ? idByUsername.get(String(raw.bannedByUsername).trim().toLowerCase()) ?? null
+          : null;
+      insertBan.run(deviceId, raw?.bannedAt ?? null, bannedBy, raw?.note ?? null);
+    }
+
+    const insertChat = database.prepare(
+      `INSERT INTO chat_messages (user_id, body, created_at)
+       VALUES (?, ?, COALESCE(?, datetime('now')))`,
+    );
+    for (const raw of Array.isArray(payload.chatMessages) ? payload.chatMessages : []) {
+      const username = String(raw?.username ?? "").trim().toLowerCase();
+      const body = String(raw?.body ?? "").trim();
+      const userId = idByUsername.get(username);
+      if (!userId || !body) continue;
+      insertChat.run(userId, body, raw?.createdAt ?? null);
+    }
+  });
+  run();
+  notifyArenaDataChanged();
 }

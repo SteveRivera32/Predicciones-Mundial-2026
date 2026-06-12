@@ -57,6 +57,8 @@ Sirve `dist-arena/` desde el proceso arena. Mismo dominio que la quiniela privad
 | `ARENA_COOKIE_DOMAIN` | *(vacío)* | En prod con `www` y sin `www`: `.tivotabo.com` (1 cuenta por dispositivo) |
 | `ARENA_SHARED_CACHE_MS` | `30000` | Cache servidor para oficial/rankings |
 | `ARENA_KICKOFF_CHECK_MS` | `60000` | Revisión auto-inicio al llegar kickoff |
+| `ARENA_MAX_BACKUPS` | `50` | Copias automáticas en `data/backups/` |
+| `ARENA_BACKUP_INTERVAL_MS` | `300000` | Mínimo entre copias automáticas (5 min) |
 
 ## Resultados oficiales (manual)
 
@@ -85,3 +87,10 @@ La interfaz de predicciones aún es un **shell**. Para portar la quiniela comple
 - `GET|PUT /me/predictions` — solo el usuario autenticado
 - `GET /official`, `GET /rankings` — lectura compartida cacheada
 - `PUT /admin/official` — admin
+- `GET /admin/backups`, `GET /admin/backups/export`, `POST /admin/backups/restore` — copias de seguridad (admin)
+
+## Copias de seguridad
+
+Igual que la quiniela privada: cada cambio en predicciones, usuarios u oficial puede generar una copia JSON en `ArenaMundial/server/data/backups/` (como mucho una cada 5 minutos si hubo cambios; se conservan las últimas 50).
+
+Desde **Ajustes de cuenta** (admin) puedes descargar un `.json`, restaurar desde archivo o recuperar una copia del servidor. Antes de cada restauración se guarda otra copia `arena-pre-restore-…`.

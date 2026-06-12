@@ -114,6 +114,31 @@ export function getRankings() {
   return apiFetch("/rankings");
 }
 
+export function searchPredictions(q) {
+  return apiFetch(`/predictions/search?q=${encodeURIComponent(String(q ?? ""))}`);
+}
+
+export function listArenaBackups() {
+  return apiFetch("/admin/backups");
+}
+
+export function exportArenaBackup() {
+  return apiFetch("/admin/backups/export");
+}
+
+export function restoreArenaBackupFile(filename) {
+  return apiFetch(`/admin/backups/restore/${encodeURIComponent(String(filename ?? ""))}`, {
+    method: "POST",
+  });
+}
+
+export function restoreArenaBackupUpload(payload) {
+  return apiFetch("/admin/backups/restore", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getChatMessages(sinceId = 0) {
   const q = sinceId > 0 ? `?sinceId=${encodeURIComponent(String(sinceId))}` : "";
   return apiFetch(`/chat/messages${q}`);

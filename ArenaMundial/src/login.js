@@ -95,7 +95,9 @@ function restoreUsername() {
 }
 
 function isDeviceAccountBound() {
-  return deviceBinding?.bound === true;
+  if (deviceBinding?.bound !== true) return false;
+  if (deviceBinding.isPrivadas || deviceBinding.isAdmin) return false;
+  return true;
 }
 
 function applyDeviceBindingUi() {

@@ -2,6 +2,7 @@ import {
   getParticipants,
   getParticipantsForDisplay,
   getParticipantsForListDisplay,
+  getArenaParticipantsListMeta,
   orderRankingRowsForDisplay,
   getParticipantSearchQuery,
   setParticipantSearchQuery,
@@ -31,6 +32,8 @@ import {
   savePredictions,
   deletePredictionsStorage,
   clearAllParticipantsPredictions,
+  mergePredictionsFromRemote,
+  getAllPredictionsMap,
 } from "./predictions-store.js";
 import { loadOfficialResults, saveOfficialResults, clearOfficialResultsStorage } from "./official-results-store.js";
 import { isRemoteSyncActive } from "./remote-sync-flags.js";
@@ -48,9 +51,26 @@ import {
   arenaAdminListUsers,
   arenaAdminDeleteUser,
   arenaAdminBanUser,
+  arenaAdminListBackups,
+  arenaAdminExportBackup,
+  arenaAdminRestoreBackupFile,
+  arenaAdminRestoreBackupUpload,
   isArenaInteractionPaused,
   scheduleArenaDeferredRefresh,
+  getArenaServerRankings,
+  arenaSearchPredictions,
+  hasArenaMatchVoteData,
+  getArenaMatchOutcomeCounts,
+  getArenaImprobableOutcomeSign,
+  getArenaKnockoutPenaltyCounts,
+  getArenaGroupOrderVoteCountsByPosition,
+  getArenaGroupThirdAdvanceVoteCounts,
+  getArenaGeneralesVoteCountsBySlot,
 } from "./arena-mode.js";
+import {
+  computeLiveParticipantRowsFromData,
+  ARENA_PRELAUNCH_EXCLUDED_GROUP_MATCH_IDS,
+} from "./live-ranking.js";
 import { applyRemoteState } from "./sync.js";
 import { pushResetQuiniela, fetchBackupsList, restoreServerBackup } from "./sync-push.js";
 import { downloadBackupFile, restoreFromBackupFile } from "./backup.js";
@@ -60,6 +80,7 @@ import {
   computeGroupMatchPointsBreakdown,
   isExactGroupPrediction,
   predictionOutcomeSign,
+  getUniqueOfficialOutcomeBonusSign,
 } from "./group-match-points.js";
 import {
   computeGeneralPredictionsScore,
@@ -259,6 +280,9 @@ function collectOutcomeVotesForMatch(matchId) {
  * @returns {Map<string, number>[]}
  */
 function getGroupOrderVoteCountsByPosition(groupId) {
+  if (isArenaMode() && hasArenaMatchVoteData()) {
+    return getArenaGroupOrderVoteCountsByPosition(groupId);
+  }
   /** @type {Map<string, number>[]} */
   const countsByPos = [new Map(), new Map(), new Map(), new Map()];
   for (const part of getParticipantsForDisplay()) {
@@ -303,6 +327,9 @@ function collectKnockoutOutcomeVotesForMatch(matchId) {
 
 /** @param {string} matchId @param {boolean} isKo */
 function getMatchOutcomeVoteCounts(matchId, isKo) {
+  if (isArenaMode() && hasArenaMatchVoteData()) {
+    return getArenaMatchOutcomeCounts(matchId, isKo);
+  }
   const votes = isKo
     ? collectKnockoutOutcomeVotesForMatch(matchId)
     : collectOutcomeVotesForMatch(matchId);
@@ -312,6 +339,14 @@ function getMatchOutcomeVoteCounts(matchId, isKo) {
     if (s === "h" || s === "d" || s === "a") counts[s] += 1;
   }
   return counts;
+}
+
+/** @param {string} matchId */
+function getKnockoutPenaltyVoteCounts(matchId) {
+  if (isArenaMode() && hasArenaMatchVoteData()) {
+    return getArenaKnockoutPenaltyCounts(matchId);
+  }
+  return collectKnockoutPenaltyVotesForMatch(matchId);
 }
 
 /** @param {string} matchId */
@@ -379,7 +414,7 @@ function buildMatchOutcomeVoteBarHtml(opts) {
  * @param {string} matchId
  */
 function buildKnockoutPenaltyVoteBarHtml(homeName, awayName, matchId) {
-  const counts = collectKnockoutPenaltyVotesForMatch(matchId);
+  const counts = getKnockoutPenaltyVoteCounts(matchId);
   const total = counts.home + counts.away;
   if (total <= 0) return "";
 
@@ -428,49 +463,17 @@ function buildMatchVoteBarsHtml(homeName, awayName, matchId, isKo, roundId = "")
   return `<div class="match-vote-bars">${outcomeHtml}${penaltyHtml}</div>`;
 }
 
-/**
- * Bono improbable por menor votación del resultado oficial.
- * Reglas adicionales:
- * - Si hay 2 o más signos empatados como menor votada, todos esos aplican.
- * - Solo aplica cuando esa menor votación es <= 2.
- * - Si la menor votación empatada es >= 3, no aplica.
- * @param {("h"|"d"|"a")[]} votes
- * @param {{ home: unknown, away: unknown }} officialScore
- * @returns {"h"|"d"|"a"|null}
- */
-function getUniqueOfficialOutcomeBonusSign(votes, officialScore) {
-  const officialSign = predictionOutcomeSign(officialScore);
-  if (!officialSign) return null;
-  /** @type {{ h: number, d: number, a: number }} */
-  const c = { h: 0, d: 0, a: 0 };
-  for (const s of votes) {
-    if (s === "h" || s === "d" || s === "a") c[s] += 1;
-  }
-  const totalVotes = c.h + c.d + c.a;
-  if (totalVotes < 2) return null;
-  const withVotes = /** @type {Array<{ k: "h"|"d"|"a", n: number }>} */ (
-    [
-      { k: "h", n: c.h },
-      { k: "d", n: c.d },
-      { k: "a", n: c.a },
-    ].filter((x) => x.n > 0)
-  );
-  if (withVotes.length < 2) return null;
-  if ((c[officialSign] ?? 0) <= 0) return null;
-
-  const minN = Math.min(...withVotes.map((x) => x.n));
-  if (minN > 2) return null;
-
-  const minTier = withVotes.filter((x) => x.n === minN).map((x) => x.k);
-  if (minTier.length < 1) return null;
-  return minTier.includes(officialSign) ? officialSign : null;
-}
-
 function getImprobableOutcomeSignForMatch(matchId, officialScore) {
+  if (isArenaMode() && hasArenaMatchVoteData()) {
+    return getArenaImprobableOutcomeSign(matchId, false);
+  }
   return getUniqueOfficialOutcomeBonusSign(collectOutcomeVotesForMatch(matchId), officialScore);
 }
 
 function getImprobableOutcomeSignForKoMatch(matchId, officialScore) {
+  if (isArenaMode() && hasArenaMatchVoteData()) {
+    return getArenaImprobableOutcomeSign(matchId, true);
+  }
   return getUniqueOfficialOutcomeBonusSign(collectKnockoutOutcomeVotesForMatch(matchId), officialScore);
 }
 
@@ -499,6 +502,181 @@ function participantSearchToolbarHtml({ ariaLabel = "Buscar jugador en la tabla"
       />
     </label>
   </div>`;
+}
+
+function arenaParticipantsListHintText() {
+  if (!isArenaMode()) return "";
+  const meta = getArenaParticipantsListMeta();
+  if (!meta.truncated || getParticipantSearchQuery().trim()) return "";
+  return `Esta tabla solo muestra ${meta.shown} de ${meta.total} jugadores. Busca un nombre para ver a alguien concreto.`;
+}
+
+function arenaRankingsHintText() {
+  if (!isArenaMode()) return "";
+  const data = getArenaServerRankings();
+  if (!data?.truncated || data.totalUsers <= data.limit) return "";
+  const hasSelfOutsideTop = data.rows?.some((r) => r.self && Number(r.rank) > Number(data.limit));
+  const selfNote = hasSelfOutsideTop ? " Se incluye tu posición aunque no estés en el top." : "";
+  return `Este ranking muestra el top ${data.limit} de ${data.totalUsers} jugadores.${selfNote} Busca un nombre para filtrar.`;
+}
+
+const ARENA_RANKING_PANEL_IDS = ["panel-final-ranking", "panel-match-ranking", "panel-team-order-ranking"];
+
+/** @param {Element} bar */
+function isArenaRankingPanelSearchBar(bar) {
+  return ARENA_RANKING_PANEL_IDS.some((id) => bar.closest(`#${id}`));
+}
+
+/** @param {HTMLElement} bar */
+function ensureArenaHintAfterSearchBar(bar) {
+  const inRankingPanel = isArenaRankingPanelSearchBar(bar);
+  let next = bar.nextElementSibling;
+  while (next instanceof HTMLElement) {
+    const isList = next.dataset.arenaListHint !== undefined;
+    const isRank = next.dataset.arenaRankingHint !== undefined;
+    if (inRankingPanel && isList) {
+      const rm = next;
+      next = next.nextElementSibling;
+      rm.remove();
+      continue;
+    }
+    if (!inRankingPanel && isRank) {
+      const rm = next;
+      next = next.nextElementSibling;
+      rm.remove();
+      continue;
+    }
+    if (inRankingPanel && isRank) return next;
+    if (!inRankingPanel && isList) return next;
+    break;
+  }
+  const hint = document.createElement("p");
+  hint.className = inRankingPanel
+    ? "participant-list-hint participant-list-hint--ranking muted"
+    : "participant-list-hint muted";
+  if (inRankingPanel) hint.dataset.arenaRankingHint = "";
+  else hint.dataset.arenaListHint = "";
+  hint.setAttribute("role", "status");
+  hint.hidden = true;
+  bar.insertAdjacentElement("afterend", hint);
+  let sib = hint.nextElementSibling;
+  const dupKey = inRankingPanel ? "arenaRankingHint" : "arenaListHint";
+  while (sib instanceof HTMLElement && sib.dataset[dupKey] !== undefined) {
+    const rm = sib;
+    sib = sib.nextElementSibling;
+    rm.remove();
+  }
+  return hint;
+}
+
+function removeLegacyArenaRankingHints() {
+  for (const introId of ["final-ranking-intro", "match-ranking-intro", "team-order-ranking-intro"]) {
+    const intro = document.getElementById(introId);
+    if (!intro) continue;
+    intro.querySelectorAll("[data-arena-ranking-hint]").forEach((el) => el.remove());
+    if (intro.tagName === "P") {
+      let sib = intro.nextElementSibling;
+      while (sib instanceof HTMLElement && sib.dataset.arenaRankingHint !== undefined) {
+        const rm = sib;
+        sib = sib.nextElementSibling;
+        rm.remove();
+      }
+    }
+  }
+}
+
+function ensureArenaTruncationHintElements() {
+  if (!isArenaMode()) return;
+  removeLegacyArenaRankingHints();
+  document.querySelectorAll("[data-participant-search-bar]").forEach((bar) => {
+    if (!(bar instanceof HTMLElement)) return;
+    ensureArenaHintAfterSearchBar(bar);
+  });
+}
+
+function syncArenaTruncationHints() {
+  if (!isArenaMode()) return;
+  ensureArenaTruncationHintElements();
+  const listText = arenaParticipantsListHintText();
+  const rankText = arenaRankingsHintText();
+  const activeTab = getActiveTabId();
+  document.querySelectorAll("[data-arena-list-hint]").forEach((el) => {
+    if (!(el instanceof HTMLElement)) return;
+    if (isArenaRankingPanelSearchBar(el)) {
+      el.textContent = "";
+      el.hidden = true;
+      return;
+    }
+    if (listText) {
+      el.textContent = listText;
+      el.hidden = false;
+    } else {
+      el.textContent = "";
+      el.hidden = true;
+    }
+  });
+  document.querySelectorAll("[data-arena-ranking-hint]").forEach((el) => {
+    if (!(el instanceof HTMLElement)) return;
+    const panel = el.closest("[data-panel]");
+    const panelTab = panel?.getAttribute("data-panel");
+    const show = Boolean(rankText) && panelTab === activeTab;
+    if (show) {
+      el.textContent = rankText;
+      el.hidden = false;
+    } else {
+      el.textContent = "";
+      el.hidden = true;
+    }
+  });
+}
+
+/** @param {string | null | undefined} currentParticipantId */
+function mapArenaServerRankingRows(currentParticipantId) {
+  const data = getArenaServerRankings();
+  if (!data?.rows?.length) return null;
+  return data.rows.map((r) => ({
+    p: { id: String(r.username), name: String(r.displayName ?? r.username) },
+    pts: Number(r.pts) || 0,
+    totalBien: Number(r.totalBien) || 0,
+    totalExcelente: Number(r.totalExcelente) || 0,
+    totalPerfect: Number(r.totalPerfect) || 0,
+    totalBonus: Number(r.totalBonus) || 0,
+    self: Boolean(r.self) || String(r.username) === currentParticipantId,
+    displayRank: Number(r.rank) || 0,
+    exact: 0,
+    outcome: 0,
+    zeroPointMatches: 0,
+    matchBonusCount: 0,
+    countedMatches: 0,
+    avgPtsPerMatch: 0,
+    matchTopTieCount: 0,
+    matchSoleTopCount: 0,
+    matchNoPredCount: 0,
+  }));
+}
+
+function sortRankingRows(rows) {
+  return [...rows].sort((a, b) => {
+    if (b.pts !== a.pts) return b.pts - a.pts;
+    if (b.totalPerfect !== a.totalPerfect) return b.totalPerfect - a.totalPerfect;
+    if (b.totalBonus !== a.totalBonus) return b.totalBonus - a.totalBonus;
+    return a.p.name.localeCompare(b.p.name, "es", { sensitivity: "base" });
+  });
+}
+
+/** @param {string | null | undefined} currentParticipantId */
+function getLiveRankingRows(currentParticipantId) {
+  const serverRows = isArenaMode() ? mapArenaServerRankingRows(currentParticipantId) : null;
+  if (serverRows) return serverRows;
+  return sortRankingRows(
+    computeLiveParticipantRowsFromData(
+      getParticipantsForDisplay(),
+      getAllPredictionsMap(),
+      loadOfficialResults(),
+      currentParticipantId,
+      isArenaMode() ? { arenaScoring: true } : {},
+    ),
+  );
 }
 
 /** @param {import("./participants.js").Participant} p @param {string} groupId */
@@ -1638,6 +1816,7 @@ function updateSyncLiveBadge() {
 
 let participantSearchReady = false;
 let participantSearchDebounceId = 0;
+let arenaSearchPredictionsDebounceId = 0;
 
 function syncParticipantSearchInputs(value = getParticipantSearchQuery()) {
   document.querySelectorAll(".participant-search-input").forEach((el) => {
@@ -1653,11 +1832,30 @@ function initParticipantSearch(onSearchChange) {
   const emit = (/** @type {string} */ value) => {
     setParticipantSearchQuery(value);
     syncParticipantSearchInputs(value);
+    const q = String(value ?? "").trim();
+    if (isArenaMode() && q.length >= 2) {
+      window.clearTimeout(arenaSearchPredictionsDebounceId);
+      arenaSearchPredictionsDebounceId = window.setTimeout(() => {
+        void arenaSearchPredictions(q)
+          .then((res) => {
+            if (res?.predictions) mergePredictionsFromRemote(res.predictions);
+            syncArenaTruncationHints();
+            onSearchChange();
+          })
+          .catch(() => {
+            syncArenaTruncationHints();
+            onSearchChange();
+          });
+      }, 220);
+      return;
+    }
+    syncArenaTruncationHints();
     onSearchChange();
   };
   document.addEventListener("input", (e) => {
     const t = e.target;
     if (!(t instanceof HTMLInputElement) || !t.classList.contains("participant-search-input")) return;
+    setParticipantSearchQuery(t.value);
     window.clearTimeout(participantSearchDebounceId);
     participantSearchDebounceId = window.setTimeout(() => emit(t.value), 180);
   });
@@ -2058,6 +2256,88 @@ function renderArenaAdminUserResults(users) {
   });
 }
 
+function setArenaAdminBackupStatus(message, isError = false) {
+  const el = $("#arena-admin-backup-status");
+  if (!el) return;
+  if (!message) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  el.hidden = false;
+  el.textContent = message;
+  el.classList.toggle("admin-settings-backup-status--error", isError);
+}
+
+async function renderArenaAdminBackupSection() {
+  const listEl = $("#arena-admin-backup-server-list");
+  const emptyEl = $("#arena-admin-backup-server-empty");
+  const maxEl = $("#arena-admin-backup-max-count");
+  if (!listEl) return;
+  listEl.innerHTML = `<li class="muted">Cargando copias del servidor…</li>`;
+  if (emptyEl) emptyEl.hidden = true;
+  const data = await arenaAdminListBackups();
+  if (!data || !Array.isArray(data.backups)) {
+    listEl.innerHTML = "";
+    if (emptyEl) {
+      emptyEl.textContent = "No se pudo cargar la lista de copias del servidor.";
+      emptyEl.hidden = false;
+    }
+    return;
+  }
+  if (maxEl && data.maxBackups) maxEl.textContent = String(data.maxBackups);
+  if (data.backups.length === 0) {
+    listEl.innerHTML = "";
+    if (emptyEl) {
+      emptyEl.textContent = "Aún no hay copias automáticas en el servidor.";
+      emptyEl.hidden = false;
+    }
+    return;
+  }
+  if (emptyEl) emptyEl.hidden = true;
+  const recent = data.backups.slice(0, 8);
+  listEl.innerHTML = recent
+    .map(
+      (b) => `<li class="admin-settings-backup-row">
+        <span class="admin-settings-backup-row-meta">
+          <strong>${escapeHtml(formatBackupDate(b.createdAt))}</strong>
+          <span class="muted">${escapeHtml(formatBackupSize(b.size))}</span>
+        </span>
+        <button type="button" class="btn btn-sm admin-settings-backup-restore" data-arena-backup-file="${escapeHtmlAttr(
+          b.filename,
+        )}">Restaurar</button>
+      </li>`,
+    )
+    .join("");
+  listEl.querySelectorAll("[data-arena-backup-file]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!isArenaAdmin()) return;
+      const filename = btn.getAttribute("data-arena-backup-file");
+      if (!filename) return;
+      const meta = recent.find((x) => x.filename === filename);
+      if (
+        !confirm(
+          `¿Restaurar la copia del ${formatBackupDate(meta?.createdAt ?? "")}? Se sustituirán usuarios, predicciones, resultados oficiales y chat de Arena.`,
+        )
+      ) {
+        return;
+      }
+      if (!confirm("Última confirmación: esta acción no se puede deshacer fácilmente. ¿Continuar?")) return;
+      setArenaAdminBackupStatus("Restaurando copia del servidor…");
+      try {
+        const res = await arenaAdminRestoreBackupFile(filename);
+        const pre = res?.preRestoreBackup ? ` Se guardó «${res.preRestoreBackup}» antes.` : "";
+        setArenaAdminBackupStatus(`Copia restaurada correctamente.${pre}`);
+        closeArenaAccountOverlay();
+        refreshAll(loadSession());
+        void renderArenaAdminBackupSection();
+      } catch (e) {
+        setArenaAdminBackupStatus(e instanceof Error ? e.message : "Error al restaurar.", true);
+      }
+    });
+  });
+}
+
 function openArenaAccountOverlay() {
   const session = loadSession();
   if (!session) return;
@@ -2079,6 +2359,8 @@ function openArenaAccountOverlay() {
   if (resultsWrap) resultsWrap.innerHTML = `<p class="muted">Cargando participantes…</p>`;
   arenaAdminUsersCache = [];
   if (isArenaAdmin()) {
+    setArenaAdminBackupStatus("");
+    void renderArenaAdminBackupSection();
     void reloadArenaAdminUsersList().catch((e) => {
       setArenaAccountError(
         $("#arena-admin-user-error"),
@@ -2103,9 +2385,60 @@ function bindArenaAccountSettings() {
   const closeBtn = $("#arena-account-close");
   const deleteBtn = $("#btn-arena-delete-my-account");
   const searchInput = $("#arena-admin-user-search");
+  const downloadBackupBtn = $("#btn-arena-admin-download-backup");
+  const backupFileInput = $("#arena-admin-backup-file-input");
   if (!overlay) return;
 
   let searchTimer = null;
+
+  downloadBackupBtn?.addEventListener("click", () => {
+    if (!isArenaAdmin()) return;
+    setArenaAdminBackupStatus("Generando backup…");
+    void arenaAdminExportBackup()
+      .then((envelope) => {
+        const json = JSON.stringify(envelope, null, 2);
+        const blob = new Blob([json], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+        a.href = url;
+        a.download = `arena-backup-${ts}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setArenaAdminBackupStatus("Backup descargado.");
+      })
+      .catch(() => {
+        setArenaAdminBackupStatus("No se pudo generar el backup.", true);
+      });
+  });
+
+  backupFileInput?.addEventListener("change", async () => {
+    if (!isArenaAdmin()) return;
+    const file = backupFileInput.files?.[0];
+    backupFileInput.value = "";
+    if (!file) return;
+    if (
+      !confirm(
+        "¿Restaurar desde este archivo? Se sustituirán usuarios, predicciones, resultados oficiales y chat de Arena.",
+      )
+    ) {
+      return;
+    }
+    if (!confirm("Última confirmación: ¿continuar con la restauración?")) return;
+    setArenaAdminBackupStatus("Restaurando backup…");
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const res = await arenaAdminRestoreBackupUpload(parsed);
+      const pre = res?.preRestoreBackup ? ` Se guardó «${res.preRestoreBackup}» antes.` : "";
+      setArenaAdminBackupStatus(`Backup restaurado correctamente.${pre}`);
+      closeArenaAccountOverlay();
+      refreshAll(loadSession());
+      void renderArenaAdminBackupSection();
+    } catch {
+      setArenaAdminBackupStatus("Archivo inválido o error al restaurar.", true);
+    }
+  });
 
   closeBtn?.addEventListener("click", () => closeArenaAccountOverlay());
   overlay.addEventListener("click", (e) => {
@@ -2947,6 +3280,9 @@ const GENERALES_VOTE_SLOTS = [
 ];
 
 function getGeneralesVoteCountsBySlot() {
+  if (isArenaMode() && hasArenaMatchVoteData()) {
+    return getArenaGeneralesVoteCountsBySlot();
+  }
   /** @type {Record<string, Map<string, { count: number, display: string }>>} */
   const bySlot = Object.fromEntries(GENERALES_VOTE_SLOTS.map((s) => [s.key, new Map()]));
   for (const part of getParticipantsForDisplay()) {
@@ -3036,6 +3372,9 @@ const GROUP_ORDER_VOTE_LABELS = ["1.º", "2.º", "3.º", "4.º"];
 
 /** @param {string} groupId */
 function getGroupThirdAdvanceVoteCounts(groupId) {
+  if (isArenaMode() && hasArenaMatchVoteData()) {
+    return getArenaGroupThirdAdvanceVoteCounts(groupId);
+  }
   /** @type {{ yes: number, no: number }} */
   const counts = { yes: 0, no: 0 };
   for (const part of getParticipantsForDisplay()) {
@@ -4512,186 +4851,17 @@ function computePerParticipantMatchColumnStats() {
 }
 
 function computeLiveParticipantRows(currentParticipantId) {
-  const offScores = getOfficialGroupScoresForLiveQuinielaPoints();
-  const officialStore = loadOfficialResults();
-  const matchColStats = computePerParticipantMatchColumnStats();
-  const liveOfficial = getLiveOfficialGroupSnapshot();
-  const officialGen = officialStore.generalOfficial ?? {};
-  const hasGeneralOfficial =
-    officialStore.generalOfficialConfirmed === true &&
-    Boolean(String(officialGen.first ?? "").trim()) &&
-    Boolean(String(officialGen.second ?? "").trim()) &&
-    Boolean(String(officialGen.third ?? "").trim());
-
-  return getParticipantsForDisplay().map((p) => {
-    let total = 0;
-    let matchPointsTotal = 0;
-    let exact = 0;
-    let outcome = 0;
-    let zeroPointMatches = 0;
-    let matchBonusCount = 0;
-    let countedMatches = 0;
-    let groupOrderBienCount = 0;
-    let groupOrderExcelenteCount = 0;
-    let groupOrderPerfectCount = 0;
-    let groupOrderBonusCount = 0;
-    let matchBienCount = 0;
-    let matchExcelenteCount = 0;
-    let matchPerfectCount = 0;
-    let generalBienCount = 0;
-    let generalExcelenteCount = 0;
-    let generalPerfectCount = 0;
-    const pStore = loadPredictions(p.id);
-    if (hasGeneralOfficial) {
-      const genScore = computeGeneralPredictionsScore(pStore.general ?? {}, officialGen, true);
-      total += genScore.total;
-      if (genScore.exactTierLabel === "bien") generalBienCount += 1;
-      else if (genScore.exactTierLabel === "excelente") generalExcelenteCount += 1;
-      else if (genScore.exactTierLabel === "perfecto") generalPerfectCount += 1;
-    }
-
-    for (const grp of GROUPS) {
-      const officialOrder = liveOfficial.orderByGroup?.[grp.id] ?? [];
-      const hasOfficialData = liveOfficial.hasOfficialDataByGroup?.[grp.id] === true;
-      if (!hasOfficialData) continue;
-      // Ranking global: puntos de orden de grupo solo cuando el grupo terminó (6 partidos confirmados).
-      if (liveOfficial.groupCompletedByGroup?.[grp.id] !== true) continue;
-      const officialThird = liveOfficial.thirdAdvanceByGroup?.[grp.id];
-      const officialThirdDefined = officialThird === true || officialThird === false;
-      const order = pStore.groupOrder?.[grp.id];
-      const predOrder =
-        Array.isArray(order) && order.length >= 4
-          ? [0, 1, 2, 3].map((i) => (typeof order[i] === "string" ? order[i] : ""))
-          : ["", "", "", ""];
-      const predThird = pStore.groupThirdAdvances?.[grp.id];
-      const top2InExactOrder =
-        Boolean(predOrder[0]) &&
-        Boolean(predOrder[1]) &&
-        predOrder[0] === officialOrder[0] &&
-        predOrder[1] === officialOrder[1];
-      const fullOrderHit = [0, 1, 2, 3].every(
-        (i) => Boolean(predOrder[i]) && Boolean(officialOrder[i]) && predOrder[i] === officialOrder[i],
-      );
-      const thirdAdvanceHit =
-        officialThirdDefined &&
-        (predThird === true || predThird === false) &&
-        predThird === officialThird;
-      if (fullOrderHit && thirdAdvanceHit) groupOrderPerfectCount += 1;
-      else if (fullOrderHit) groupOrderExcelenteCount += 1;
-      else if (top2InExactOrder) groupOrderBienCount += 1;
-
-      const voteCountsByPos = getGroupOrderVoteCountsByPosition(grp.id);
-      const groupBonus = [0, 1, 2, 3].reduce((acc, i) => {
-        const t = predOrder[i];
-        const isExact = Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
-        if (isExact && hasUniquePickBonus(voteCountsByPos[i], t)) return acc + 1;
-        return acc;
-      }, 0);
-      groupOrderBonusCount += groupBonus;
-      total +=
-        computeGroupOrderPoints(
-          predOrder,
-          officialOrder,
-          predThird,
-          officialThirdDefined ? officialThird : undefined,
-        ) + groupBonus;
-    }
-
-    for (const m of GROUP_MATCHES) {
-      const off = offScores[m.id];
-      if (!off) continue;
-      if (pStore.groupScoresConfirmed?.[m.id] !== true) continue;
-      const pred = pStore.groupScores[m.id] ?? { home: "", away: "" };
-      const improb = getImprobableOutcomeSignForMatch(m.id, off);
-      const matchScoring = getMatchScoringForQuiniela(m);
-      const pts = computeGroupMatchPoints(off, pred, improb, matchScoring);
-      if (pts === null) continue;
-      total += pts;
-      matchPointsTotal += pts;
-      countedMatches += 1;
-      if (pts === 0) zeroPointMatches += 1;
-      if (isExactGroupPrediction(off, pred)) exact += 1;
-      const breakdown = computeGroupMatchPointsBreakdown(off, pred, improb, matchScoring);
-      if (breakdown?.exactTier === "perfecto") matchPerfectCount += 1;
-      else if (breakdown?.exactTier === "excelente") matchExcelenteCount += 1;
-      else if (breakdown?.exactTier === "bien") matchBienCount += 1;
-      if ((breakdown?.improbablePts ?? 0) > 0) matchBonusCount += 1;
-      const oh = parseInt(String(off.home), 10);
-      const oa = parseInt(String(off.away), 10);
-      const ph = parseInt(String(pred.home), 10);
-      const pa = parseInt(String(pred.away), 10);
-      if (
-        Number.isFinite(oh) &&
-        Number.isFinite(oa) &&
-        Number.isFinite(ph) &&
-        Number.isFinite(pa)
-      ) {
-        const offSign = oh > oa ? "h" : oh < oa ? "a" : "d";
-        const predSign = ph > pa ? "h" : ph < pa ? "a" : "d";
-        if (offSign === predSign) outcome += 1;
-      }
-    }
-    for (const m of getKnockoutMatchesFlat()) {
-      if (officialStore.knockoutScoresConfirmed?.[m.id] !== true) continue;
-      const off = officialStore.knockoutScores[m.id];
-      if (!off || off.home === "" || off.away === "") continue;
-      if (pStore.knockoutScoresConfirmed?.[m.id] !== true) continue;
-      const pred = pStore.knockoutScores?.[m.id] ?? { home: "", away: "" };
-      const improb = getImprobableOutcomeSignForKoMatch(m.id, off);
-      const matchScoring = getMatchScoringForQuiniela(m);
-      const koPenPh = knockoutRoundRequiresPenaltyPickOnDraw(m.roundId);
-      const pts = computeGroupMatchPoints(off, pred, improb, matchScoring, koPenPh);
-      if (pts === null) continue;
-      total += pts;
-      matchPointsTotal += pts;
-      countedMatches += 1;
-      if (pts === 0) zeroPointMatches += 1;
-      if (isExactGroupPrediction(off, pred)) exact += 1;
-      const breakdown = computeGroupMatchPointsBreakdown(off, pred, improb, matchScoring, koPenPh);
-      if (breakdown?.exactTier === "perfecto") matchPerfectCount += 1;
-      else if (breakdown?.exactTier === "excelente") matchExcelenteCount += 1;
-      else if (breakdown?.exactTier === "bien") matchBienCount += 1;
-      if ((breakdown?.improbablePts ?? 0) > 0) matchBonusCount += 1;
-      const oh = parseInt(String(off.home), 10);
-      const oa = parseInt(String(off.away), 10);
-      const ph = parseInt(String(pred.home), 10);
-      const pa = parseInt(String(pred.away), 10);
-      if (
-        Number.isFinite(oh) &&
-        Number.isFinite(oa) &&
-        Number.isFinite(ph) &&
-        Number.isFinite(pa)
-      ) {
-        const offSign = oh > oa ? "h" : oh < oa ? "a" : "d";
-        const predSign = ph > pa ? "h" : ph < pa ? "a" : "d";
-        if (offSign === predSign) outcome += 1;
-      }
-    }
-    const totalBonus = matchBonusCount + groupOrderBonusCount;
-    const totalPerfect = matchPerfectCount + groupOrderPerfectCount + generalPerfectCount;
-    const totalBien = matchBienCount + groupOrderBienCount + generalBienCount;
-    const totalExcelente = matchExcelenteCount + groupOrderExcelenteCount + generalExcelenteCount;
-    const avgPtsPerMatch = countedMatches > 0 ? matchPointsTotal / countedMatches : 0;
-    const mc = matchColStats[p.id] ?? { topTie: 0, soleTop: 0, noPred: 0 };
-    return {
-      p,
-      pts: total,
-      exact,
-      outcome,
-      self: p.id === currentParticipantId,
-      zeroPointMatches,
-      matchBonusCount,
-      countedMatches,
-      avgPtsPerMatch,
-      matchTopTieCount: mc.topTie,
-      matchSoleTopCount: mc.soleTop,
-      matchNoPredCount: mc.noPred,
-      totalBonus,
-      totalPerfect,
-      totalBien,
-      totalExcelente,
-    };
-  });
+  if (isArenaMode()) {
+    const serverRows = mapArenaServerRankingRows(currentParticipantId);
+    if (serverRows) return serverRows;
+  }
+  return computeLiveParticipantRowsFromData(
+    getParticipantsForDisplay(),
+    getAllPredictionsMap(),
+    loadOfficialResults(),
+    currentParticipantId,
+    { arenaScoring: true },
+  );
 }
 
 function renderFloatingRanking(session) {
@@ -4699,12 +4869,7 @@ function renderFloatingRanking(session) {
   const body = $("#floating-ranking-body");
   if (!host || !body) return;
   const currentId = session?.participantId ?? "";
-  const sortedRows = computeLiveParticipantRows(currentId).sort((a, b) => {
-    if (b.pts !== a.pts) return b.pts - a.pts;
-    if (b.totalPerfect !== a.totalPerfect) return b.totalPerfect - a.totalPerfect;
-    if (b.totalBonus !== a.totalBonus) return b.totalBonus - a.totalBonus;
-    return a.p.name.localeCompare(b.p.name);
-  });
+  const sortedRows = sortRankingRows(getLiveRankingRows(currentId));
   const rows = orderRankingRowsForDisplay(sortedRows, currentId);
 
   body.innerHTML = `<table class="floating-ranking-table" aria-label="Ranking en vivo">
@@ -5009,12 +5174,7 @@ function renderFinalRanking(session) {
     return;
   }
   if (loginHint) loginHint.hidden = true;
-  const sortedRows = computeLiveParticipantRows(session.participantId).sort((a, b) => {
-    if (b.pts !== a.pts) return b.pts - a.pts;
-    if (b.totalPerfect !== a.totalPerfect) return b.totalPerfect - a.totalPerfect;
-    if (b.totalBonus !== a.totalBonus) return b.totalBonus - a.totalBonus;
-    return a.p.name.localeCompare(b.p.name);
-  });
+  const sortedRows = sortRankingRows(getLiveRankingRows(session.participantId));
   const rows = orderRankingRowsForDisplay(sortedRows, session.participantId);
   const maxBonus = Math.max(0, ...sortedRows.map((r) => r.totalBonus));
   const maxPerfect = Math.max(0, ...sortedRows.map((r) => r.totalPerfect));
@@ -5289,12 +5449,8 @@ function renderStats(session) {
 
   if (loginHint) loginHint.hidden = true;
 
-  const rows = computeLiveParticipantRows(session.participantId);
-  const byPoints = [...rows].sort((a, b) => {
-    if (b.pts !== a.pts) return b.pts - a.pts;
-    if (b.totalPerfect !== a.totalPerfect) return b.totalPerfect - a.totalPerfect;
-    return a.p.name.localeCompare(b.p.name);
-  });
+  const rows = getLiveRankingRows(session.participantId);
+  const byPoints = sortRankingRows(rows);
   const showStatsColorHint = !isStatsColorHintDismissed();
 
   const top3 = byPoints.slice(0, 3);
@@ -5325,13 +5481,7 @@ function renderStats(session) {
     .join("")}</div>`;
   animateStatsPodium(podium);
 
-  const acSorted = [...rows].sort((a, b) => {
-    if (b.pts !== a.pts) return b.pts - a.pts;
-    if (b.totalPerfect !== a.totalPerfect) return b.totalPerfect - a.totalPerfect;
-    if (b.totalBonus !== a.totalBonus) return b.totalBonus - a.totalBonus;
-    return a.p.name.localeCompare(b.p.name);
-  });
-  const acDisplay = orderRankingRowsForDisplay(acSorted, session.participantId);
+  const acDisplay = orderRankingRowsForDisplay(byPoints, session.participantId);
 
   if (!acHead || !acBody) return;
 
@@ -7512,6 +7662,11 @@ function computeMatchRankingRows(scope, groupId, sessionParticipantId) {
   } else {
     selectedKoMatches = allKo.filter((m) => m.roundId === scope);
   }
+  if (isArenaMode()) {
+    selectedGroupMatches = selectedGroupMatches.filter(
+      (m) => !ARENA_PRELAUNCH_EXCLUDED_GROUP_MATCH_IDS.has(m.id),
+    );
+  }
 
   /** @type {Record<string, ("h"|"d"|"a"|null)>} */
   const groupImprobableByMatch = {};
@@ -7538,7 +7693,10 @@ function computeMatchRankingRows(scope, groupId, sessionParticipantId) {
       : null;
   }
 
-  const rows = getParticipantsForDisplay().map((p) => {
+  const participantsForRanking = isArenaMode()
+    ? getParticipantsForListDisplay(sessionParticipantId)
+    : getParticipantsForDisplay();
+  const rows = participantsForRanking.map((p) => {
     const pStore = loadPredictions(p.id);
     let bienCount = 0;
     let excelenteCount = 0;
@@ -8669,6 +8827,7 @@ function renderQuiniela(session, official) {
     );
   }
 
+  if (isArenaMode()) syncParticipantSearchInputs();
   redrawTeamStats();
 }
 
@@ -10080,7 +10239,10 @@ function groupOrderRankingStatCell(count, title, isTopInColumn, kind) {
 
 function buildGroupOrderRankingRows(sessionParticipantId) {
   const officialSnapshot = getLiveOfficialGroupSnapshot();
-  const rows = getParticipantsForDisplay().map((p) => {
+  const participantsForRanking = isArenaMode()
+    ? getParticipantsForListDisplay(sessionParticipantId)
+    : getParticipantsForDisplay();
+  const rows = participantsForRanking.map((p) => {
     const pStore = loadPredictions(p.id);
     let bienCount = 0;
     let excelenteCount = 0;
@@ -10220,6 +10382,7 @@ function redrawTeamOrderRanking() {
 /** Arena: actualiza rankings/stats sin reemplazar formularios de predicción. */
 function refreshArenaRemoteLight() {
   const session = loadSession();
+  syncArenaTruncationHints();
   updateSessionBar(session);
   renderStats(session);
   renderFloatingRanking(session);
@@ -10265,6 +10428,7 @@ function refreshArenaPanelsIfIdle() {
  */
 function refreshAll(session, opts = {}) {
   const { skipPartidosRender = false, preserveScroll = false, onlyActivePanel = false } = opts;
+  if (isArenaMode()) syncArenaTruncationHints();
   applyKickoffAutoStarts();
   const activeTab = getActiveTabId();
   const showPanel = (panelId) => !onlyActivePanel || activeTab === panelId;
@@ -10456,6 +10620,11 @@ export function initApp() {
 
   window.addEventListener("pm26-remote-sync", () => {
     queueRefreshAfterExternalSync();
+  });
+
+  window.addEventListener("pm26-arena-rankings", () => {
+    if (!isArenaMode()) return;
+    refreshArenaRemoteLight();
   });
 
   function afterSessionReady() {

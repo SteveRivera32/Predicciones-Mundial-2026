@@ -14,14 +14,14 @@ import {
   findUserByUsername,
   findUserById,
   createUser,
-  countUsers,
+  countArenaUsers,
   getUserPredictions,
   setUserPredictions,
   getOfficialResults,
-  getRankingsSummary,
   isPublicNameTaken,
   getAllArenaParticipants,
-  getAllPredictionsByUsername,
+  getPreviewPredictionsByUsername,
+  searchPredictionsByQuery,
   insertChatMessage,
   getChatMessagesSince,
   getLatestChatMessageId,
@@ -29,13 +29,23 @@ import {
   deleteUserById,
   searchUsersByQuery,
   getDeviceBindingByDeviceId,
+  getCountableDeviceBindingByDeviceId,
   bindDeviceToUser,
   registerArenaUserWithDevice,
   isDeviceBanned,
   banArenaUserById,
   listArenaUsersForAdmin,
   countCompetingUsers,
+  setArenaDataChangedHandler,
 } from "./db.mjs";
+import {
+  scheduleArenaBackup,
+  listArenaBackupFiles,
+  readArenaBackupFile,
+  restoreArenaFromBackupPayload,
+  createArenaBackupEnvelopeNow,
+  getArenaMaxBackups,
+} from "./arena-backups.mjs";
 import { resolveDeviceId } from "./device-cookie.mjs";
 import {
   sanitizeChatBody,
@@ -62,6 +72,8 @@ import { syncPrivadasToArena, startPrivadasSyncPoll } from "./privadas-bridge.mj
 import { isPrivadasArenaMirrorId } from "../../src/participants.js";
 import { applyOfficialFromPrivadasIfNewer, saveArenaOfficial } from "./official-privadas-sync.mjs";
 import { isSyncSecretValid } from "../../server/sync-secret.mjs";
+import { getCachedArenaRankings, invalidateArenaRankingsCache } from "./arena-rankings.mjs";
+import { getCachedArenaMatchVoteData, invalidateArenaMatchVoteCache } from "./arena-match-votes.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.ARENA_PORT || 8788);
@@ -79,6 +91,7 @@ const sharedCache = {
   rankings: { data: null, etag: "", at: 0 },
 };
 const SHARED_CACHE_MS = Number(process.env.ARENA_SHARED_CACHE_MS || 3_000);
+const PREVIEW_PREDICTIONS_LIMIT = Number(process.env.ARENA_PREVIEW_PREDICTIONS || 49);
 
 function bumpEtag() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -87,6 +100,8 @@ function bumpEtag() {
 function invalidateSharedCache() {
   sharedCache.official = { data: null, etag: "", at: 0 };
   sharedCache.rankings = { data: null, etag: "", at: 0 };
+  invalidateArenaRankingsCache();
+  invalidateArenaMatchVoteCache();
 }
 
 function usernameValid(s) {
@@ -106,7 +121,7 @@ function rejectBannedDevice(res, deviceId) {
 app.get("/api/arena/auth/device-binding", authTrafficGuard, (req, res) => {
   const deviceId = resolveDeviceId(req, res);
   if (rejectBannedDevice(res, deviceId)) return;
-  const binding = getDeviceBindingByDeviceId(deviceId);
+  const binding = getCountableDeviceBindingByDeviceId(deviceId);
   if (!binding) {
     res.json({ bound: false });
     return;
@@ -115,7 +130,7 @@ app.get("/api/arena/auth/device-binding", authTrafficGuard, (req, res) => {
     bound: true,
     username: binding.username,
     displayName: binding.display_name,
-    isPrivadas: Boolean(binding.is_privadas),
+    isPrivadas: false,
   });
 });
 
@@ -162,7 +177,7 @@ app.post("/api/arena/auth/delete-device-account", authTrafficGuard, (req, res) =
 
 app.post("/api/arena/auth/register", authTrafficGuard, async (req, res) => {
   try {
-    if (countUsers() >= MAX_USERS) {
+    if (countArenaUsers() >= MAX_USERS) {
       res.status(503).json({ error: "cupo máximo alcanzado" });
       return;
     }
@@ -202,7 +217,7 @@ app.post("/api/arena/auth/register", authTrafficGuard, async (req, res) => {
       return;
     }
 
-    const isFirstUser = countUsers() === 0;
+    const isFirstUser = countArenaUsers() === 0;
     const passwordHash = await hashPassword(password);
     const registered = registerArenaUserWithDevice({
       username,
@@ -243,14 +258,14 @@ app.post("/api/arena/auth/login", authTrafficGuard, async (req, res) => {
   }
   const deviceId = resolveDeviceId(req, res);
   if (rejectBannedDevice(res, deviceId)) return;
-  const deviceBinding = getDeviceBindingByDeviceId(deviceId);
+  const deviceBinding = getCountableDeviceBindingByDeviceId(deviceId);
   if (deviceBinding && deviceBinding.user_id !== user.id) {
     res.status(403).json({
       error: `este dispositivo ya está vinculado a «${deviceBinding.username}»; solo puedes entrar con esa cuenta aquí`,
     });
     return;
   }
-  if (!deviceBinding) {
+  if (!isPrivadasUser(user.id) && !user.is_admin && !deviceBinding) {
     bindDeviceToUser(deviceId, user.id);
   }
   const token = signToken(user);
@@ -352,6 +367,62 @@ app.post("/api/arena/admin/users/:username/ban", requireAuth, requireAdmin, (req
   });
 });
 
+app.get("/api/arena/admin/backups", requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const backups = await listArenaBackupFiles();
+    res.json({ ok: true, maxBackups: getArenaMaxBackups(), backups });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "no se pudo listar backups" });
+  }
+});
+
+app.get("/api/arena/admin/backups/export", requireAuth, requireAdmin, (_req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json(createArenaBackupEnvelopeNow());
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "no se pudo exportar backup" });
+  }
+});
+
+app.get("/api/arena/admin/backups/:filename", requireAuth, requireAdmin, async (req, res) => {
+  const raw = await readArenaBackupFile(req.params.filename);
+  if (!raw) {
+    res.status(404).json({ error: "backup no encontrado" });
+    return;
+  }
+  res.setHeader("Cache-Control", "no-store");
+  res.type("application/json").send(JSON.stringify(raw));
+});
+
+app.post("/api/arena/admin/backups/restore/:filename", requireAuth, requireAdmin, async (req, res) => {
+  const filename = String(req.params.filename ?? "");
+  const raw = await readArenaBackupFile(filename);
+  if (!raw) {
+    res.status(404).json({ error: "backup no encontrado" });
+    return;
+  }
+  const result = await restoreArenaFromBackupPayload(raw, filename);
+  if (!result.ok) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  invalidateSharedCache();
+  res.json({ ok: true, restoredFrom: result.restoredFrom, preRestoreBackup: result.preRestoreBackup });
+});
+
+app.post("/api/arena/admin/backups/restore", requireAuth, requireAdmin, async (req, res) => {
+  const result = await restoreArenaFromBackupPayload(req.body, "upload");
+  if (!result.ok) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  invalidateSharedCache();
+  res.json({ ok: true, restoredFrom: result.restoredFrom, preRestoreBackup: result.preRestoreBackup });
+});
+
 app.delete("/api/arena/admin/users/:username", requireAuth, requireAdmin, (req, res) => {
   const username = String(req.params.username ?? "")
     .trim()
@@ -387,6 +458,7 @@ app.put("/api/arena/me/predictions", requireAuth, (req, res) => {
   }
   const normalized = normalizePredictionsData(req.body);
   const saved = setUserPredictions(req.userId, normalized);
+  invalidateSharedCache();
   res.json({ ok: true, predictions: saved.data, updatedAt: saved.updatedAt });
 });
 
@@ -400,21 +472,32 @@ app.get("/api/arena/official", (_req, res) => {
   }
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("ETag", sharedCache.official.etag);
-  res.json(sharedCache.official.data);
+  const matchVoteData = getCachedArenaMatchVoteData(SHARED_CACHE_MS);
+  res.json({ ...sharedCache.official.data, matchVoteData });
 });
 
-app.get("/api/arena/rankings", (_req, res) => {
-  const now = Date.now();
-  if (!sharedCache.rankings.data || now - sharedCache.rankings.at > SHARED_CACHE_MS) {
-    sharedCache.rankings = {
-      data: { rankings: getRankingsSummary(100), totalUsers: countCompetingUsers() },
-      etag: bumpEtag(),
-      at: now,
-    };
+app.get("/api/arena/rankings", requireAuth, (req, res) => {
+  const me = findUserById(req.userId);
+  const viewerUsername = me?.username ?? "";
+  const { data, etag } = getCachedArenaRankings(viewerUsername, SHARED_CACHE_MS);
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("ETag", etag);
+  res.json(data);
+});
+
+app.get("/api/arena/predictions/search", requireAuth, (req, res) => {
+  const q = String(req.query.q ?? "").trim();
+  if (q.length < 2) {
+    res.status(400).json({ error: "escribe al menos 2 caracteres para buscar" });
+    return;
   }
-  res.setHeader("Cache-Control", "private, max-age=30");
-  res.setHeader("ETag", sharedCache.rankings.etag);
-  res.json(sharedCache.rankings.data);
+  const predictions = searchPredictionsByQuery(q, 25);
+  const users = searchUsersByQuery(q, 25).map((u) => ({
+    username: u.username,
+    displayName: u.display_name,
+  }));
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ users, predictions, query: q });
 });
 
 app.put("/api/arena/admin/official", requireAuth, requireAdmin, (req, res) => {
@@ -496,11 +579,14 @@ app.get("/api/arena/chat/limits", requireAuth, (_req, res) => {
 
 app.get("/api/arena/sync", requireAuth, (req, res) => {
   const { data: official, updatedAt } = getOfficialResults();
-  const predictions = getAllPredictionsByUsername();
   const me = findUserById(req.userId);
-  if (me?.is_admin) {
-    const mine = getUserPredictions(req.userId);
-    predictions[me.username] = mine.data;
+  const myUsername = me?.username ?? "";
+  const mine = getUserPredictions(req.userId);
+  const previewPredictions = getPreviewPredictionsByUsername(myUsername, PREVIEW_PREDICTIONS_LIMIT);
+  /** @type {Record<string, object>} */
+  const predictions = { ...previewPredictions };
+  if (myUsername) {
+    predictions[myUsername] = mine.data;
   }
   res.setHeader("Cache-Control", "no-store");
   res.json({
@@ -508,11 +594,14 @@ app.get("/api/arena/sync", requireAuth, (req, res) => {
     official,
     officialUpdatedAt: updatedAt,
     predictions,
+    totalParticipants: countCompetingUsers(),
+    previewLimit: PREVIEW_PREDICTIONS_LIMIT,
+    matchVoteData: getCachedArenaMatchVoteData(SHARED_CACHE_MS),
   });
 });
 
 app.get("/api/arena/health", (_req, res) => {
-  res.json({ ok: true, users: countUsers(), maxUsers: MAX_USERS });
+  res.json({ ok: true, users: countArenaUsers(), maxUsers: MAX_USERS });
 });
 
 // ── Static prod (solo con --serve-static, p. ej. npm run start:arena) ───────
@@ -547,6 +636,7 @@ if (SERVE_STATIC && fs.existsSync(DIST_DIR)) {
 }
 
 initDb();
+setArenaDataChangedHandler(scheduleArenaBackup);
 
 startPrivadasSyncPoll(invalidateSharedCache);
 

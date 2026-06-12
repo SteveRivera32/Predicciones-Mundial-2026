@@ -520,6 +520,9 @@ export function canEditAllParticipantsPredictions(participantId) {
 
 const PARTICIPANT_SEARCH_KEY = "pm26-participant-search";
 
+/** Máx. otros jugadores en tablas de predicciones (sin contar «tú»). */
+export const ARENA_PARTICIPANT_PREVIEW_LIMIT = 49;
+
 export function getParticipantSearchQuery() {
   if (!isArenaMode()) return "";
   try {
@@ -583,8 +586,29 @@ export function getParticipantsForListDisplay(
   } else {
     others.sort(byName);
   }
+  if (isArenaMode() && !q) {
+    others = others.slice(0, ARENA_PARTICIPANT_PREVIEW_LIMIT);
+  }
   if (self) return [self, ...others];
   return others;
+}
+
+/**
+ * @param {string} [searchQuery]
+ * @returns {{ total: number, shown: number, truncated: boolean }}
+ */
+export function getArenaParticipantsListMeta(searchQuery = getParticipantSearchQuery()) {
+  const total = getParticipantsForDisplay().length;
+  if (!isArenaMode()) {
+    return { total, shown: total, truncated: false };
+  }
+  const q = String(searchQuery ?? "").trim();
+  if (q) {
+    const filtered = getParticipantsForDisplay().filter((p) => participantMatchesSearchQuery(p, q));
+    return { total, shown: filtered.length, truncated: false };
+  }
+  const shown = Math.min(total, ARENA_PARTICIPANT_PREVIEW_LIMIT + 1);
+  return { total, shown, truncated: total > shown };
 }
 
 /**
@@ -609,7 +633,10 @@ export function orderRankingRowsForDisplay(rows, currentId, searchQuery = getPar
     return Boolean(currentId && p && p.id === currentId);
   };
 
-  const withRank = rows.map((r, i) => ({ ...r, displayRank: i + 1 }));
+  const withRank = rows.map((r, i) => ({
+    ...r,
+    displayRank: r.displayRank ?? r.rank ?? i + 1,
+  }));
   const q = String(searchQuery ?? "").trim();
   let list = withRank;
   if (q) {

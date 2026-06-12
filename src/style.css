@@ -412,6 +412,20 @@ code {
   border-radius: 7px;
 }
 
+.participant-list-hint {
+  margin: 0.35rem 0 0.65rem;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  border-radius: 8px;
+  background: rgba(255, 200, 80, 0.1);
+  border: 1px solid rgba(255, 200, 80, 0.22);
+}
+
+.participant-list-hint--ranking {
+  margin-top: 0.5rem;
+}
+
 .participant-search-input::-webkit-search-cancel-button {
   cursor: pointer;
 }

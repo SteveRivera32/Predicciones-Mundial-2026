@@ -210,13 +210,67 @@ let deleteUserFn = null;
 
 let banUserFn = null;
 
+/** @type {((q: string) => Promise<{ predictions?: Record<string, unknown> }>) | null} */
+
+let searchPredictionsFn = null;
+
+/** @type {{ totalUsers: number, limit: number, truncated: boolean, rows: Array<Record<string, unknown>> } | null} */
+
+let arenaServerRankings = null;
+
+/** @type {import("./live-ranking.js").ArenaVoteData | null} */
+let arenaMatchVoteData = null;
+
+const ARENA_GENERALES_VOTE_SLOT_KEYS = [
+  "first",
+  "second",
+  "third",
+  "bestPlayer",
+  "bestGk",
+  "topScorer",
+];
+
 
 
 /** @type {(() => Promise<Array<{ username: string, displayName: string, isAdmin: boolean, isPrivadas?: boolean, deviceBanned?: boolean, hasDevice?: boolean }>>) | null} */
 
 let listUsersFn = null;
 
+/** @type {(() => Promise<{ maxBackups?: number, backups?: Array<{ filename: string, size: number, createdAt: string }> } | null>) | null} */
+let listBackupsFn = null;
 
+/** @type {(() => Promise<unknown>) | null} */
+let exportBackupFn = null;
+
+/** @type {((filename: string) => Promise<unknown>) | null} */
+let restoreBackupFileFn = null;
+
+/** @type {((payload: unknown) => Promise<unknown>) | null} */
+let restoreBackupUploadFn = null;
+
+/** @param {{ listBackups?: () => Promise<{ maxBackups?: number, backups?: Array<{ filename: string, size: number, createdAt: string }> } | null>, exportBackup?: () => Promise<unknown>, restoreBackupFile?: (filename: string) => Promise<unknown>, restoreBackupUpload?: (payload: unknown) => Promise<unknown> }} api */
+export function setArenaBackupApi({ listBackups, exportBackup, restoreBackupFile, restoreBackupUpload }) {
+  listBackupsFn = listBackups ?? null;
+  exportBackupFn = exportBackup ?? null;
+  restoreBackupFileFn = restoreBackupFile ?? null;
+  restoreBackupUploadFn = restoreBackupUpload ?? null;
+}
+
+export function arenaAdminListBackups() {
+  return listBackupsFn?.() ?? Promise.resolve(null);
+}
+
+export function arenaAdminExportBackup() {
+  return exportBackupFn?.() ?? Promise.reject(new Error("no disponible"));
+}
+
+export function arenaAdminRestoreBackupFile(filename) {
+  return restoreBackupFileFn?.(filename) ?? Promise.reject(new Error("no disponible"));
+}
+
+export function arenaAdminRestoreBackupUpload(payload) {
+  return restoreBackupUploadFn?.(payload) ?? Promise.reject(new Error("no disponible"));
+}
 
 /** @param {{ deleteMyAccount?: () => Promise<void>, searchUsers?: (q: string) => Promise<Array<{ username: string, displayName: string, isAdmin: boolean }>>, listUsers?: () => Promise<Array<{ username: string, displayName: string, isAdmin: boolean, isPrivadas?: boolean, deviceBanned?: boolean, hasDevice?: boolean }>>, deleteUser?: (username: string) => Promise<void>, banUser?: (username: string) => Promise<{ deviceBanned?: boolean }> }} api */
 
@@ -232,6 +286,104 @@ export function setArenaAccountApi({ deleteMyAccount, searchUsers, listUsers, de
 
   banUserFn = banUser ?? null;
 
+}
+
+export function setArenaSearchPredictions(fn) {
+
+  searchPredictionsFn = fn ?? null;
+
+}
+
+export function arenaSearchPredictions(q) {
+
+  return searchPredictionsFn?.(q) ?? Promise.resolve({ predictions: {} });
+
+}
+
+export function setArenaServerRankings(data) {
+
+  arenaServerRankings = data && typeof data === "object" ? data : null;
+
+}
+
+export function getArenaServerRankings() {
+
+  return arenaServerRankings;
+
+}
+
+export function setArenaMatchVoteData(data) {
+
+  arenaMatchVoteData = data && typeof data === "object" ? data : null;
+
+}
+
+export function hasArenaMatchVoteData() {
+  return Boolean(
+    arenaMatchVoteData?.groupVotes ||
+      arenaMatchVoteData?.knockoutVotes ||
+      arenaMatchVoteData?.groupOrder ||
+      arenaMatchVoteData?.generales,
+  );
+}
+
+/** @param {Record<string, number> | undefined} record */
+function arenaVoteCountsToMap(record) {
+  const map = new Map();
+  if (!record || typeof record !== "object") return map;
+  for (const [k, v] of Object.entries(record)) {
+    if (typeof v === "number" && v > 0) map.set(k, v);
+  }
+  return map;
+}
+
+/** @param {string} matchId @param {boolean} [isKo] */
+export function getArenaMatchOutcomeCounts(matchId, isKo = false) {
+  const map = isKo ? arenaMatchVoteData?.knockoutVotes : arenaMatchVoteData?.groupVotes;
+  return map?.[matchId] ?? { h: 0, d: 0, a: 0 };
+}
+
+/** @param {string} matchId @param {boolean} [isKo] */
+export function getArenaImprobableOutcomeSign(matchId, isKo = false) {
+  const map = isKo ? arenaMatchVoteData?.knockoutImprobable : arenaMatchVoteData?.groupImprobable;
+  if (!map || !Object.prototype.hasOwnProperty.call(map, matchId)) return null;
+  const sign = map[matchId];
+  return sign === "h" || sign === "d" || sign === "a" ? sign : null;
+}
+
+/** @param {string} matchId */
+export function getArenaKnockoutPenaltyCounts(matchId) {
+  return arenaMatchVoteData?.knockoutPenalties?.[matchId] ?? { home: 0, away: 0 };
+}
+
+/** @param {string} groupId */
+export function getArenaGroupOrderVoteCountsByPosition(groupId) {
+  const positions = arenaMatchVoteData?.groupOrder?.[groupId];
+  if (!Array.isArray(positions)) return [new Map(), new Map(), new Map(), new Map()];
+  return positions.map((record) => arenaVoteCountsToMap(record));
+}
+
+/** @param {string} groupId */
+export function getArenaGroupThirdAdvanceVoteCounts(groupId) {
+  return arenaMatchVoteData?.groupThirdAdvance?.[groupId] ?? { yes: 0, no: 0 };
+}
+
+export function getArenaGeneralesVoteCountsBySlot() {
+  /** @type {Record<string, Map<string, { count: number, display: string }>>} */
+  const bySlot = Object.fromEntries(ARENA_GENERALES_VOTE_SLOT_KEYS.map((k) => [k, new Map()]));
+  const raw = arenaMatchVoteData?.generales;
+  if (!raw || typeof raw !== "object") return bySlot;
+  for (const key of ARENA_GENERALES_VOTE_SLOT_KEYS) {
+    const bucket = raw[key];
+    if (!bucket || typeof bucket !== "object") continue;
+    const map = new Map();
+    for (const [id, entry] of Object.entries(bucket)) {
+      if (!entry || typeof entry.count !== "number") continue;
+      map.set(id, { count: entry.count, display: entry.display || id });
+    }
+    bySlot[key] = map;
+  }
+  return bySlot;
 }
 
 

@@ -9,6 +9,11 @@ import {
   searchAdminUsers,
   deleteAdminUser,
   banAdminUser,
+  searchPredictions,
+  listArenaBackups,
+  exportArenaBackup,
+  restoreArenaBackupFile,
+  restoreArenaBackupUpload,
 } from "./api.js";
 import { initArenaSyncPoll, pullArenaSync } from "./arena-sync.js";
 import { setRemoteSyncActive } from "@shared/remote-sync-flags.js";
@@ -18,6 +23,8 @@ import {
   setArenaPushHandlers,
   setArenaLogout,
   setArenaAccountApi,
+  setArenaBackupApi,
+  setArenaSearchPredictions,
   bindArenaInteractionGuard,
 } from "@shared/arena-mode.js";
 import { saveSession } from "@shared/session.js";
@@ -51,6 +58,8 @@ async function bootstrap() {
       });
   });
 
+  setArenaSearchPredictions((q) => searchPredictions(q));
+
   setArenaAccountApi({
     deleteMyAccount: async () => {
       await deleteMyAccount();
@@ -66,6 +75,13 @@ async function bootstrap() {
       await banAdminUser(username);
       await pullArenaSync();
     },
+  });
+
+  setArenaBackupApi({
+    listBackups: () => listArenaBackups(),
+    exportBackup: () => exportArenaBackup(),
+    restoreBackupFile: (filename) => restoreArenaBackupFile(filename),
+    restoreBackupUpload: (payload) => restoreArenaBackupUpload(payload),
   });
 
   try {

@@ -1115,8 +1115,13 @@
               >
             </header>
             <p class="rule-lead">
-              El bonus funciona de la siguiente manera: si aciertas y tu opción era la menos votada entre las alternativas,
-              sumas <span class="group-preds-pt-badge group-preds-pt-badge--bonus">+1</span>.
+              Si aciertas el resultado (local, empate o visitante) y ese signo estaba entre las opciones
+              <strong>menos votadas</strong> del partido, sumas
+              <span class="group-preds-pt-badge group-preds-pt-badge--bonus">+1</span>.
+            </p>
+            <p class="rule-foot muted">
+              La minoría puede tener como máximo el <strong>25&nbsp;%</strong> de los votos confirmados en ese partido
+              (en 8 personas eso son 2 votos, como en la quiniela privada; con 2&nbsp;000 votos, ≤&nbsp;500).
             </p>
 
             <p class="rules-bono-sec-head">
@@ -1190,12 +1195,18 @@
                 <strong>7</strong> por ganador B, todos los que tienen <strong>2</strong> votos aplican
               </li>
               <li>
-                En el caso que haya un empate en 3 predicciones como menor votada (es decir, que haya 3 y 3 como menor),
-                <span class="rules-bono-no">NO</span> aplican para <span class="rules-bonus-rainbow-text">bonus</span>
+                Si la menor votación supera el tope del 25&nbsp;%,
+                <span class="rules-bono-no">NO</span> hay bono para nadie en ese partido
               </li>
               <li class="rules-subline">
-                Por ejemplo, si hay <strong>3</strong> votos por empate, <strong>3</strong> por ganador A y
-                <strong>7</strong> por ganador B, nadie aplica
+                Con <strong>8</strong> personas y <strong>2</strong>+<strong>2</strong>+<strong>4</strong>, la minoría
+                tiene 2 votos (25&nbsp;%) y sí puede haber bono. Con <strong>5</strong>+<strong>5</strong>+<strong>6</strong>
+                (16 votos) la minoría es 5 y supera el tope (4) → nadie aplica
+              </li>
+              <li class="rules-subline">
+                En Arena, con <strong>1&nbsp;000</strong> local, <strong>750</strong> visitante y <strong>200</strong>
+                empate (1&nbsp;950 votos), el tope es 25&nbsp;% = <strong>488</strong>: si el oficial es empate, quien
+                acertó empate puede llevarse el bono
               </li>
             </ul>
           </section>

@@ -1,4 +1,8 @@
-import { MATCH_SCORING, IMPROBABLE_BONUS } from "./scoring-rules.js";
+import {
+  MATCH_SCORING,
+  IMPROBABLE_BONUS,
+  getImprobableMinVoteCap,
+} from "./scoring-rules.js";
 
 /** @typedef {typeof MATCH_SCORING.group} MatchScoringSlice */
 
@@ -23,8 +27,44 @@ export function predictionOutcomeSign(pred) {
 }
 
 /**
- * Opción minoritaria “clara” en el recuento de un partido (regla bono improbable).
- * Empates entre fuerzas en el recuento → null.
+ * Bono improbable: el resultado oficial debe estar entre las opciones menos votadas
+ * y su recuento no puede superar el tope (2 en quinielas pequeñas; % del total en Arena).
+ * @param {("h"|"d"|"a")[]} votes
+ * @param {{ home: unknown, away: unknown }} officialScore
+ * @returns {"h"|"d"|"a"|null}
+ */
+export function getUniqueOfficialOutcomeBonusSign(votes, officialScore) {
+  const officialSign = predictionOutcomeSign(officialScore);
+  if (!officialSign) return null;
+  /** @type {{ h: number, d: number, a: number }} */
+  const c = { h: 0, d: 0, a: 0 };
+  for (const s of votes) {
+    if (s === "h" || s === "d" || s === "a") c[s] += 1;
+  }
+  const totalVotes = c.h + c.d + c.a;
+  if (totalVotes < 2) return null;
+  const withVotes = /** @type {Array<{ k: "h"|"d"|"a", n: number }>} */ (
+    [
+      { k: "h", n: c.h },
+      { k: "d", n: c.d },
+      { k: "a", n: c.a },
+    ].filter((x) => x.n > 0)
+  );
+  if (withVotes.length < 2) return null;
+  if ((c[officialSign] ?? 0) <= 0) return null;
+
+  const minN = Math.min(...withVotes.map((x) => x.n));
+  const minVoteCap = getImprobableMinVoteCap(totalVotes);
+  if (minN > minVoteCap) return null;
+
+  const minTier = withVotes.filter((x) => x.n === minN).map((x) => x.k);
+  if (minTier.length < 1) return null;
+  return minTier.includes(officialSign) ? officialSign : null;
+}
+
+/**
+ * @deprecated Usar getUniqueOfficialOutcomeBonusSign (incluye resultado oficial y tope escalado).
+ * Opción minoritaria “clara” en el recuento de un partido.
  * @param {("h"|"d"|"a")[]} votes
  * @returns {"h"|"d"|"a"|null}
  */

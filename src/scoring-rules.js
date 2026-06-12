@@ -109,6 +109,18 @@ export const MATCH_SCORING = {
 
 export const IMPROBABLE_BONUS = 1;
 
+/**
+ * Tope de votos en la opción menos votada para que pueda haber bono improbable.
+ * En 8 personas el tope era 2 → 2/8 = 25%. Misma proporción con cualquier tamaño.
+ */
+export const IMPROBABLE_MINORITY_MAX_SHARE = 0.25;
+
+/** @param {number} totalVotes */
+export function getImprobableMinVoteCap(totalVotes) {
+  if (totalVotes < 2) return 0;
+  return Math.max(2, Math.ceil(totalVotes * IMPROBABLE_MINORITY_MAX_SHARE));
+}
+
 /** Normaliza nombres de premios para comparar aciertos. */
 export function normalizeAwardText(s) {
   return String(s ?? "")
