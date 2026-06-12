@@ -113,19 +113,23 @@ export function mergePredictionsFromRemote(map) {
 export function hydratePredictionsFromRemote(map) {
   if (isArenaMode()) {
     const arenaUserId = getArenaUserId();
-    const keepMineRemote =
-      arenaUserId && !isArenaPrivadasMirrorUser()
-        ? normalizePredictionsData(predictionsRemoteMap[arenaUserId])
-        : null;
+    /** Solo conservar en memoria si ya había predicciones cargadas (p. ej. cambios locales pendientes de sync). */
+    const hadLocalMine =
+      Boolean(arenaUserId) &&
+      !isArenaPrivadasMirrorUser() &&
+      Object.prototype.hasOwnProperty.call(predictionsRemoteMap, arenaUserId);
+    const keepMineRemote = hadLocalMine
+      ? normalizePredictionsData(predictionsRemoteMap[arenaUserId])
+      : null;
     const src = map && typeof map === "object" ? map : {};
     /** @type {string[]} */
     const ids = Object.keys(src);
-    if (arenaUserId && keepMineRemote && !src[arenaUserId]) {
+    if (arenaUserId && hadLocalMine && !src[arenaUserId]) {
       ids.push(arenaUserId);
     }
     resetArenaLoadedPredictionIds(ids);
     mergePredictionsFromRemote(src);
-    if (arenaUserId && keepMineRemote) {
+    if (arenaUserId && hadLocalMine && keepMineRemote) {
       predictionsRemoteMap[arenaUserId] = keepMineRemote;
       arenaLoadedParticipantIds.add(arenaUserId);
     }
