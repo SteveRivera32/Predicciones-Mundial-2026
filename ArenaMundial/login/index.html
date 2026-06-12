@@ -62,9 +62,23 @@
           </p>
           <button type="submit" class="btn btn-primary" id="login-submit">Entrar</button>
         </form>
+        <p id="auth-device-bound-hint" class="auth-hint auth-hint--device" hidden></p>
+        <div id="auth-device-recovery" class="auth-device-recovery" hidden>
+          <p class="auth-hint">¿No recuerdas tu contraseña?</p>
+          <button type="button" id="btn-delete-device-account" class="btn btn-sm auth-delete-device-btn">
+            Borrar la cuenta de este dispositivo
+          </button>
+          <p class="auth-hint auth-hint--privacy">
+            Solo puedes borrar la cuenta creada aquí. Después podrás registrarte de nuevo con otro usuario.
+          </p>
+        </div>
       </section>
 
       <section id="panel-register" class="auth-panel" aria-labelledby="auth-heading" hidden>
+        <div id="register-device-blocked" class="auth-notice auth-notice--warning" role="note" hidden>
+          Este dispositivo ya tiene una cuenta. No puedes crear otra aquí; entra con tu contraseña o bórrala desde
+          <button type="button" class="auth-inline-link" id="register-go-login-delete">Entrar</button>.
+        </div>
         <form id="register-form" class="auth-form">
           <label class="field">
             <span>Usuario <span class="field-limit">(3–20 caracteres: minúsculas, números o _)</span></span>

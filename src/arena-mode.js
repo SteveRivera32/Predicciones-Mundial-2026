@@ -248,11 +248,11 @@ export function arenaAdminDeleteUser(username) {
 
 
 
-/** 13 jul 2026 23:59 hora Ciudad de México. */
+/** 13 jun 2026 23:59 hora Ciudad de México. */
 
 export function arenaGeneralesGroupsDeadlineMs() {
 
-  return Date.parse("2026-07-13T23:59:00-06:00");
+  return Date.parse("2026-06-13T23:59:00-06:00");
 
 }
 
@@ -261,6 +261,106 @@ export function arenaGeneralesGroupsDeadlineMs() {
 export function isArenaGeneralesAndGroupsLocked() {
 
   return Date.now() >= arenaGeneralesGroupsDeadlineMs();
+
+}
+
+
+
+/** Etiqueta legible de la fecha tope (13 jun 2026 23:59 CDMX). */
+
+export function arenaGeneralesGroupsDeadlineDateLabelSpanish() {
+
+  return new Intl.DateTimeFormat("es-MX", {
+
+    timeZone: "America/Mexico_City",
+
+    day: "numeric",
+
+    month: "long",
+
+    hour: "numeric",
+
+    minute: "2-digit",
+
+    hour12: false,
+
+  }).format(new Date(arenaGeneralesGroupsDeadlineMs()));
+
+}
+
+
+
+/** @param {number} [nowMs] */
+
+function joinSpanishCountdownParts(parts) {
+
+  if (parts.length === 0) return "";
+
+  if (parts.length === 1) return parts[0];
+
+  if (parts.length === 2) return `${parts[0]} y ${parts[1]}`;
+
+  return `${parts.slice(0, -1).join(", ")} y ${parts[parts.length - 1]}`;
+
+}
+
+
+
+/** Texto «Faltan …» hasta el cierre; `null` si ya pasó la fecha tope. @param {number} [nowMs] */
+
+export function formatArenaGeneralesGroupsCountdown(nowMs = Date.now()) {
+
+  const remaining = arenaGeneralesGroupsDeadlineMs() - nowMs;
+
+  if (remaining <= 0) return null;
+
+  const totalSec = Math.floor(remaining / 1000);
+
+  const days = Math.floor(totalSec / 86400);
+
+  const hours = Math.floor((totalSec % 86400) / 3600);
+
+  const minutes = Math.floor((totalSec % 3600) / 60);
+
+  const seconds = totalSec % 60;
+
+  if (days >= 1) {
+
+    const parts = [days === 1 ? "1 día" : `${days} días`];
+
+    if (hours > 0) parts.push(hours === 1 ? "1 hora" : `${hours} horas`);
+
+    if (minutes > 0) parts.push(minutes === 1 ? "1 minuto" : `${minutes} minutos`);
+
+    return `Faltan ${joinSpanishCountdownParts(parts)}`;
+
+  }
+
+  if (hours >= 1) {
+
+    const parts = [hours === 1 ? "1 hora" : `${hours} horas`];
+
+    if (minutes > 0) parts.push(minutes === 1 ? "1 minuto" : `${minutes} minutos`);
+
+    parts.push(seconds === 1 ? "1 segundo" : `${seconds} segundos`);
+
+    return `Faltan ${joinSpanishCountdownParts(parts)}`;
+
+  }
+
+  if (minutes >= 1) {
+
+    return `Faltan ${joinSpanishCountdownParts([
+
+      minutes === 1 ? "1 minuto" : `${minutes} minutos`,
+
+      seconds === 1 ? "1 segundo" : `${seconds} segundos`,
+
+    ])}`;
+
+  }
+
+  return seconds === 1 ? "Falta 1 segundo" : `Faltan ${seconds} segundos`;
 
 }
 

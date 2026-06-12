@@ -3635,6 +3635,20 @@ span.td-muted {
   background: rgba(199, 146, 234, 0.1);
 }
 
+.arena-deadline-countdown {
+  border-color: color-mix(in srgb, var(--danger) 72%, var(--border));
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: color-mix(in srgb, var(--danger) 88%, #fff);
+}
+
+.arena-deadline-countdown__timer {
+  display: block;
+  margin-top: 0.35rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--danger);
+}
+
 .generales-award-slot {
   margin: 0;
   padding: 0.65rem 0.75rem;

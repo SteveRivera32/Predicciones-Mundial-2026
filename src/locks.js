@@ -17,7 +17,7 @@ export function getAllTournamentMatchesWithKickoff() {
   return [...GROUP_MATCHES, ...getKnockoutMatchesFlat()];
 }
 
-/** Predicciones generales y orden de grupos: en Arena, tope el 13 jul 23:59 CDMX; en privada, al primer kickoff. */
+/** Predicciones generales y orden de grupos: en Arena, tope el 13 jun 23:59 CDMX; en privada, al primer kickoff. */
 export function isAnyTournamentMatchKickoffLocked() {
   if (isArenaMode()) return isArenaGeneralesAndGroupsLocked();
   return getAllTournamentMatchesWithKickoff().some((m) => isLockedAtKickoff(m.kickoff));

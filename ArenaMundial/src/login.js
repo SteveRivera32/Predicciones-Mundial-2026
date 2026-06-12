@@ -1,6 +1,7 @@
 import "./styles/login.css";
-import { login, register } from "./api.js";
+import { login, register, getDeviceBinding, deleteDeviceAccount } from "./api.js";
 import { redirectIfAuthenticated } from "./auth-client.js";
+import { getArenaDeviceId } from "./device-id.js";
 
 const PASSWORD_LEN = 8;
 const USERNAME_MIN = 3;
@@ -20,6 +21,22 @@ const authHeading = $("#auth-heading");
 const authSub = $("#auth-sub");
 const errorEl = $("#auth-error");
 const loginUsername = $("#login-username");
+const deviceBoundHint = $("#auth-device-bound-hint");
+const deviceRecovery = $("#auth-device-recovery");
+const deleteDeviceBtn = $("#btn-delete-device-account");
+const registerDeviceBlocked = $("#register-device-blocked");
+const registerGoLoginDelete = $("#register-go-login-delete");
+
+/** @type {{ bound: boolean, username?: string, displayName?: string, isPrivadas?: boolean } | null} */
+let deviceBinding = null;
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 function showError(msg) {
   if (!errorEl) return;
@@ -28,7 +45,7 @@ function showError(msg) {
 }
 
 function setSubmitting(active) {
-  for (const btn of [$("#login-submit"), $("#register-submit")]) {
+  for (const btn of [$("#login-submit"), $("#register-submit"), deleteDeviceBtn]) {
     if (!btn) continue;
     btn.disabled = active;
     btn.setAttribute("aria-busy", active ? "true" : "false");
@@ -77,7 +94,69 @@ function restoreUsername() {
   }
 }
 
+function isDeviceAccountBound() {
+  return deviceBinding?.bound === true;
+}
+
+function applyDeviceBindingUi() {
+  const bound = isDeviceAccountBound();
+  const username = deviceBinding?.username ?? "";
+  const displayName = deviceBinding?.displayName ?? username;
+  const isPrivadas = deviceBinding?.isPrivadas === true;
+
+  if (tabRegister) {
+    tabRegister.disabled = bound;
+    tabRegister.classList.toggle("auth-tab--disabled", bound);
+    tabRegister.title = bound ? "Este dispositivo ya tiene una cuenta" : "";
+  }
+
+  if (deviceBoundHint) {
+    if (bound) {
+      const namePart =
+        displayName && displayName.toLowerCase() !== username.toLowerCase()
+          ? ` (<strong>${escapeHtml(displayName)}</strong>)`
+          : "";
+      deviceBoundHint.hidden = false;
+      deviceBoundHint.innerHTML = `En este dispositivo ya hay una cuenta: <strong>${escapeHtml(username)}</strong>${namePart}. Entra con tu contraseña o bórrala si no la recuerdas.`;
+      if (loginUsername && !loginUsername.value) loginUsername.value = username;
+    } else {
+      deviceBoundHint.hidden = true;
+      deviceBoundHint.textContent = "";
+    }
+  }
+
+  if (deviceRecovery) {
+    deviceRecovery.hidden = !bound || isPrivadas;
+  }
+
+  if (registerDeviceBlocked) {
+    registerDeviceBlocked.hidden = !bound;
+  }
+
+  const registerSubmit = $("#register-submit");
+  if (registerSubmit) registerSubmit.disabled = bound;
+}
+
+async function refreshDeviceBinding() {
+  const deviceId = getArenaDeviceId();
+  if (!deviceId) {
+    deviceBinding = null;
+    applyDeviceBindingUi();
+    return;
+  }
+  try {
+    deviceBinding = await getDeviceBinding(deviceId);
+  } catch {
+    deviceBinding = null;
+  }
+  applyDeviceBindingUi();
+}
+
 function setMode(mode) {
+  if (mode === "register" && isDeviceAccountBound()) {
+    showError("Este dispositivo ya tiene una cuenta. Entra con tu contraseña o bórrala si no la recuerdas.");
+    mode = "login";
+  }
   const isLogin = mode === "login";
   if (panelLogin) panelLogin.hidden = !isLogin;
   if (panelRegister) panelRegister.hidden = isLogin;
@@ -89,14 +168,23 @@ function setMode(mode) {
   if (authSub) {
     authSub.textContent = isLogin
       ? "Accede con tu usuario y contraseña de 8 caracteres. Si juegas la quiniela privada, usa el mismo usuario y PIN."
-      : "Elige un usuario único y una contraseña de exactamente 8 caracteres.";
+      : "Elige un usuario único y una contraseña de exactamente 8 caracteres. Solo una cuenta por dispositivo.";
   }
   showError("");
   (isLogin ? form : registerForm)?.querySelector("input")?.focus();
 }
 
 tabLogin?.addEventListener("click", () => setMode("login"));
-tabRegister?.addEventListener("click", () => setMode("register"));
+tabRegister?.addEventListener("click", () => {
+  if (isDeviceAccountBound()) {
+    showError("Este dispositivo ya tiene una cuenta. Entra con tu contraseña o bórrala si no la recuerdas.");
+    setMode("login");
+    return;
+  }
+  setMode("register");
+});
+
+registerGoLoginDelete?.addEventListener("click", () => setMode("login"));
 
 function bindPasswordToggles() {
   document.querySelectorAll(".password-toggle").forEach((btn) => {
@@ -132,9 +220,14 @@ form?.addEventListener("submit", async (e) => {
     showError(`La contraseña debe tener exactamente ${PASSWORD_LEN} caracteres.`);
     return;
   }
+  const deviceId = getArenaDeviceId();
+  if (!deviceId) {
+    showError("No se pudo identificar este dispositivo. Prueba otro navegador o desactiva el bloqueo de almacenamiento.");
+    return;
+  }
   setSubmitting(true);
   try {
-    await login(username, password);
+    await login(username, password, deviceId);
     rememberUsername(username);
     const params = new URLSearchParams(location.search);
     location.href = params.get("next") || "/ArenaMundial/app/";
@@ -171,12 +264,22 @@ registerForm?.addEventListener("submit", async (e) => {
     showError("Las contraseñas no coinciden");
     return;
   }
+  if (isDeviceAccountBound()) {
+    showError("Este dispositivo ya tiene una cuenta.");
+    return;
+  }
+  const deviceId = getArenaDeviceId();
+  if (!deviceId) {
+    showError("No se pudo identificar este dispositivo. Prueba otro navegador o desactiva el bloqueo de almacenamiento.");
+    return;
+  }
   setSubmitting(true);
   try {
     await register({
       username,
       displayName,
       password,
+      deviceId,
     });
     rememberUsername(username);
     location.href = "/ArenaMundial/app/";
@@ -187,9 +290,63 @@ registerForm?.addEventListener("submit", async (e) => {
   }
 });
 
-void redirectIfAuthenticated().then((redirected) => {
+deleteDeviceBtn?.addEventListener("click", async () => {
+  if (!isDeviceAccountBound() || !deviceBinding?.username) return;
+  const { username, displayName } = deviceBinding;
+  const label =
+    displayName && displayName.toLowerCase() !== username.toLowerCase()
+      ? `${username} (${displayName})`
+      : username;
+  if (
+    !confirm(
+      `¿Borrar la cuenta «${label}» de este dispositivo?\n\nSe perderán todas tus predicciones. No se puede deshacer.`,
+    )
+  ) {
+    return;
+  }
+  if (!confirm("Última confirmación: ¿seguro que quieres borrar esta cuenta?")) {
+    return;
+  }
+  const deviceId = getArenaDeviceId();
+  if (!deviceId) {
+    showError("No se pudo identificar este dispositivo.");
+    return;
+  }
+  setSubmitting(true);
+  showError("");
+  try {
+    await deleteDeviceAccount(deviceId, username);
+    try {
+      localStorage.removeItem(USERNAME_KEY);
+    } catch {
+      /* ignore */
+    }
+    if (loginUsername) loginUsername.value = "";
+    if (form) form.reset();
+    if (registerForm) registerForm.reset();
+    await refreshDeviceBinding();
+    setMode("login");
+    showError("");
+    if (deviceBoundHint) {
+      deviceBoundHint.hidden = false;
+      deviceBoundHint.textContent = "Cuenta borrada. Ya puedes registrarte de nuevo en este dispositivo.";
+      deviceBoundHint.classList.add("auth-hint--device-ok");
+      window.setTimeout(() => {
+        deviceBoundHint.classList.remove("auth-hint--device-ok");
+        applyDeviceBindingUi();
+      }, 5000);
+    }
+  } catch (err) {
+    await handleAuthError(err);
+  } finally {
+    setSubmitting(false);
+  }
+});
+
+void redirectIfAuthenticated().then(async (redirected) => {
   if (!redirected) {
     restoreUsername();
+    await refreshDeviceBinding();
     setMode("login");
   }
 });

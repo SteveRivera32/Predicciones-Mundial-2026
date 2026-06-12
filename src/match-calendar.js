@@ -60,6 +60,7 @@ export function daysUntilKickoffLocal(isoKickoff) {
 }
 
 /**
+ * Hora local del navegador (zona horaria del equipo del usuario).
  * @param {string} isoKickoff
  */
 export function formatKickoffLongSpanish(isoKickoff) {
@@ -76,7 +77,7 @@ export function formatKickoffLongSpanish(isoKickoff) {
 }
 
 /**
- * Fecha/hora compacta para esquina de tarjeta.
+ * Fecha/hora compacta para esquina de tarjeta (hora local del equipo del usuario).
  * @param {string} isoKickoff
  */
 export function formatKickoffShortSpanish(isoKickoff) {

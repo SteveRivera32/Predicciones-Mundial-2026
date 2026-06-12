@@ -40,6 +40,9 @@ import {
   isArenaAdmin,
   getArenaUser,
   arenaGeneralesGroupsDeadlineMs,
+  arenaGeneralesGroupsDeadlineDateLabelSpanish,
+  formatArenaGeneralesGroupsCountdown,
+  isArenaGeneralesAndGroupsLocked,
   arenaLogout,
   arenaDeleteMyAccount,
   arenaSearchUsers,
@@ -2265,6 +2268,86 @@ function scheduleArenaGeneralesDeadlineRefresh(onDeadline) {
   }, delay + 100);
 }
 
+/** @type {ReturnType<typeof setInterval> | null} */
+let arenaDeadlineCountdownInterval = null;
+
+function arenaDeadlineCountdownOpen() {
+  return isArenaMode() && !isArenaGeneralesAndGroupsLocked();
+}
+
+function arenaDeadlineCountdownBannerHtml() {
+  const label = arenaGeneralesGroupsDeadlineDateLabelSpanish();
+  const countdown = formatArenaGeneralesGroupsCountdown();
+  if (!countdown) return "";
+  return `<p class="arena-deadline-countdown generales-locked-banner" role="status" data-arena-deadline-countdown>
+    Las predicciones cierran el <strong>${escapeHtml(label)}</strong> (hora CDMX).
+    <span class="arena-deadline-countdown__timer" data-arena-deadline-countdown-timer aria-live="polite">${escapeHtml(countdown)}</span>
+  </p>`;
+}
+
+function syncArenaDeadlineCountdownTimers() {
+  const text = formatArenaGeneralesGroupsCountdown();
+  document.querySelectorAll("[data-arena-deadline-countdown-timer]").forEach((el) => {
+    el.textContent = text ?? "";
+  });
+  if (!text) {
+    document.querySelectorAll("[data-arena-deadline-countdown]").forEach((el) => el.remove());
+    if (arenaDeadlineCountdownInterval != null) {
+      window.clearInterval(arenaDeadlineCountdownInterval);
+      arenaDeadlineCountdownInterval = null;
+    }
+  }
+}
+
+function scheduleArenaDeadlineCountdownInterval() {
+  if (!arenaDeadlineCountdownOpen()) {
+    if (arenaDeadlineCountdownInterval != null) {
+      window.clearInterval(arenaDeadlineCountdownInterval);
+      arenaDeadlineCountdownInterval = null;
+    }
+    return;
+  }
+  if (arenaDeadlineCountdownInterval != null) return;
+  arenaDeadlineCountdownInterval = window.setInterval(() => {
+    syncArenaDeadlineCountdownTimers();
+    if (!formatArenaGeneralesGroupsCountdown()) {
+      refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true });
+    }
+  }, 1000);
+}
+
+/** @param {ParentNode} host @param {Element | null} [insertBefore] */
+function ensureArenaDeadlineCountdown(host, insertBefore = null) {
+  if (!host) return;
+  if (!arenaDeadlineCountdownOpen()) {
+    host.querySelector("[data-arena-deadline-countdown]")?.remove();
+    return;
+  }
+  let banner = host.querySelector("[data-arena-deadline-countdown]");
+  if (!banner) {
+    const wrap = document.createElement("div");
+    wrap.innerHTML = arenaDeadlineCountdownBannerHtml();
+    banner = wrap.firstElementChild;
+    if (banner) {
+      if (insertBefore) host.insertBefore(banner, insertBefore);
+      else host.appendChild(banner);
+    }
+  }
+  const timer = banner?.querySelector("[data-arena-deadline-countdown-timer]");
+  if (timer) timer.textContent = formatArenaGeneralesGroupsCountdown() ?? "";
+  scheduleArenaDeadlineCountdownInterval();
+}
+
+function syncArenaGruposPanelCountdown() {
+  const panel = $("#panel-grupos");
+  if (!panel) return;
+  const anchor =
+    panel.querySelector("#group-third-limit-msg") ??
+    panel.querySelector(".fase-grupos-toolbar") ??
+    panel.querySelector("#grupos-wrap");
+  ensureArenaDeadlineCountdown(panel, anchor);
+}
+
 function bindSessionChange(handler) {
   $("#btn-cambiar-sesion").addEventListener("click", () => {
     if (isArenaMode()) {
@@ -3503,10 +3586,11 @@ function renderGenerales(participantId, predictions, disabled) {
         : `<p class="generales-locked-banner muted" role="status">Un administrador ha <strong>bloqueado</strong> esta pestaña: no puedes cambiar el podio ni los premios individuales hasta que lo desbloqueen.</p>`
       : isAnyTournamentMatchKickoffLocked()
         ? isArenaMode()
-          ? `<p class="generales-locked-banner muted" role="status">Las predicciones generales están <strong>cerradas</strong> desde el 13 de julio a las 23:59 (hora CDMX).</p>`
+          ? `<p class="generales-locked-banner muted" role="status">Las predicciones generales están <strong>cerradas</strong> desde el ${escapeHtml(arenaGeneralesGroupsDeadlineDateLabelSpanish())} (hora CDMX).</p>`
           : `<p class="generales-locked-banner muted" role="status">Las predicciones generales están <strong>cerradas</strong>: ya comenzó al menos un partido del torneo.</p>`
         : "";
 
+  const countdownBanner = arenaDeadlineCountdownOpen() ? arenaDeadlineCountdownBannerHtml() : "";
   const canToggleUserConfirm = !disabled && !officialLocked && !generalesPredictionsFormLocked();
   const isUserGeneralComplete = isGeneralPayloadComplete(g);
   const userConfirmActionsHtml = canToggleUserConfirm
@@ -3521,9 +3605,11 @@ function renderGenerales(participantId, predictions, disabled) {
         }</span>
       </div>`
     : "";
-  form.innerHTML = `${arenaPrivadasReadOnlyBannerHtml()}${lockBanner}
+  form.innerHTML = `${arenaPrivadasReadOnlyBannerHtml()}${countdownBanner}${lockBanner}
     ${generalesFullFormInnerHtml(g, formDisabled)}
     ${userConfirmActionsHtml}`;
+
+  if (countdownBanner) scheduleArenaDeadlineCountdownInterval();
 
   for (const key of ["first", "second", "third", "bestPlayer", "bestGk", "topScorer"]) {
     const el = form.querySelector(`[name="${key}"]`);
@@ -3751,6 +3837,7 @@ function wireGroupOrderMobilePickers(ol) {
 }
 
 function renderGrupos(participantId, predictions) {
+  syncArenaGruposPanelCountdown();
   const wrap = $("#grupos-wrap");
   wrap.innerHTML = "";
   const thirdMsg = $("#group-third-limit-msg");
@@ -3896,7 +3983,7 @@ function renderGrupos(participantId, predictions) {
         orderWrap.innerHTML += `<p class="muted">Bloqueado por administración.</p>`;
       } else if (orderKickoffLocked) {
         orderWrap.innerHTML += isArenaMode()
-          ? `<p class="muted">Cerrado desde el 13 de julio a las 23:59 (hora CDMX).</p>`
+          ? `<p class="muted">Cerrado desde el ${escapeHtml(arenaGeneralesGroupsDeadlineDateLabelSpanish())} (hora CDMX).</p>`
           : `<p class="muted">Cerrado: ya comenzó al menos un partido del torneo.</p>`;
       }
     } else {
@@ -10231,6 +10318,13 @@ function refreshAll(session, opts = {}) {
     : () => refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true });
   scheduleKickoffLockRefresh(onTimedLockRefresh);
   scheduleArenaGeneralesDeadlineRefresh(onTimedLockRefresh);
+  if (!arenaDeadlineCountdownOpen()) {
+    document.querySelectorAll("[data-arena-deadline-countdown]").forEach((el) => el.remove());
+    if (arenaDeadlineCountdownInterval != null) {
+      window.clearInterval(arenaDeadlineCountdownInterval);
+      arenaDeadlineCountdownInterval = null;
+    }
+  }
 }
 
 export function initApp() {

@@ -65,6 +65,14 @@ export function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_chat_messages_id ON chat_messages(id);
     CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON chat_messages(created_at);
+
+    CREATE TABLE IF NOT EXISTS device_bindings (
+      device_id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      bound_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_device_bindings_user ON device_bindings(user_id);
   `);
 
   db.exec(`
@@ -229,6 +237,31 @@ export function deleteUserById(userId) {
   }
   getDb().prepare("DELETE FROM users WHERE id = ?").run(userId);
   return { ok: true, username: user.username };
+}
+
+/** @param {string} deviceId */
+export function getDeviceBindingByDeviceId(deviceId) {
+  return (
+    getDb()
+      .prepare(
+        `SELECT db.device_id, db.user_id, u.username, u.display_name, u.is_privadas
+         FROM device_bindings db
+         JOIN users u ON u.id = db.user_id
+         WHERE db.device_id = ?`,
+      )
+      .get(deviceId) ?? null
+  );
+}
+
+/** @param {string} deviceId @param {number} userId */
+export function bindDeviceToUser(deviceId, userId) {
+  getDb()
+    .prepare(
+      `INSERT INTO device_bindings (device_id, user_id)
+       VALUES (?, ?)
+       ON CONFLICT(device_id) DO UPDATE SET user_id = excluded.user_id, bound_at = datetime('now')`,
+    )
+    .run(deviceId, userId);
 }
 
 /**

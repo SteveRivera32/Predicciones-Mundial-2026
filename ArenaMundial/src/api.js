@@ -27,10 +27,10 @@ export function getMe() {
   return apiFetch("/auth/me");
 }
 
-export function login(username, password) {
+export function login(username, password, deviceId) {
   return apiFetch("/auth/login", {
     method: "POST",
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, deviceId }),
   });
 }
 
@@ -38,6 +38,17 @@ export function register(payload) {
   return apiFetch("/auth/register", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export function getDeviceBinding(deviceId) {
+  return apiFetch(`/auth/device-binding?deviceId=${encodeURIComponent(String(deviceId ?? ""))}`);
+}
+
+export function deleteDeviceAccount(deviceId, username) {
+  return apiFetch("/auth/delete-device-account", {
+    method: "POST",
+    body: JSON.stringify({ deviceId, username }),
   });
 }
 

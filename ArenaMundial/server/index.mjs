@@ -28,6 +28,8 @@ import {
   isPrivadasUser,
   deleteUserById,
   searchUsersByQuery,
+  getDeviceBindingByDeviceId,
+  bindDeviceToUser,
 } from "./db.mjs";
 import {
   sanitizeChatBody,
@@ -85,7 +87,77 @@ function usernameValid(s) {
   return /^[a-z0-9_]{3,20}$/.test(s);
 }
 
+function deviceIdValid(s) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(s ?? ""),
+  );
+}
+
 // ── Auth ────────────────────────────────────────────────────────────────────
+
+app.get("/api/arena/auth/device-binding", authTrafficGuard, (req, res) => {
+  const deviceId = String(req.query.deviceId ?? "").trim();
+  if (!deviceIdValid(deviceId)) {
+    res.status(400).json({ error: "identificador de dispositivo inválido" });
+    return;
+  }
+  const binding = getDeviceBindingByDeviceId(deviceId);
+  if (!binding) {
+    res.json({ bound: false });
+    return;
+  }
+  res.json({
+    bound: true,
+    username: binding.username,
+    displayName: binding.display_name,
+    isPrivadas: Boolean(binding.is_privadas),
+  });
+});
+
+app.post("/api/arena/auth/delete-device-account", authTrafficGuard, (req, res) => {
+  const deviceId = String(req.body?.deviceId ?? "").trim();
+  const username = String(req.body?.username ?? "")
+    .trim()
+    .toLowerCase();
+  if (!deviceIdValid(deviceId)) {
+    res.status(400).json({ error: "identificador de dispositivo inválido" });
+    return;
+  }
+  if (!usernameValid(username)) {
+    res.status(400).json({ error: "usuario inválido" });
+    return;
+  }
+  const binding = getDeviceBindingByDeviceId(deviceId);
+  if (!binding) {
+    res.status(404).json({ error: "no hay cuenta registrada en este dispositivo" });
+    return;
+  }
+  const user = findUserByUsername(username);
+  if (!user || user.id !== binding.user_id) {
+    res.status(403).json({ error: "el usuario no coincide con la cuenta de este dispositivo" });
+    return;
+  }
+  if (isPrivadasUser(user.id)) {
+    res.status(403).json({
+      error: "cuenta espejo de la quiniela privada; no se puede eliminar desde Arena",
+    });
+    return;
+  }
+  const result = deleteUserById(user.id);
+  if (!result.ok) {
+    if (result.error === "last_admin") {
+      res.status(403).json({
+        error: "eres el último administrador; pide a otro admin que te sustituya antes de borrarte",
+      });
+      return;
+    }
+    res.status(404).json({ error: "usuario no encontrado" });
+    return;
+  }
+  clearAuthCookie(res);
+  invalidateSharedCache();
+  res.json({ ok: true, username: result.username });
+});
 
 app.post("/api/arena/auth/register", authTrafficGuard, async (req, res) => {
   try {
@@ -98,6 +170,19 @@ app.post("/api/arena/auth/register", authTrafficGuard, async (req, res) => {
       .toLowerCase();
     const password = String(req.body?.password ?? "");
     const displayNameRaw = String(req.body?.displayName ?? "").trim();
+    const deviceId = String(req.body?.deviceId ?? "").trim();
+
+    if (!deviceIdValid(deviceId)) {
+      res.status(400).json({ error: "no se pudo identificar este dispositivo; recarga la página" });
+      return;
+    }
+    const deviceBinding = getDeviceBindingByDeviceId(deviceId);
+    if (deviceBinding) {
+      res.status(409).json({
+        error: `este dispositivo ya tiene la cuenta «${deviceBinding.username}»; entra con tu contraseña o bórrala desde el login`,
+      });
+      return;
+    }
 
     if (!usernameValid(username)) {
       res.status(400).json({ error: "usuario: 3–20 caracteres, letras, números o _" });
@@ -134,6 +219,7 @@ app.post("/api/arena/auth/register", authTrafficGuard, async (req, res) => {
       displayName,
       isAdmin: isFirstUser,
     });
+    bindDeviceToUser(deviceId, user.id);
     const token = signToken(user);
     setAuthCookie(res, token);
     res.status(201).json({ ok: true, user: publicUser(user) });
@@ -156,6 +242,10 @@ app.post("/api/arena/auth/login", authTrafficGuard, async (req, res) => {
   if (!user || !(await verifyPassword(password, user.password_hash))) {
     res.status(401).json({ error: "usuario o contraseña incorrectos" });
     return;
+  }
+  const deviceId = String(req.body?.deviceId ?? "").trim();
+  if (deviceIdValid(deviceId) && !getDeviceBindingByDeviceId(deviceId)) {
+    bindDeviceToUser(deviceId, user.id);
   }
   const token = signToken(user);
   setAuthCookie(res, token);
