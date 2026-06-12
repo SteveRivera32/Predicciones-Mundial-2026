@@ -56,6 +56,7 @@ import {
   arenaAdminRestoreBackupFile,
   arenaAdminRestoreBackupUpload,
   isArenaInteractionPaused,
+  bumpArenaInteraction,
   scheduleArenaDeferredRefresh,
   getArenaServerRankings,
   arenaSearchPredictions,
@@ -4207,6 +4208,7 @@ function wireGroupOrderMobilePickers(ol) {
       closeAllGroupOrderPickerLists(willOpen ? wrap : null);
       list.hidden = !willOpen;
       trigger.setAttribute("aria-expanded", willOpen ? "true" : "false");
+      if (willOpen && isArenaMode()) bumpArenaInteraction(12000);
     });
 
     list.addEventListener("click", (e) => {
@@ -10404,9 +10406,19 @@ function refreshArenaRemoteLight() {
   if (tab === "final-ranking") renderFinalRanking(session);
 }
 
+function hasOpenGroupOrderPicker() {
+  return [...document.querySelectorAll(".group-order-combobox__list")].some(
+    (list) => list instanceof HTMLElement && !list.hidden,
+  );
+}
+
+function shouldDeferArenaPredictionRefresh() {
+  return isArenaInteractionPaused() || hasOpenGroupOrderPicker();
+}
+
 /** Arena: refresco de bloqueos (kickoff / fecha tope) cuando el usuario no está interactuando. */
 function refreshArenaPanelsIfIdle() {
-  if (isArenaInteractionPaused()) {
+  if (shouldDeferArenaPredictionRefresh()) {
     scheduleArenaDeferredRefresh(refreshArenaPanelsIfIdle);
     return;
   }
@@ -10601,7 +10613,7 @@ export function initApp() {
 
   function queueRefreshAfterExternalSync() {
     if (isArenaMode()) {
-      refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true });
+      scheduleArenaDeferredRefresh(refreshArenaPanelsIfIdle);
       return;
     }
     externalSyncRefreshChain = externalSyncRefreshChain
