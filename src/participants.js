@@ -7,6 +7,7 @@
  */
 
 import { isRemoteSyncActive } from "./remote-sync-flags.js";
+import { isArenaMode, isArenaAdmin, getArenaUserId, getArenaUser } from "./arena-mode.js";
 import { prunePredictionsToParticipantIds } from "./predictions-store.js";
 import { pushParticipants } from "./sync-push.js";
 import { clearPinVerifiedForParticipant } from "./session.js";
@@ -20,6 +21,7 @@ export const BUILTIN_PARTICIPANTS = [
   { id: "akinian", name: "Akinian", pin: "pene9935" },
   { id: "ale", name: "Ale", pin: "jimmd237" },
   { id: "jonny", name: "Jonny", pin: "culo2104" },
+  { id: "porky", name: "Porky", pin: "pmoe0192" },
 ];
 
 /**
@@ -133,6 +135,19 @@ let localParticipantsList = [];
 
 /** Id principal del participante administrador mostrado en UI. */
 export const ADMIN_PARTICIPANT_ID = "admin";
+
+/** Participantes de la quiniela privada que compiten (sin la cuenta técnica admin). */
+export function getPrivadasArenaMirrorParticipants() {
+  return BUILTIN_PARTICIPANTS.filter(
+    (p) => p.id !== ADMIN_PARTICIPANT_ID && p.pin != null && String(p.pin).length > 0,
+  ).map((p) => ({ id: p.id, name: p.name, pin: String(p.pin) }));
+}
+
+/** Usuario reservado para la quiniela privada (no registrable en Arena). */
+export function isPrivadasArenaMirrorId(id) {
+  const key = String(id ?? "").trim().toLowerCase();
+  return getPrivadasArenaMirrorParticipants().some((p) => p.id.toLowerCase() === key);
+}
 /** Administradores con permisos sobre resultados oficiales/Ajustes. */
 const OFFICIAL_RESULTS_ADMIN_IDS = new Set(["tivo", "admin"]);
 /** Super-admin de pruebas: además puede editar predicciones de todos y forzar cruces sin definir. */
@@ -194,6 +209,17 @@ function pinPairsJson(participants) {
  * @returns {Participant[]}
  */
 export function reconcileParticipantsWithBuiltin(list) {
+  if (isArenaMode()) {
+    const seen = new Set();
+    return (Array.isArray(list) ? list : [])
+      .filter((p) => {
+        if (!p?.id || seen.has(p.id)) return false;
+        seen.add(p.id);
+        return true;
+      })
+      .map((p) => normalizeParticipant(p))
+      .filter((p) => p.id);
+  }
   const out = (Array.isArray(list) ? list : [])
     .filter((p) => p && builtinParticipantIds.has(p.id))
     .map((p) => ({ ...p }));
@@ -218,7 +244,7 @@ function participantIdsSignature(list) {
  */
 function mergeAndPersistBuiltinPins(current, opts) {
   const withBuiltin = reconcileParticipantsWithBuiltin(current);
-  const merged = applyBuiltinPinDefaults(withBuiltin);
+  const merged = isArenaMode() ? withBuiltin : applyBuiltinPinDefaults(withBuiltin);
   const rosterChanged = participantIdsSignature(current) !== participantIdsSignature(merged);
   const pinsChanged = pinPairsJson(current) !== pinPairsJson(merged);
   if (!rosterChanged && !pinsChanged) return merged;
@@ -246,28 +272,54 @@ function mergeAndPersistBuiltinPins(current, opts) {
   return merged;
 }
 
+/** @returns {Participant | null} */
+function arenaSessionParticipant() {
+  const au = getArenaUser();
+  if (!au?.id) return null;
+  return { id: au.id, name: au.displayName || au.id, pin: null };
+}
+
+/**
+ * En Arena el usuario logueado debe existir aunque el sync aún no haya traído la lista completa.
+ * @param {Participant[]} list
+ * @returns {Participant[]}
+ */
+function withArenaCurrentUser(list) {
+  if (!isArenaMode()) return list;
+  const au = arenaSessionParticipant();
+  if (!au) return list;
+  if (list.some((p) => p.id === au.id)) return list;
+  return [...list, au];
+}
+
 /**
  * @returns {Participant[]}
  */
 export function getParticipants() {
+  let list;
   if (remoteParticipantsMode) {
     const merged = mergeAndPersistBuiltinPins(remoteParticipantsList, { remoteWrite: true });
-    return merged.map((p) => ({ ...p }));
+    list = merged.map((p) => ({ ...p }));
+  } else {
+    if (localParticipantsList.length === 0) {
+      localParticipantsList = seedFromBuiltin();
+    }
+    const merged = mergeAndPersistBuiltinPins(localParticipantsList, { remoteWrite: false });
+    list = merged.map((p) => ({ ...p }));
   }
-  if (localParticipantsList.length === 0) {
-    localParticipantsList = seedFromBuiltin();
-  }
-  const merged = mergeAndPersistBuiltinPins(localParticipantsList, { remoteWrite: false });
-  return merged.map((p) => ({ ...p }));
+  return withArenaCurrentUser(list);
 }
 
 /**
  * Participantes visibles como jugadores (rankings, tablas «predicciones de todos», quiniela, selects).
  * La cuenta técnica `admin` no compite ni se lista; el resto (incl. Tivo) sí.
+ * En Arena todos los usuarios registrados compiten (incl. un usuario llamado «admin»).
  * @returns {Participant[]}
  */
 export function getParticipantsForDisplay() {
-  return getParticipants().filter((p) => p.id !== ADMIN_PARTICIPANT_ID);
+  const list = getParticipants();
+  if (isArenaMode()) return list;
+  return list.filter((p) => p.id !== ADMIN_PARTICIPANT_ID);
 }
 
 /** @param {unknown[]} list */
@@ -278,7 +330,11 @@ export function hydrateParticipantsFromRemote(list) {
     pin: p.pin ?? null,
   }));
   if (!Array.isArray(list) || list.length === 0) {
-    remoteParticipantsList = seedFromBuiltin();
+    if (isArenaMode()) {
+      remoteParticipantsList = [];
+    } else {
+      remoteParticipantsList = seedFromBuiltin();
+    }
   } else {
     const parsed = list.map(normalizeParticipant).filter((p) => p.id);
     const seen = new Set();
@@ -293,7 +349,9 @@ export function hydrateParticipantsFromRemote(list) {
   }
   const idsBeforeReconcile = participantIdsSignature(remoteParticipantsList);
   remoteParticipantsList = reconcileParticipantsWithBuiltin(remoteParticipantsList);
-  remoteParticipantsList = applyBuiltinPinDefaults(remoteParticipantsList);
+  if (!isArenaMode()) {
+    remoteParticipantsList = applyBuiltinPinDefaults(remoteParticipantsList);
+  }
   const nextEffective = remoteParticipantsList.map((p) => ({ id: p.id, pin: p.pin ?? null }));
   const prevPinMap = new Map(prevEffective.map((p) => [p.id, p.pin]));
   for (const now of nextEffective) {
@@ -345,7 +403,15 @@ export function setParticipantsList(list) {
 }
 
 export function getParticipantById(id) {
-  return getParticipants().find((p) => p.id === id) ?? null;
+  const sid = String(id ?? "").trim();
+  if (!sid) return null;
+  const found = getParticipants().find((p) => p.id === sid) ?? null;
+  if (found) return found;
+  if (isArenaMode()) {
+    const au = arenaSessionParticipant();
+    if (au && au.id === sid) return au;
+  }
+  return null;
 }
 
 /**
@@ -405,11 +471,14 @@ export function setParticipantHue(participantId, hueOrNull) {
 
 /** Quién puede cargar el marcador oficial y abrir Ajustes. */
 export function canEditOfficialResults(participantId) {
+  if (isArenaMode()) return isArenaAdmin() && participantId === getArenaUserId();
   return OFFICIAL_RESULTS_ADMIN_IDS.has(participantId);
 }
 
 /** Quién ve los controles de ciclo de vida del partido (iniciar, terminar, reiniciar, etc.). */
 export function canManagePartidosMatchFlow(participantId) {
+  /** Resultados oficiales: editar en privadas; Arena solo refleja. */
+  if (isArenaMode()) return false;
   return PARTIDOS_MATCH_FLOW_ADMIN_IDS.has(participantId);
 }
 
@@ -418,5 +487,110 @@ export function isAdminParticipantId(id) {
 }
 
 export function canEditAllParticipantsPredictions(participantId) {
+  if (isArenaMode()) return false;
   return SUPER_ADMIN_PARTICIPANT_IDS.has(participantId);
+}
+
+const PARTICIPANT_SEARCH_KEY = "pm26-participant-search";
+
+export function getParticipantSearchQuery() {
+  if (!isArenaMode()) return "";
+  try {
+    return localStorage.getItem(PARTICIPANT_SEARCH_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function setParticipantSearchQuery(query) {
+  try {
+    localStorage.setItem(PARTICIPANT_SEARCH_KEY, String(query ?? ""));
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * @param {{ id?: string, name?: string } | null | undefined} p
+ * @param {string} query
+ */
+export function participantMatchesSearchQuery(p, query) {
+  const q = String(query ?? "").trim().toLowerCase();
+  if (!q) return true;
+  const name = String(p?.name ?? "").toLowerCase();
+  const id = String(p?.id ?? "").toLowerCase();
+  return name.includes(q) || id.includes(q);
+}
+
+/**
+ * Listas de predicciones: tú primero; opcionalmente quienes ya mandaron predicción antes que el resto; alfabético dentro de cada bloque.
+ * @param {string | null | undefined} currentId
+ * @param {string} [searchQuery]
+ * @param {{ hasSubmission?: (p: Participant) => boolean }} [opts]
+ * @returns {Participant[]}
+ */
+export function getParticipantsForListDisplay(
+  currentId,
+  searchQuery = getParticipantSearchQuery(),
+  opts = {},
+) {
+  const base = getParticipantsForDisplay();
+  let self = currentId ? base.find((p) => p.id === currentId) : null;
+  if (!self && isArenaMode() && currentId) {
+    const au = arenaSessionParticipant();
+    if (au && au.id === currentId) self = au;
+  }
+  const q = String(searchQuery ?? "").trim();
+  let others = base.filter((p) => p.id !== currentId);
+  if (q) {
+    others = others.filter((p) => participantMatchesSearchQuery(p, q));
+  }
+  const byName = (/** @type {Participant} */ a, /** @type {Participant} */ b) =>
+    a.name.localeCompare(b.name, "es", { sensitivity: "base" });
+  const hasSubmission = opts.hasSubmission;
+  if (hasSubmission) {
+    others.sort((a, b) => {
+      const aSub = hasSubmission(a) ? 1 : 0;
+      const bSub = hasSubmission(b) ? 1 : 0;
+      if (aSub !== bSub) return bSub - aSub;
+      return byName(a, b);
+    });
+  } else {
+    others.sort(byName);
+  }
+  if (self) return [self, ...others];
+  return others;
+}
+
+/**
+ * Rankings: conserva puesto real en `displayRank`; tú arriba; búsqueda filtra al resto.
+ * @template T
+ * @param {T[]} rows filas ya ordenadas por puntos
+ * @param {string | null | undefined} currentId
+ * @param {string} [searchQuery]
+ * @returns {(T & { displayRank: number })[]}
+ */
+export function orderRankingRowsForDisplay(rows, currentId, searchQuery = getParticipantSearchQuery()) {
+  /** @param {unknown} r */
+  const getP = (r) => {
+    const row = /** @type {{ p?: Participant, participant?: Participant }} */ (r);
+    return row.p ?? row.participant ?? null;
+  };
+  /** @param {unknown} r */
+  const isSelf = (r) => {
+    const row = /** @type {{ self?: boolean }} */ (r);
+    if (row.self === true) return true;
+    const p = getP(r);
+    return Boolean(currentId && p && p.id === currentId);
+  };
+
+  const withRank = rows.map((r, i) => ({ ...r, displayRank: i + 1 }));
+  const q = String(searchQuery ?? "").trim();
+  let list = withRank;
+  if (q) {
+    list = withRank.filter((r) => isSelf(r) || participantMatchesSearchQuery(getP(r), q));
+  }
+  const selfRow = list.find(isSelf);
+  if (!selfRow || !currentId) return list;
+  return [selfRow, ...list.filter((r) => !isSelf(r))];
 }

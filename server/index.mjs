@@ -16,10 +16,29 @@ import {
 } from "../src/participants.js";
 import { emptyOfficialResults } from "../src/official-results-store.js";
 import { emptyPredictions } from "../src/predictions-store.js";
+import { notifyArenaPrivadasSync } from "./privadas-arena-notify.mjs";
+import {
+  pushOfficialToArena,
+  pullAndApplyOfficialFromArena,
+  isApplyingOfficialFromArena,
+  withApplyingFromArena,
+  startOfficialArenaSyncPoll,
+} from "./official-arena-sync.mjs";
+import { isSyncSecretValid } from "./sync-secret.mjs";
+import {
+  compareOfficialUpdatedAt,
+  normalizeOfficialPayload,
+  reconcileOfficialForSync,
+  officialPayloadEqual,
+} from "./official-sync-shared.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.PM26_DATA_DIR || path.join(__dirname, "data");
 const STATE_PATH = path.join(DATA_DIR, "state.json");
+const BACKUPS_DIR = path.join(DATA_DIR, "backups");
+const MAX_BACKUPS = Number(process.env.PM26_MAX_BACKUPS || 50);
+/** Mínimo entre copias automáticas (ms). state.json sigue guardándose en cada cambio. */
+const BACKUP_MIN_INTERVAL_MS = Number(process.env.PM26_BACKUP_INTERVAL_MS || 5 * 60 * 1000);
 const DIST_DIR = path.join(__dirname, "..", "dist");
 
 const PORT = Number(process.env.PORT || 8787);
@@ -29,10 +48,11 @@ function defaultState() {
     participants: structuredClone(BUILTIN_PARTICIPANTS),
     official: emptyOfficialResults(),
     predictions: {},
+    officialUpdatedAt: null,
   };
 }
 
-/** @type {{ participants: unknown[]; official: object; predictions: Record<string, object> }} */
+/** @type {{ participants: unknown[]; official: object; predictions: Record<string, object>; officialUpdatedAt?: string | null }} */
 let state = defaultState();
 
 /** @type {Set<import("ws").WebSocket>} */
@@ -59,6 +79,7 @@ function getPublicState() {
     participants: state.participants,
     official: state.official,
     predictions: state.predictions,
+    officialUpdatedAt: state.officialUpdatedAt ?? null,
   };
 }
 
@@ -75,12 +96,67 @@ async function loadStateFromDisk() {
       participants: Array.isArray(parsed.participants) ? parsed.participants : defaultState().participants,
       official: typeof parsed.official === "object" && parsed.official ? parsed.official : emptyOfficialResults(),
       predictions: typeof parsed.predictions === "object" && parsed.predictions ? parsed.predictions : {},
+      officialUpdatedAt:
+        typeof parsed.officialUpdatedAt === "string" ? parsed.officialUpdatedAt : null,
     };
     applyParticipantsState(state.participants);
+    if (!state.officialUpdatedAt) {
+      try {
+        const st = await fs.promises.stat(STATE_PATH);
+        state.officialUpdatedAt = st.mtime.toISOString();
+      } catch {
+        state.officialUpdatedAt = new Date().toISOString();
+      }
+    }
     return true;
   } catch {
     return false;
   }
+}
+
+/** Evita copias idénticas consecutivas en disco. */
+let lastBackupContentHash = "";
+let lastBackupAt = 0;
+
+function hashContent(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+
+async function pruneOldBackups() {
+  let files;
+  try {
+    files = await fs.promises.readdir(BACKUPS_DIR);
+  } catch {
+    return;
+  }
+  const jsonFiles = files.filter((f) => /^state-.+\.json$/.test(f)).sort();
+  while (jsonFiles.length > MAX_BACKUPS) {
+    const oldest = jsonFiles.shift();
+    if (!oldest) break;
+    await fs.promises.unlink(path.join(BACKUPS_DIR, oldest)).catch(() => {});
+  }
+}
+
+async function maybeCreateBackupSnapshot(json) {
+  const hash = hashContent(json);
+  if (hash === lastBackupContentHash) return;
+
+  const now = Date.now();
+  if (now - lastBackupAt < BACKUP_MIN_INTERVAL_MS) return;
+
+  lastBackupContentHash = hash;
+  lastBackupAt = now;
+
+  await fs.promises.mkdir(BACKUPS_DIR, { recursive: true });
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const name = `state-${ts}.json`;
+  await fs.promises.writeFile(path.join(BACKUPS_DIR, name), json, "utf8");
+  await pruneOldBackups();
 }
 
 async function saveStateToDisk() {
@@ -89,6 +165,72 @@ async function saveStateToDisk() {
   const json = JSON.stringify(getPublicState(), null, 0);
   await fs.promises.writeFile(tmp, json, "utf8");
   await fs.promises.rename(tmp, STATE_PATH);
+  await maybeCreateBackupSnapshot(json);
+}
+
+function isValidStateBody(body) {
+  return (
+    body &&
+    typeof body === "object" &&
+    Array.isArray(body.participants) &&
+    typeof body.official === "object" &&
+    body.official &&
+    typeof body.predictions === "object" &&
+    body.predictions
+  );
+}
+
+function applyFullStateBody(body) {
+  state = {
+    participants: body.participants,
+    official: body.official,
+    predictions: body.predictions,
+    officialUpdatedAt:
+      typeof body.officialUpdatedAt === "string"
+        ? body.officialUpdatedAt
+        : new Date().toISOString(),
+  };
+  applyParticipantsState(state.participants);
+}
+
+async function applyOfficialFromArenaPush(official, updatedAt) {
+  const incoming = normalizeOfficialPayload(official);
+  if (officialPayloadEqual(incoming, state.official)) return false;
+  await withApplyingFromArena(async () => {
+    state.official = incoming;
+    state.officialUpdatedAt = String(updatedAt ?? new Date().toISOString());
+    await saveStateToDisk();
+    broadcastState();
+  });
+  return true;
+}
+
+async function applyOfficialFromRemote(official, updatedAt) {
+  const { changed, merged, updatedAt: at } = reconcileOfficialForSync(
+    state.official,
+    state.officialUpdatedAt,
+    official,
+    updatedAt,
+  );
+  if (!changed) return;
+  state.official = merged;
+  state.officialUpdatedAt = String(at ?? new Date().toISOString());
+  await saveStateToDisk();
+  broadcastState();
+  if (!isApplyingOfficialFromArena() || !officialPayloadEqual(merged, official)) {
+    void pushOfficialToArena(state.official, state.officialUpdatedAt);
+  }
+}
+
+async function commitOfficialFromClient(official) {
+  const incoming = normalizeOfficialPayload(official);
+  if (officialPayloadEqual(incoming, state.official)) return;
+  state.official = incoming;
+  state.officialUpdatedAt = new Date().toISOString();
+  await persistAndBroadcast();
+  if (!isApplyingOfficialFromArena()) {
+    void pushOfficialToArena(state.official, state.officialUpdatedAt);
+  }
 }
 
 function broadcastState() {
@@ -101,6 +243,7 @@ function broadcastState() {
 async function persistAndBroadcast() {
   await saveStateToDisk();
   broadcastState();
+  void notifyArenaPrivadasSync();
 }
 
 const app = express();
@@ -114,17 +257,110 @@ app.get("/api/state", (_req, res) => {
   res.json(getPublicState());
 });
 
+app.put("/api/state", (req, res) => {
+  if (!isValidStateBody(req.body)) {
+    res.status(400).json({ error: "estado inválido (participants, official, predictions)" });
+    return;
+  }
+  applyFullStateBody(req.body);
+  persistAndBroadcast()
+    .then(() => res.json({ ok: true, data: getPublicState() }))
+    .catch((e) => {
+      console.error(e);
+      res.status(500).json({ error: "persistencia fallida" });
+    });
+});
+
+app.get("/api/backups", async (_req, res) => {
+  try {
+    await fs.promises.mkdir(BACKUPS_DIR, { recursive: true });
+    const files = await fs.promises.readdir(BACKUPS_DIR);
+    const items = [];
+    for (const name of files.filter((f) => /^state-.+\.json$/.test(f)).sort().reverse()) {
+      const stat = await fs.promises.stat(path.join(BACKUPS_DIR, name));
+      items.push({
+        filename: name,
+        size: stat.size,
+        createdAt: stat.mtime.toISOString(),
+      });
+    }
+    res.json({ ok: true, maxBackups: MAX_BACKUPS, backups: items });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "no se pudo listar backups" });
+  }
+});
+
+app.get("/api/backups/:filename", async (req, res) => {
+  const name = path.basename(String(req.params.filename ?? ""));
+  if (!/^state-.+\.json$/.test(name)) {
+    res.status(400).json({ error: "nombre inválido" });
+    return;
+  }
+  const filePath = path.join(BACKUPS_DIR, name);
+  try {
+    const raw = await fs.promises.readFile(filePath, "utf8");
+    res.type("application/json").send(raw);
+  } catch {
+    res.status(404).json({ error: "backup no encontrado" });
+  }
+});
+
+app.post("/api/restore/:filename", async (req, res) => {
+  const name = path.basename(String(req.params.filename ?? ""));
+  if (!/^state-.+\.json$/.test(name)) {
+    res.status(400).json({ error: "nombre inválido" });
+    return;
+  }
+  const filePath = path.join(BACKUPS_DIR, name);
+  try {
+    const raw = await fs.promises.readFile(filePath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!isValidStateBody(parsed)) {
+      res.status(400).json({ error: "backup corrupto o formato inválido" });
+      return;
+    }
+    applyFullStateBody(parsed);
+    await persistAndBroadcast();
+    res.json({ ok: true, data: getPublicState(), restoredFrom: name });
+  } catch (e) {
+    if (e && typeof e === "object" && "code" in e && e.code === "ENOENT") {
+      res.status(404).json({ error: "backup no encontrado" });
+      return;
+    }
+    console.error(e);
+    res.status(500).json({ error: "restauración fallida" });
+  }
+});
+
 app.put("/api/official", (req, res) => {
   if (!req.body || typeof req.body !== "object") {
     res.status(400).json({ error: "body inválido" });
     return;
   }
-  state.official = req.body;
-  persistAndBroadcast()
+  commitOfficialFromClient(req.body)
     .then(() => res.json({ ok: true }))
     .catch((e) => {
       console.error(e);
       res.status(500).json({ error: "persistencia fallida" });
+    });
+});
+
+app.post("/api/internal/sync-official", (req, res) => {
+  if (!isSyncSecretValid(req)) {
+    res.status(403).json({ error: "forbidden" });
+    return;
+  }
+  const { official, updatedAt } = req.body ?? {};
+  if (!official || typeof official !== "object") {
+    res.status(400).json({ error: "official requerido" });
+    return;
+  }
+  void applyOfficialFromArenaPush(official, updatedAt)
+    .then((changed) => res.json({ ok: true, changed: Boolean(changed) }))
+    .catch((e) => {
+      console.error(e);
+      res.status(500).json({ error: "sync fallido" });
     });
 });
 
@@ -179,8 +415,14 @@ app.put("/api/participants", (req, res) => {
 app.post("/api/reset-quiniela", (_req, res) => {
   state.predictions = {};
   state.official = emptyOfficialResults();
+  state.officialUpdatedAt = new Date().toISOString();
   persistAndBroadcast()
-    .then(() => res.json({ ok: true, data: getPublicState() }))
+    .then(() => {
+      if (!isApplyingOfficialFromArena()) {
+        void pushOfficialToArena(state.official, state.officialUpdatedAt);
+      }
+      res.json({ ok: true, data: getPublicState() });
+    })
     .catch((e) => {
       console.error(e);
       res.status(500).json({ error: "persistencia fallida" });
@@ -231,6 +473,18 @@ async function main() {
       console.log("[pm26] Desarrollo: en paralelo `npm run dev` (Vite 5173) con proxy /api y /ws hacia este puerto.");
     }
   });
+
+  server.on("error", (err) => {
+    if (err && typeof err === "object" && "code" in err && err.code === "EADDRINUSE") {
+      console.error(`[pm26] Puerto ${PORT} ya en uso (hay otra instancia corriendo).`);
+      console.error(`[pm26] Windows: netstat -ano | findstr :${PORT}  →  taskkill /PID <n> /F`);
+      console.error(`[pm26] O usa otro puerto: set PORT=8789 && npm run server`);
+      process.exit(1);
+    }
+    throw err;
+  });
+
+  startOfficialArenaSyncPoll(state, applyOfficialFromRemote);
 }
 
 main().catch((e) => {

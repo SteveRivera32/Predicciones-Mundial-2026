@@ -1,4 +1,5 @@
 import { GROUP_MATCHES, getKnockoutMatchesFlat } from "./tournament.js";
+import { isArenaMode, isArenaGeneralesAndGroupsLocked } from "./arena-mode.js";
 
 /**
  * @param {string | null | undefined} isoKickoff
@@ -16,8 +17,9 @@ export function getAllTournamentMatchesWithKickoff() {
   return [...GROUP_MATCHES, ...getKnockoutMatchesFlat()];
 }
 
-/** Predicciones generales y orden de grupos: cerrar cuando ya empezó algún partido del torneo (por hora de kickoff). */
+/** Predicciones generales y orden de grupos: en Arena, tope el 13 jul 23:59 CDMX; en privada, al primer kickoff. */
 export function isAnyTournamentMatchKickoffLocked() {
+  if (isArenaMode()) return isArenaGeneralesAndGroupsLocked();
   return getAllTournamentMatchesWithKickoff().some((m) => isLockedAtKickoff(m.kickoff));
 }
 
@@ -28,6 +30,7 @@ export function isAnyTournamentMatchKickoffLocked() {
  * @param {{ id: string, kickoff?: string | null }} m
  */
 export function isGroupMatchPredictionsLocked(official, m) {
+  if (isArenaMode()) return isLockedAtKickoff(m.kickoff);
   const matchStage = official.groupMatchState?.[m.id] ?? "ready";
   return matchStage !== "ready" || isLockedAtKickoff(m.kickoff);
 }
@@ -37,6 +40,7 @@ export function isGroupMatchPredictionsLocked(official, m) {
  * @param {{ id: string, kickoff?: string | null }} m
  */
 export function isKoMatchPredictionsLocked(official, m) {
+  if (isArenaMode()) return isLockedAtKickoff(m.kickoff);
   const koStage = official.knockoutMatchState?.[m.id] ?? "ready";
   return koStage !== "ready" || isLockedAtKickoff(m.kickoff);
 }

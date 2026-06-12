@@ -1,3 +1,5 @@
+import { isArenaMode } from "./arena-mode.js";
+import { isRemoteSyncActive } from "./remote-sync-flags.js";
 import { getParticipantsForDisplay } from "./participants.js";
 import { loadOfficialResults, saveOfficialResults } from "./official-results-store.js";
 import { loadPredictions, savePredictions } from "./predictions-store.js";
@@ -117,6 +119,9 @@ export function confirmPendingPredictionsForKoMatch(matchId) {
  * @returns {boolean} hubo cambios persistidos
  */
 export function applyKickoffAutoStarts() {
+  if (isArenaMode()) return false;
+  /** Con sync activo el kickoff lo hace el servidor de Arena y se refleja por push/poll. */
+  if (isRemoteSyncActive()) return false;
   const official = loadOfficialResults();
   /** @type {Record<string, "started">} */
   const groupMatchState = {};

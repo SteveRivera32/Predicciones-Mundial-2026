@@ -1,5 +1,10 @@
 node_modules
 dist
+dist-arena
 server/data/
+ArenaMundial/server/data/
+.env
+.env.*
+!.env.example
 .DS_Store
 *.local

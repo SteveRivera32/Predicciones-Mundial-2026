@@ -6,16 +6,27 @@
   "scripts": {
     "dev": "vite",
     "dev:all": "concurrently -n server,vite -c blue,green \"npm run server\" \"npm run dev\"",
+    "dev:arena": "concurrently -n arena-api,arena-web -c magenta,cyan \"node --watch ArenaMundial/server/index.mjs\" \"vite --config ArenaMundial/vite.config.js\"",
     "build": "vite build",
+    "build:arena": "vite build --config ArenaMundial/vite.config.js",
     "preview": "vite preview",
     "server": "node server/index.mjs",
+    "server:arena": "node ArenaMundial/server/index.mjs",
     "start": "npm run build && node server/index.mjs",
+    "start:arena": "npm run build:arena && node ArenaMundial/server/index.mjs --serve-static",
+    "seed:arena-admin": "node ArenaMundial/scripts/seed-admin.mjs",
+    "seed:arena-users": "node ArenaMundial/scripts/seed-users.mjs",
+    "arena:set-official": "node ArenaMundial/scripts/set-match-official.mjs",
     "reset-predictions": "node scripts/reset-predictions.mjs"
   },
   "dependencies": {
     "animejs": "^4.3.6",
+    "bcryptjs": "^3.0.2",
+    "better-sqlite3": "^11.9.1",
     "chroma-js": "^3.2.0",
+    "cookie-parser": "^1.4.7",
     "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
     "ws": "^8.18.0"
   },
   "devDependencies": {

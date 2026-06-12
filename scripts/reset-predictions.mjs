@@ -16,14 +16,20 @@ const snippet = `(() => {
       nPred++;
     }
   }
-  const hadOfficial = localStorage.getItem("pm26-official-results") != null;
-  localStorage.removeItem("pm26-official-results");
+  const officialKeys = ["pm26-official-results", "pm26-arena-official-results"];
+  let nOfficial = 0;
+  for (const k of officialKeys) {
+    if (localStorage.getItem(k) != null) {
+      localStorage.removeItem(k);
+      nOfficial++;
+    }
+  }
   console.log(
     "[Predicciones Mundial] Predicciones: " +
       nPred +
-      " clave(s). Resultado oficial: " +
-      (hadOfficial ? "borrado." : "(no había). ") +
-      "Recargá la página.",
+      " clave(s). Resultados oficiales: " +
+      nOfficial +
+      " clave(s). Recargá la página.",
   );
 })();`;
 
@@ -37,7 +43,7 @@ console.log(`
 Opción recomendada: en la app, sesión admin → botón Ajustes → «Reiniciar predicciones de todos».
 
 Si preferís la consola: abrí la MISMA pestaña donde corre la app (misma URL).
-El snippet borra pm26-predictions:* y pm26-official-results.
+El snippet borra pm26-predictions:* y las claves de resultados oficiales (privada y arena).
 NO borra: sesión (quién juega) ni la lista de participantes en Ajustes.
 
 1) Abrí la app en el navegador.

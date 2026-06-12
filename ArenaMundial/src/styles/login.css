@@ -1,0 +1,231 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b1220;
+  --card: #121c2e;
+  --text: #e8eef7;
+  --muted: #93a4bd;
+  --accent: #4fc3f7;
+  --danger: #ff8a80;
+  --radius: 12px;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body.auth-body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at top, rgba(79, 195, 247, 0.12), transparent 55%),
+    var(--bg);
+  color: var(--text);
+  padding: 1rem;
+}
+
+.auth-card {
+  width: min(100%, 26rem);
+  background: var(--card);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: calc(var(--radius) + 4px);
+  padding: 1.5rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+.auth-kicker,
+.arena-kicker {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  color: var(--accent);
+}
+
+.auth-header h1 {
+  margin: 0.35rem 0 0.5rem;
+  font-size: 1.55rem;
+}
+
+.auth-sub {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1.25rem 0 1rem;
+}
+
+.auth-tab {
+  flex: 1;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: var(--muted);
+  border-radius: var(--radius);
+  padding: 0.55rem;
+  cursor: pointer;
+}
+
+.auth-tab--active {
+  color: var(--text);
+  border-color: rgba(79, 195, 247, 0.45);
+  background: rgba(79, 195, 247, 0.1);
+}
+
+.auth-form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.auth-panel[hidden] {
+  display: none !important;
+}
+
+.auth-panel {
+  animation: auth-panel-in 0.2s ease;
+}
+
+@keyframes auth-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.auth-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.auth-hint--session {
+  padding: 0.55rem 0.65rem;
+  border-radius: var(--radius);
+  background: rgba(79, 195, 247, 0.08);
+  border: 1px solid rgba(79, 195, 247, 0.2);
+}
+
+.auth-hint--privacy {
+  font-size: 0.78rem;
+}
+
+.auth-notice {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.auth-notice--warning {
+  background: rgba(255, 183, 77, 0.1);
+  border: 1px solid rgba(255, 183, 77, 0.35);
+  color: #ffe0b2;
+}
+
+.auth-notice--warning em {
+  font-style: normal;
+  font-weight: 650;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.field span {
+  color: var(--muted);
+}
+
+.field input {
+  width: 100%;
+  border-radius: var(--radius);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  padding: 0.65rem 0.75rem;
+}
+
+.password-wrap {
+  display: flex;
+  gap: 0.4rem;
+  align-items: stretch;
+}
+
+.password-wrap input {
+  flex: 1;
+  min-width: 0;
+}
+
+.password-toggle {
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  padding: 0 0.75rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.password-toggle:hover {
+  color: var(--text);
+  border-color: rgba(79, 195, 247, 0.35);
+}
+
+.password-toggle[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: rgba(79, 195, 247, 0.45);
+}
+
+.field input::placeholder {
+  color: rgba(147, 164, 189, 0.65);
+}
+
+.btn {
+  border-radius: var(--radius);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  padding: 0.65rem 0.9rem;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: linear-gradient(180deg, rgba(79, 195, 247, 0.35), rgba(79, 195, 247, 0.18));
+  border-color: rgba(79, 195, 247, 0.5);
+}
+
+.auth-error {
+  color: var(--danger);
+  font-size: 0.88rem;
+  margin: 0 0 0.75rem;
+}
+
+.auth-footer {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.85rem;
+}
+
+.auth-footer a {
+  color: var(--muted);
+}

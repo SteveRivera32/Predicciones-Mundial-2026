@@ -16,6 +16,7 @@ let socket = null;
 let reconnectTimer = null;
 /** Evita encolar refrescos si WS y fetch inicial envían el mismo estado. */
 let lastAppliedRemoteFingerprint = "";
+let lastRemoteOfficialFingerprint = "";
 
 export function applyRemoteState(body) {
   if (!body || typeof body !== "object") return;
@@ -27,6 +28,13 @@ export function applyRemoteState(body) {
   }
   if (fp === lastAppliedRemoteFingerprint) return;
   lastAppliedRemoteFingerprint = fp;
+  if (body.official && typeof body.official === "object") {
+    try {
+      lastRemoteOfficialFingerprint = JSON.stringify(body.official);
+    } catch {
+      /* ignore */
+    }
+  }
   hydrateParticipantsFromRemote(body.participants);
   hydrateOfficialFromRemote(body.official);
   hydratePredictionsFromRemote(body.predictions);
@@ -34,9 +42,30 @@ export function applyRemoteState(body) {
   window.dispatchEvent(new CustomEvent("pm26-remote-sync"));
 }
 
+/** Solo resultados oficiales (poll liviano en Arena). */
+export function applyRemoteOfficialOnly(official) {
+  if (!official || typeof official !== "object") return;
+  let fp;
+  try {
+    fp = JSON.stringify(official);
+  } catch {
+    return;
+  }
+  if (fp === lastRemoteOfficialFingerprint) return;
+  lastRemoteOfficialFingerprint = fp;
+  hydrateOfficialFromRemote(official);
+  window.dispatchEvent(new CustomEvent("pm26-remote-sync"));
+}
+
+/** Tras guardar en este cliente, permite que el próximo poll aplique cambios de otros. */
+export function resetRemoteOfficialFingerprint() {
+  lastRemoteOfficialFingerprint = "";
+  lastAppliedRemoteFingerprint = "";
+}
+
 /** Fuerza comparación con el servidor (p. ej. tras reconectar WS o volver a la pestaña). */
 function pullRemoteState() {
-  return fetch("/api/state")
+  return fetch("/api/state", { cache: "no-store" })
     .then((res) => (res.ok ? res.json() : null))
     .then((data) => {
       if (data) applyRemoteState(data);

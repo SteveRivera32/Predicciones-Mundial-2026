@@ -3,8 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Predicciones Mundial 2026</title>
-    <link rel="stylesheet" href="/src/style.css" />
+    <title>Arena Mundial 2026 — Predicciones</title>
   </head>
   <body>
     <a class="skip-link" href="#contenido-principal">Ir al contenido</a>
@@ -785,16 +784,6 @@
                   — se cierran cuando inicia el partido.
                 </li>
               </ul>
-              <p class="rule-lead">
-                El PIN para ingresar será enviado individualmente por el
-                <span
-                  class="rules-uso-label rules-uso-label--admin"
-                  data-admin-tip="TIVO"
-                  tabindex="0"
-                  aria-label="ADMIN, TIVO"
-                >ADMIN</span>
-                a cada uno.
-              </p>
             </div>
           </section>
 
@@ -1225,6 +1214,19 @@
             <form id="form-generales" class="form-grid form-grid--generales"></form>
           </article>
           <div id="generales-official-admin" class="generales-official-admin" hidden></div>
+          <div class="participant-search-toolbar" data-participant-search-bar>
+            <label class="participant-search-toolbar__field">
+              <span class="participant-search-toolbar__label">Buscar jugador</span>
+              <input
+                type="search"
+                class="input input-sm participant-search-input"
+                placeholder="Nombre o usuario…"
+                autocomplete="off"
+                enterkeyhint="search"
+                aria-label="Buscar jugador en la tabla"
+              />
+            </label>
+          </div>
           <div id="generales-preds-host" class="group-preds-host"></div>
         </div>
       </section>
@@ -1569,6 +1571,19 @@
             ORDEN DE GRUPOS
           </button>.
         </p>
+        <div class="participant-search-toolbar" data-participant-search-bar>
+          <label class="participant-search-toolbar__field">
+            <span class="participant-search-toolbar__label">Buscar jugador</span>
+            <input
+              type="search"
+              class="input input-sm participant-search-input"
+              placeholder="Nombre o usuario…"
+              autocomplete="off"
+              enterkeyhint="search"
+              aria-label="Buscar jugador en el ranking"
+            />
+          </label>
+        </div>
         <div class="table-scroll table-scroll--ranking">
           <table class="table table-compact table-group-order-ranking" aria-describedby="team-order-ranking-intro">
             <thead>
@@ -1617,6 +1632,19 @@
             <label class="field-label" for="match-ranking-group-filter">Grupo</label>
             <select id="match-ranking-group-filter" class="input input-sm" style="max-width: 12rem"></select>
           </span>
+        </div>
+        <div class="participant-search-toolbar" data-participant-search-bar>
+          <label class="participant-search-toolbar__field">
+            <span class="participant-search-toolbar__label">Buscar jugador</span>
+            <input
+              type="search"
+              class="input input-sm participant-search-input"
+              placeholder="Nombre o usuario…"
+              autocomplete="off"
+              enterkeyhint="search"
+              aria-label="Buscar jugador en el ranking"
+            />
+          </label>
         </div>
         <div class="table-scroll table-scroll--ranking">
           <table class="table table-compact table-match-ranking" aria-describedby="match-ranking-intro">
@@ -1776,6 +1804,19 @@
         <h2 class="subsection-title">Podio global</h2>
         <div id="stats-podium" class="stats-podium"></div>
         <h2 class="subsection-title">Estadísticas en partidos</h2>
+        <div class="participant-search-toolbar" data-participant-search-bar>
+          <label class="participant-search-toolbar__field">
+            <span class="participant-search-toolbar__label">Buscar jugador</span>
+            <input
+              type="search"
+              class="input input-sm participant-search-input"
+              placeholder="Nombre o usuario…"
+              autocomplete="off"
+              enterkeyhint="search"
+              aria-label="Buscar jugador en la matriz"
+            />
+          </label>
+        </div>
         <div class="table-scroll table-scroll--stats-matrix">
           <table class="table table-compact table-stats-matrix" id="table-aciertos" aria-describedby="stats-intro">
             <thead id="table-aciertos-head"></thead>
@@ -1804,6 +1845,19 @@
           <p class="panel-intro__p final-ranking-intro-login muted" id="final-ranking-intro-login" hidden>
             Entra con tu participante para ver el ranking final.
           </p>
+        </div>
+        <div class="participant-search-toolbar" data-participant-search-bar>
+          <label class="participant-search-toolbar__field">
+            <span class="participant-search-toolbar__label">Buscar jugador</span>
+            <input
+              type="search"
+              class="input input-sm participant-search-input"
+              placeholder="Nombre o usuario…"
+              autocomplete="off"
+              enterkeyhint="search"
+              aria-label="Buscar jugador en el ranking"
+            />
+          </label>
         </div>
         <div class="table-scroll table-scroll--ranking">
           <table class="table table-compact table-final-ranking" aria-describedby="final-ranking-intro">
@@ -1851,6 +1905,19 @@
           <h2 class="floating-ranking-title">Ranking en vivo</h2>
           <button type="button" id="floating-ranking-close" class="floating-ranking-close" aria-label="Cerrar">×</button>
         </div>
+        <div class="participant-search-toolbar participant-search-toolbar--compact" data-participant-search-bar>
+          <label class="participant-search-toolbar__field">
+            <span class="visually-hidden">Buscar jugador</span>
+            <input
+              type="search"
+              class="input input-sm participant-search-input"
+              placeholder="Buscar jugador…"
+              autocomplete="off"
+              enterkeyhint="search"
+              aria-label="Buscar jugador en el ranking"
+            />
+          </label>
+        </div>
         <div id="floating-ranking-body" class="floating-ranking-body"></div>
       </section>
     </div>
@@ -1874,6 +1941,6 @@
       </div>
     </div>
 
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="../src/arena-main.js"></script>
   </body>
 </html>

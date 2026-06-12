@@ -1,0 +1,107 @@
+@import "./login.css";
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+a {
+  color: var(--accent);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.arena-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.arena-header-inner {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.arena-header h1 {
+  margin: 0.25rem 0 0;
+  font-size: 1.35rem;
+}
+
+.arena-main {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.25rem;
+  display: grid;
+  grid-template-columns: 1fr min(22rem, 100%);
+  gap: 1rem;
+}
+
+.arena-panel {
+  background: var(--card);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: calc(var(--radius) + 2px);
+  padding: 1rem 1.1rem;
+}
+
+.arena-panel h2 {
+  margin: 0 0 0.65rem;
+  font-size: 1rem;
+}
+
+.arena-panel p,
+.arena-panel li {
+  line-height: 1.5;
+}
+
+.arena-features {
+  margin: 0.75rem 0;
+  padding-left: 1.1rem;
+}
+
+.arena-status {
+  margin: 1rem 0;
+}
+
+.arena-sidebar {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.arena-rankings {
+  margin: 0.5rem 0 0;
+  padding-left: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.arena-rankings li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.rank-num {
+  color: var(--accent);
+  font-weight: 650;
+  min-width: 2rem;
+}
+
+.btn-sm {
+  padding: 0.45rem 0.7rem;
+  font-size: 0.88rem;
+}
+
+@media (max-width: 48rem) {
+  .arena-main {
+    grid-template-columns: 1fr;
+  }
+}

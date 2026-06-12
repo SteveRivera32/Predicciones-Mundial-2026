@@ -5,6 +5,7 @@
 export function pushOfficial(data) {
   return fetch("/api/official", {
     method: "PUT",
+    cache: "no-store",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
@@ -35,4 +36,21 @@ export function deleteRemotePredictions(participantId) {
 /** Reinicia predicciones de todos y resultado oficial en el servidor. */
 export function pushResetQuiniela() {
   return fetch("/api/reset-quiniela", { method: "POST" });
+}
+
+/** Restaura el estado completo en el servidor. */
+export function pushFullState(state) {
+  return fetch("/api/state", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(state),
+  });
+}
+
+export function fetchBackupsList() {
+  return fetch("/api/backups").then((res) => (res.ok ? res.json() : null));
+}
+
+export function restoreServerBackup(filename) {
+  return fetch(`/api/restore/${encodeURIComponent(filename)}`, { method: "POST" });
 }

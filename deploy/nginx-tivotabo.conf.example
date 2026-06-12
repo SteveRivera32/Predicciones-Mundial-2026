@@ -1,25 +1,57 @@
 # Ejemplo para Ubuntu/Debian en la VM.
 # Copia a /etc/nginx/sites-available/tivotabo y enlaza en sites-enabled.
 #
-# Desarrollo (Vite 5173 + server 8787 con npm run dev:all):
-#   proxy_pass → http://127.0.0.1:5173  (Vite sirve / y /PrediccionesMundial/)
+# ── Desarrollo (en la VM o local) ───────────────────────────────────────────
+#   npm run dev:all      → quiniela privada (Vite 5173 + API 8787)
+#   npm run dev:arena    → arena pública   (Vite 5174 + API 8788)
 #
-# Producción (npm run build && npm start en puerto 8787):
-#   proxy_pass → http://127.0.0.1:8787
+#   nginx puede proxyar por ruta:
+#     / y /PrediccionesMundial/  → 5173
+#     /ArenaMundial/             → 5174
 #
-# URLs:
-#   http://tivotabo.com/                      → landing (redes)
-#   http://tivotabo.com/PrediccionesMundial/ → quiniela
+# ── Producción ──────────────────────────────────────────────────────────────
+#   npm run build && npm start           → quiniela privada en 8787
+#   npm run build:arena && npm run server:arena  → arena en 8788
+#
+#   nginx (mismo dominio, puerto 80/443 para el visitante):
+#     / y /PrediccionesMundial/  → 127.0.0.1:8787
+#     /ArenaMundial/             → 127.0.0.1:8788
+#
+# URLs públicas (mismo tivotabo.com, sin puertos raros):
+#   http://tivotabo.com/                      → landing
+#   http://tivotabo.com/PrediccionesMundial/  → quiniela privada (amigos)
+#   http://tivotabo.com/ArenaMundial/login/   → arena pública
 #
 # Tras editar: sudo nginx -t && sudo systemctl reload nginx
 
+# ── Producción ──────────────────────────────────────────────────────────────
 server {
     listen 80;
     listen [::]:80;
     server_name tivotabo.com www.tivotabo.com;
 
+    # Arena pública (proceso aparte en 8788)
+    location /ArenaMundial/ {
+        proxy_pass http://127.0.0.1:8788;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /api/arena/ {
+        proxy_pass http://127.0.0.1:8788;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Quiniela privada + landing (proceso en 8787)
     location / {
-        proxy_pass http://127.0.0.1:5173;
+        proxy_pass http://127.0.0.1:8787;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -29,3 +61,41 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
+
+# ── Desarrollo (descomenta y comenta el bloque de producción de arriba) ─────
+# server {
+#     listen 80;
+#     listen [::]:80;
+#     server_name tivotabo.com www.tivotabo.com;
+#
+#     location /ArenaMundial/ {
+#         proxy_pass http://127.0.0.1:5174;
+#         proxy_http_version 1.1;
+#         proxy_set_header Upgrade $http_upgrade;
+#         proxy_set_header Connection "upgrade";
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#     }
+#
+#     location /api/arena/ {
+#         proxy_pass http://127.0.0.1:5174;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#     }
+#
+#     location / {
+#         proxy_pass http://127.0.0.1:5173;
+#         proxy_http_version 1.1;
+#         proxy_set_header Upgrade $http_upgrade;
+#         proxy_set_header Connection "upgrade";
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#     }
+# }

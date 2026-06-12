@@ -4,14 +4,109 @@
  */
 
 import { isRemoteSyncActive } from "./remote-sync-flags.js";
+import { isArenaMode, isArenaAdmin, pushArenaOfficial } from "./arena-mode.js";
 import { migrateStoredTeamNames } from "./tournament.js";
 import { pushOfficial } from "./sync-push.js";
+
+const OFFICIAL_STORAGE_KEY_PRIVATE = "pm26-official-results";
+const OFFICIAL_STORAGE_KEY_ARENA = "pm26-arena-official-results";
 
 let officialRemoteMode = false;
 /** @type {ReturnType<typeof emptyOfficialResults> | null} */
 let officialRemoteCache = null;
 /** @type {ReturnType<typeof emptyOfficialResults>} */
 let officialLocalCache = emptyOfficialResults();
+let localStorageHydrated = false;
+
+function officialStorageKey() {
+  return isArenaMode() ? OFFICIAL_STORAGE_KEY_ARENA : OFFICIAL_STORAGE_KEY_PRIVATE;
+}
+
+/** @returns {ReturnType<typeof emptyOfficialResults> | null} */
+function readOfficialFromLocalStorage() {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(officialStorageKey());
+    if (!raw) return null;
+    return normalizeOfficialResultsData(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+/** @param {ReturnType<typeof emptyOfficialResults>} data */
+function writeOfficialToLocalStorage(data) {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(officialStorageKey(), JSON.stringify(data));
+  } catch {
+    /* quota / modo privado */
+  }
+}
+
+function removeOfficialFromLocalStorage() {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.removeItem(officialStorageKey());
+  } catch {
+    /* ignore */
+  }
+}
+
+function ensureLocalCacheHydrated() {
+  if (localStorageHydrated) return;
+  localStorageHydrated = true;
+  const stored = readOfficialFromLocalStorage();
+  if (stored) officialLocalCache = stored;
+}
+
+/**
+ * Conserva partidos terminados del navegador si el servidor aún no los refleja
+ * (p. ej. admin confirmó sin API o recarga antes del poll).
+ * @param {unknown} serverData
+ * @param {ReturnType<typeof emptyOfficialResults>} localData
+ */
+function mergePersistedFinishedMatches(serverData, localData) {
+  const server = normalizeOfficialResultsData(serverData);
+  const local = normalizeOfficialResultsData(localData);
+  const next = { ...server };
+
+  for (const [id, stage] of Object.entries(local.groupMatchState ?? {})) {
+    if (stage !== "finished") continue;
+    if ((server.groupMatchState?.[id] ?? "ready") === "finished") continue;
+    next.groupMatchState = { ...next.groupMatchState, [id]: "finished" };
+    if (local.groupScores?.[id]) {
+      next.groupScores = { ...next.groupScores, [id]: local.groupScores[id] };
+    }
+    if (local.groupScoresConfirmed?.[id]) {
+      next.groupScoresConfirmed = { ...next.groupScoresConfirmed, [id]: true };
+    }
+  }
+
+  for (const [id, stage] of Object.entries(local.knockoutMatchState ?? {})) {
+    if (stage !== "finished") continue;
+    if ((server.knockoutMatchState?.[id] ?? "ready") === "finished") continue;
+    next.knockoutMatchState = { ...next.knockoutMatchState, [id]: "finished" };
+    if (local.knockoutScores?.[id]) {
+      next.knockoutScores = { ...next.knockoutScores, [id]: local.knockoutScores[id] };
+    }
+    if (local.knockoutScoresConfirmed?.[id]) {
+      next.knockoutScoresConfirmed = { ...next.knockoutScoresConfirmed, [id]: true };
+    }
+  }
+
+  return next;
+}
+
+/** @param {ReturnType<typeof emptyOfficialResults>} next */
+function persistOfficialCaches(next) {
+  if (officialRemoteMode) {
+    officialRemoteCache = next;
+  } else {
+    officialLocalCache = next;
+  }
+  writeOfficialToLocalStorage(next);
+}
 
 /** Resultado real del podio y premios (solo admin, confirmado cuando se publica). */
 function emptyGeneralOfficial() {
@@ -136,18 +231,31 @@ export function loadOfficialResults() {
   if (officialRemoteMode && officialRemoteCache) {
     return normalizeOfficialResultsData(officialRemoteCache);
   }
+  ensureLocalCacheHydrated();
   return normalizeOfficialResultsData(officialLocalCache);
 }
 
 /** @param {unknown} data */
 export function hydrateOfficialFromRemote(data) {
+  ensureLocalCacheHydrated();
+  const normalized = normalizeOfficialResultsData(data);
+  const merged =
+    isRemoteSyncActive() || isArenaMode()
+      ? normalized
+      : mergePersistedFinishedMatches(data, officialLocalCache);
   officialRemoteMode = true;
-  officialRemoteCache = normalizeOfficialResultsData(data);
+  officialRemoteCache = merged;
+  writeOfficialToLocalStorage(merged);
 }
 
 export function disableRemoteOfficial() {
   officialRemoteMode = false;
-  officialLocalCache = officialRemoteCache ? normalizeOfficialResultsData(officialRemoteCache) : emptyOfficialResults();
+  if (officialRemoteCache) {
+    officialLocalCache = normalizeOfficialResultsData(officialRemoteCache);
+    writeOfficialToLocalStorage(officialLocalCache);
+  } else {
+    ensureLocalCacheHydrated();
+  }
   officialRemoteCache = null;
 }
 
@@ -222,22 +330,39 @@ export function saveOfficialResults(patch) {
         ? prev.knockoutScoresConfirmed
         : { ...prev.knockoutScoresConfirmed, ...patch.knockoutScoresConfirmed },
   };
+  persistOfficialCaches(next);
   if (officialRemoteMode) {
-    officialRemoteCache = next;
-    if (isRemoteSyncActive()) {
+    if (isArenaMode()) {
+      if (isArenaAdmin()) {
+        pushArenaOfficial(next)
+          .then(() => {
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new CustomEvent("pm26-arena-local-official-saved"));
+            }
+          })
+          .catch((e) => console.error("[arena sync]", e));
+      }
+    } else if (isRemoteSyncActive()) {
       pushOfficial(next).catch((e) => console.error("[pm26 sync]", e));
     }
-  } else {
-    officialLocalCache = next;
   }
   return next;
 }
 
 /** Quita por completo los resultados oficiales de este navegador (quiniela, grupos, podio admin, bloqueos). */
 export function clearOfficialResultsStorage() {
+  const empty = emptyOfficialResults();
   if (officialRemoteMode) {
-    officialRemoteCache = emptyOfficialResults();
+    officialRemoteCache = empty;
   } else {
-    officialLocalCache = emptyOfficialResults();
+    officialLocalCache = empty;
   }
+  removeOfficialFromLocalStorage();
+}
+
+/** Sustituye resultados oficiales (restauración desde backup). */
+export function replaceOfficialState(data) {
+  const next = normalizeOfficialResultsData(data);
+  persistOfficialCaches(next);
+  return next;
 }

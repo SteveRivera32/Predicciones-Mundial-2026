@@ -1,6 +1,10 @@
 import {
   getParticipants,
   getParticipantsForDisplay,
+  getParticipantsForListDisplay,
+  orderRankingRowsForDisplay,
+  getParticipantSearchQuery,
+  setParticipantSearchQuery,
   getParticipantById,
   getParticipantAccentHex,
   getParticipantDisplayHue,
@@ -30,8 +34,17 @@ import {
 } from "./predictions-store.js";
 import { loadOfficialResults, saveOfficialResults, clearOfficialResultsStorage } from "./official-results-store.js";
 import { isRemoteSyncActive } from "./remote-sync-flags.js";
+import {
+  isArenaMode,
+  isArenaPrivadasMirrorUser,
+  arenaGeneralesGroupsDeadlineMs,
+  arenaLogout,
+  isArenaInteractionPaused,
+  scheduleArenaDeferredRefresh,
+} from "./arena-mode.js";
 import { applyRemoteState } from "./sync.js";
-import { pushResetQuiniela } from "./sync-push.js";
+import { pushResetQuiniela, fetchBackupsList, restoreServerBackup } from "./sync-push.js";
+import { downloadBackupFile, restoreFromBackupFile } from "./backup.js";
 import {
   computeGroupMatchPoints,
   computeGroupMatchPointsBreakdown,
@@ -47,6 +60,7 @@ import {
   INDIVIDUAL_AWARD_POINTS,
   MAX_PER_GROUP,
   MATCH_SCORING,
+  normalizeAwardText,
 } from "./scoring-rules.js";
 import { getSquadEntriesByRole, SQUAD_ENTRIES } from "./award-nominees.js";
 import {
@@ -277,6 +291,133 @@ function collectKnockoutOutcomeVotesForMatch(matchId) {
   return votes;
 }
 
+/** @param {string} matchId @param {boolean} isKo */
+function getMatchOutcomeVoteCounts(matchId, isKo) {
+  const votes = isKo
+    ? collectKnockoutOutcomeVotesForMatch(matchId)
+    : collectOutcomeVotesForMatch(matchId);
+  /** @type {{ h: number, d: number, a: number }} */
+  const counts = { h: 0, d: 0, a: 0 };
+  for (const s of votes) {
+    if (s === "h" || s === "d" || s === "a") counts[s] += 1;
+  }
+  return counts;
+}
+
+/** @param {string} matchId */
+function collectKnockoutPenaltyVotesForMatch(matchId) {
+  /** @type {{ home: number, away: number }} */
+  const counts = { home: 0, away: 0 };
+  for (const part of getParticipantsForDisplay()) {
+    const store = loadPredictions(part.id);
+    if (store.knockoutScoresConfirmed?.[matchId] !== true) continue;
+    const pred = store.knockoutScores?.[matchId] ?? {};
+    if (predictionOutcomeSign(pred) !== "d") continue;
+    if (pred.penaltyWinner === "home") counts.home += 1;
+    else if (pred.penaltyWinner === "away") counts.away += 1;
+  }
+  return counts;
+}
+
+/**
+ * @param {{ homeName: string, awayName: string, counts: { h: number, d: number, a: number }, teamLabelKind?: "team" | "bracket" }} opts
+ */
+function buildMatchOutcomeVoteBarHtml(opts) {
+  const { homeName, awayName, counts, teamLabelKind = "team" } = opts;
+  const total = counts.h + counts.d + counts.a;
+  if (total <= 0) return "";
+
+  /** @param {"h"|"d"|"a"} key @param {string} name */
+  const labelFor = (key, name) => {
+    if (key === "d") return '<span class="match-outcome-vote__draw-label">Empate</span>';
+    if (teamLabelKind === "bracket") return bracketTeamLineHtml(name);
+    return teamLabelHtml(name);
+  };
+
+  const segments = [
+    { key: "h", n: counts.h, cls: "home", name: homeName, align: "home" },
+    { key: "d", n: counts.d, cls: "draw", name: "Empate", align: "draw" },
+    { key: "a", n: counts.a, cls: "away", name: awayName, align: "away" },
+  ];
+
+  const barSegs = segments
+    .map((s) => {
+      const pct = (s.n / total) * 100;
+      return `<span class="match-outcome-vote__seg match-outcome-vote__seg--${s.cls}${pct <= 0 ? " match-outcome-vote__seg--empty" : ""}" style="width:${pct.toFixed(2)}%" title="${formatVotePercent(s.n, total)}"></span>`;
+    })
+    .join("");
+
+  const legendCells = segments
+    .map(
+      (s) => `<div class="match-outcome-vote__legend-cell match-outcome-vote__legend-cell--${s.align}">
+      <span class="match-outcome-vote__dot match-outcome-vote__dot--${s.cls}" aria-hidden="true"></span>
+      <span class="match-outcome-vote__legend-label">${labelFor(/** @type {"h"|"d"|"a"} */ (s.key), s.name)}</span>
+      <span class="match-outcome-vote__legend-pct">${formatVotePercent(s.n, total)}</span>
+    </div>`,
+    )
+    .join("");
+
+  return `<div class="match-outcome-vote" aria-label="Distribución de predicciones de resultado">
+    <div class="match-outcome-vote__bar" role="img" aria-hidden="true">${barSegs}</div>
+    <div class="match-outcome-vote__legend">${legendCells}</div>
+  </div>`;
+}
+
+/**
+ * @param {string} homeName
+ * @param {string} awayName
+ * @param {string} matchId
+ */
+function buildKnockoutPenaltyVoteBarHtml(homeName, awayName, matchId) {
+  const counts = collectKnockoutPenaltyVotesForMatch(matchId);
+  const total = counts.home + counts.away;
+  if (total <= 0) return "";
+
+  const barSegs = [
+    { n: counts.home, cls: "home" },
+    { n: counts.away, cls: "away" },
+  ]
+    .map((s) => {
+      const pct = (s.n / total) * 100;
+      return `<span class="match-outcome-vote__seg match-outcome-vote__seg--${s.cls}${pct <= 0 ? " match-outcome-vote__seg--empty" : ""}" style="width:${pct.toFixed(2)}%" title="${formatVotePercent(s.n, total)}"></span>`;
+    })
+    .join("");
+
+  const homeCell = `<div class="match-outcome-vote__legend-cell match-outcome-vote__legend-cell--home">
+      <span class="match-outcome-vote__dot match-outcome-vote__dot--home" aria-hidden="true"></span>
+      <span class="match-outcome-vote__legend-label">${bracketTeamLineHtml(homeName)}</span>
+      <span class="match-outcome-vote__legend-pct">${formatVotePercent(counts.home, total)}</span>
+    </div>`;
+  const awayCell = `<div class="match-outcome-vote__legend-cell match-outcome-vote__legend-cell--away">
+      <span class="match-outcome-vote__dot match-outcome-vote__dot--away" aria-hidden="true"></span>
+      <span class="match-outcome-vote__legend-label">${bracketTeamLineHtml(awayName)}</span>
+      <span class="match-outcome-vote__legend-pct">${formatVotePercent(counts.away, total)}</span>
+    </div>`;
+
+  return `<div class="match-outcome-vote match-outcome-vote--penalties" aria-label="Distribución de ganador en penales entre quienes predicen empate">
+    <p class="match-outcome-vote__subtitle muted">Penales <span class="match-outcome-vote__subtitle-note">(entre quienes predicen empate)</span></p>
+    <div class="match-outcome-vote__bar" role="img" aria-hidden="true">${barSegs}</div>
+    <div class="match-outcome-vote__legend">${homeCell}<div class="match-outcome-vote__legend-spacer" aria-hidden="true"></div>${awayCell}</div>
+  </div>`;
+}
+
+/** @param {string} homeName @param {string} awayName @param {string} matchId @param {boolean} isKo @param {string} [roundId] */
+function buildMatchVoteBarsHtml(homeName, awayName, matchId, isKo, roundId = "") {
+  if (!isArenaMode()) return "";
+  const outcomeHtml = buildMatchOutcomeVoteBarHtml({
+    homeName,
+    awayName,
+    counts: getMatchOutcomeVoteCounts(matchId, isKo),
+    teamLabelKind: isKo ? "bracket" : "team",
+  });
+  const penaltyHtml =
+    isKo && knockoutRoundRequiresPenaltyPickOnDraw(roundId)
+      ? buildKnockoutPenaltyVoteBarHtml(homeName, awayName, matchId)
+      : "";
+  if (!outcomeHtml && !penaltyHtml) return "";
+  return `<div class="match-vote-bars">${outcomeHtml}${penaltyHtml}</div>`;
+}
+
 /**
  * Bono improbable por menor votación del resultado oficial.
  * Reglas adicionales:
@@ -325,6 +466,95 @@ function getImprobableOutcomeSignForKoMatch(matchId, officialScore) {
 
 function $(sel, root = document) {
   return root.querySelector(sel);
+}
+
+function quinielaPredsTableWrapClass() {
+  return isArenaMode()
+    ? "table-scroll quiniela-table-wrap quiniela-table-wrap--scroll-y"
+    : "table-scroll quiniela-table-wrap quiniela-table-wrap--full";
+}
+
+function participantSearchToolbarHtml({ ariaLabel = "Buscar jugador en la tabla" } = {}) {
+  if (!isArenaMode()) return "";
+  return `<div class="participant-search-toolbar participant-search-toolbar--table" data-participant-search-bar>
+    <label class="participant-search-toolbar__field">
+      <span class="participant-search-toolbar__label">Buscar jugador</span>
+      <input
+        type="search"
+        class="input input-sm participant-search-input"
+        placeholder="Nombre o usuario…"
+        autocomplete="off"
+        enterkeyhint="search"
+        aria-label="${escapeHtmlAttr(ariaLabel)}"
+      />
+    </label>
+  </div>`;
+}
+
+/** @param {import("./participants.js").Participant} p @param {string} groupId */
+function participantHasGroupOrderSubmission(p, groupId) {
+  const pred = loadPredictions(p.id);
+  if (pred.groupOrderConfirmed?.[groupId] === true) return true;
+  const ord = pred.groupOrder?.[groupId];
+  const orderArr =
+    Array.isArray(ord) && ord.length >= 4
+      ? ord.map((x) => (typeof x === "string" ? x.trim() : ""))
+      : [];
+  const filled = orderArr.filter(Boolean).length;
+  const third = pred.groupThirdAdvances?.[groupId];
+  return filled > 0 || third === true || third === false;
+}
+
+/** @param {unknown} v */
+function matchScoreSideSet(v) {
+  if (v === "" || v == null) return false;
+  const n = typeof v === "number" ? v : parseInt(String(v), 10);
+  return Number.isFinite(n);
+}
+
+/** @param {{ home?: unknown, away?: unknown } | null | undefined} pred */
+function matchScoreBothFilled(pred) {
+  return matchScoreSideSet(pred?.home) && matchScoreSideSet(pred?.away);
+}
+
+/**
+ * Mayor = más arriba (tras «tú»): confirmada > borrador con marcador > sin predicción.
+ * @param {{ home?: unknown, away?: unknown }} pred
+ * @param {boolean} predCommitted
+ */
+function matchPredictionSubmissionRank(pred, predCommitted) {
+  if (predCommitted) return 2;
+  if (matchScoreBothFilled(pred)) return 1;
+  return 0;
+}
+
+/** @param {import("./participants.js").Participant} p @param {string} matchId @param {boolean} [isKo] */
+function participantHasMatchScoreSubmission(p, matchId, isKo = false) {
+  const store = loadPredictions(p.id);
+  const predCommitted = isKo
+    ? store.knockoutScoresConfirmed?.[matchId] === true
+    : store.groupScoresConfirmed?.[matchId] === true;
+  const pred = isKo
+    ? store.knockoutScores?.[matchId] ?? { home: "", away: "" }
+    : store.groupScores?.[matchId] ?? { home: "", away: "" };
+  return matchPredictionSubmissionRank(pred, predCommitted) > 0;
+}
+
+/**
+ * @template {{ p: { id: string, name: string }, pred: { home?: unknown, away?: unknown }, predCommitted: boolean }} T
+ * @param {T[]} rows
+ * @param {string} sessionParticipantId
+ */
+function sortQuinielaPredictionRows(rows, sessionParticipantId) {
+  return [...rows].sort((a, b) => {
+    const aSelf = a.p.id === sessionParticipantId;
+    const bSelf = b.p.id === sessionParticipantId;
+    if (aSelf !== bSelf) return aSelf ? -1 : 1;
+    const ar = matchPredictionSubmissionRank(a.pred, a.predCommitted);
+    const br = matchPredictionSubmissionRank(b.pred, b.predCommitted);
+    if (ar !== br) return br - ar;
+    return a.p.name.localeCompare(b.p.name, "es", { sensitivity: "base" });
+  });
 }
 
 /**
@@ -693,9 +923,9 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
     </tr>`;
   }
 
-  const groupParticipantRowData = [...getParticipantsForDisplay()]
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((p) => {
+  const groupParticipantRowData = getParticipantsForListDisplay(currentParticipantId, getParticipantSearchQuery(), {
+    hasSubmission: (p) => participantHasGroupOrderSubmission(p, grp.id),
+  }).map((p) => {
       const pred = loadPredictions(p.id);
       const ord = pred.groupOrder?.[grp.id];
       const orderArr =
@@ -817,7 +1047,14 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
   const participantRows = groupParticipantRowData
     .map((row) => {
       const { p, posCells, thirdCellClass, thirdTxt, thirdHit, top2InExactOrder, fullOrderHit, groupPts } = row;
-      const rowClasses = ["group-preds-row", p.id === currentParticipantId ? "row-self" : ""].filter(Boolean).join(" ");
+      const hasSubmission = participantHasGroupOrderSubmission(p, grp.id);
+      const rowClasses = [
+        "group-preds-row",
+        p.id === currentParticipantId ? "row-self" : "",
+        hasSubmission ? "" : "group-preds-row--empty-pred",
+      ]
+        .filter(Boolean)
+        .join(" ");
       const you = p.id === currentParticipantId ? ' <span class="td-muted">(tú)</span>' : "";
       const perfectOrderPts = GROUP_QUALIFIERS_ORDER_BONUS + GROUP_PERFECT_ORDER_BONUS;
       let orderBonusUnderName = "";
@@ -858,8 +1095,11 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
     .join("");
 
   return `
-    <h2 class="subsection-title group-preds-table-title">Predicciones de todos</h2>
-    <div class="table-scroll table-scroll--group-preds">
+    <div class="group-preds-table-head">
+      <h2 class="subsection-title group-preds-table-title">Predicciones de todos</h2>
+      ${participantSearchToolbarHtml({ ariaLabel: `Buscar jugador en el grupo ${grp.id}` })}
+    </div>
+    <div class="table-scroll table-scroll--group-preds table-scroll--preds-body">
       <table class="table table-compact table-group-preds" aria-label="Predicciones de todos en el grupo ${escapeHtml(grp.id)}">
         <thead>
           <tr>
@@ -874,7 +1114,8 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
         </thead>
         <tbody>${officialRowHtml}${participantRows}</tbody>
       </table>
-    </div>`;
+    </div>
+    ${buildGroupVoteStatsHtml(grp.id)}`;
 }
 
 function clampGoalInput(v) {
@@ -1070,7 +1311,13 @@ function initNavDrawer() {
     backdrop.setAttribute("aria-hidden", open ? "false" : "true");
     if (open) {
       inner.removeAttribute("inert");
-      drawer.querySelector(".tab")?.focus();
+      const chatHost = document.getElementById("arena-chat");
+      const chatVisible = chatHost && !chatHost.hidden;
+      if (chatVisible) {
+        document.getElementById("arena-chat-input")?.focus();
+      } else {
+        drawer.querySelector(".tab")?.focus();
+      }
     } else {
       inner.setAttribute("inert", "");
       if (focusRail) railBtn.focus();
@@ -1179,7 +1426,13 @@ function captureWindowScrollAnchor() {
 function restoreWindowScrollAnchor(anchor) {
   if (!anchor) return;
   const apply = () => {
-    window.scrollTo(anchor.x, anchor.y);
+    const y = window.scrollY;
+    /* Tras innerHTML el scroll suele saltar arriba: recuperar. Si el usuario ya se movió, no forzar. */
+    if (y < 16 && anchor.y > 32) {
+      window.scrollTo(anchor.x, anchor.y);
+      return;
+    }
+    if (Math.abs(y - anchor.y) < 24) return;
   };
   requestAnimationFrame(() => {
     apply();
@@ -1355,6 +1608,13 @@ function updateSyncLiveBadge() {
   const wrap = $("#sync-live-badge");
   const textEl = $("#sync-live-text");
   if (!wrap || !textEl) return;
+  if (isArenaMode()) {
+    wrap.classList.add("sync-live-badge--on");
+    wrap.classList.remove("sync-live-badge--off");
+    textEl.textContent = "Arena · en línea";
+    wrap.title = "Tus predicciones se guardan en el servidor. Rankings y resultados oficiales se actualizan periódicamente.";
+    return;
+  }
   const on = isRemoteSyncActive();
   wrap.classList.toggle("sync-live-badge--on", on);
   wrap.classList.toggle("sync-live-badge--off", !on);
@@ -1366,27 +1626,62 @@ function updateSyncLiveBadge() {
     : "No responde /api. Arranca el backend: npm run dev:all o npm run server junto a Vite, o npm start en producción.";
 }
 
+let participantSearchReady = false;
+let participantSearchDebounceId = 0;
+
+function syncParticipantSearchInputs(value = getParticipantSearchQuery()) {
+  document.querySelectorAll(".participant-search-input").forEach((el) => {
+    if (el instanceof HTMLInputElement && el.value !== value) el.value = value;
+  });
+}
+
+function initParticipantSearch(onSearchChange) {
+  if (!isArenaMode()) return;
+  if (participantSearchReady) return;
+  participantSearchReady = true;
+  syncParticipantSearchInputs();
+  const emit = (/** @type {string} */ value) => {
+    setParticipantSearchQuery(value);
+    syncParticipantSearchInputs(value);
+    onSearchChange();
+  };
+  document.addEventListener("input", (e) => {
+    const t = e.target;
+    if (!(t instanceof HTMLInputElement) || !t.classList.contains("participant-search-input")) return;
+    window.clearTimeout(participantSearchDebounceId);
+    participantSearchDebounceId = window.setTimeout(() => emit(t.value), 180);
+  });
+  document.addEventListener("search", (e) => {
+    const t = e.target;
+    if (!(t instanceof HTMLInputElement) || !t.classList.contains("participant-search-input")) return;
+    emit(t.value);
+  });
+}
+
 function updateSessionBar(session) {
   updateSyncLiveBadge();
   const chip = $("#session-chip");
   const nameEl = $("#session-name");
   const btn = $("#btn-cambiar-sesion");
+  if (btn && isArenaMode()) btn.textContent = "Salir";
   const settingsBtn = $("#btn-admin-settings");
   const p = session ? getParticipantById(session.participantId) : null;
-  if (p) {
-    chip.hidden = false;
-    btn.hidden = false;
-    nameEl.textContent = p.name;
+  const showBar = Boolean(p);
+  if (showBar) {
+    if (chip) chip.hidden = false;
+    if (btn) btn.hidden = false;
+    if (nameEl) nameEl.textContent = p.name;
     if (settingsBtn) {
       const isAdmin = canEditOfficialResults(session.participantId);
-      settingsBtn.hidden = !isAdmin;
-      settingsBtn.style.display = isAdmin ? "" : "none";
-      settingsBtn.disabled = !isAdmin;
+      const hideInArena = isArenaMode();
+      settingsBtn.hidden = hideInArena || !isAdmin;
+      settingsBtn.style.display = hideInArena || !isAdmin ? "none" : "";
+      settingsBtn.disabled = hideInArena || !isAdmin;
     }
   } else {
-    chip.hidden = true;
-    btn.hidden = true;
-    nameEl.textContent = "";
+    if (chip) chip.hidden = true;
+    if (btn) btn.hidden = true;
+    if (nameEl) nameEl.textContent = "";
     if (settingsBtn) {
       settingsBtn.hidden = true;
       settingsBtn.style.display = "none";
@@ -1485,7 +1780,126 @@ function openAdminSettingsOverlay() {
       : "";
   }
   renderAdminSettingsList();
+  void renderAdminBackupSection();
   overlay.hidden = false;
+}
+
+function formatBackupDate(iso) {
+  try {
+    return new Date(iso).toLocaleString("es", {
+      dateStyle: "short",
+      timeStyle: "short",
+    });
+  } catch {
+    return String(iso ?? "");
+  }
+}
+
+function formatBackupSize(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n < 1024) return `${n || 0} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function setAdminBackupStatus(message, isError = false) {
+  const el = $("#admin-backup-status");
+  if (!el) return;
+  if (!message) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  el.hidden = false;
+  el.textContent = message;
+  el.classList.toggle("admin-settings-backup-status--error", isError);
+}
+
+async function renderAdminBackupSection() {
+  const serverWrap = $("#admin-backup-server-wrap");
+  const listEl = $("#admin-backup-server-list");
+  const emptyEl = $("#admin-backup-server-empty");
+  const maxEl = $("#admin-backup-max-count");
+  if (!serverWrap || !listEl) return;
+
+  if (!isRemoteSyncActive()) {
+    serverWrap.hidden = true;
+    listEl.innerHTML = "";
+    if (emptyEl) emptyEl.hidden = true;
+    return;
+  }
+
+  serverWrap.hidden = false;
+  listEl.innerHTML = `<li class="muted">Cargando copias del servidor…</li>`;
+  if (emptyEl) emptyEl.hidden = true;
+
+  const data = await fetchBackupsList();
+  if (!data || !Array.isArray(data.backups)) {
+    listEl.innerHTML = "";
+    if (emptyEl) {
+      emptyEl.textContent = "No se pudo cargar la lista de copias del servidor.";
+      emptyEl.hidden = false;
+    }
+    return;
+  }
+
+  if (maxEl && data.maxBackups) maxEl.textContent = String(data.maxBackups);
+
+  if (data.backups.length === 0) {
+    listEl.innerHTML = "";
+    if (emptyEl) {
+      emptyEl.textContent = "Aún no hay copias automáticas en el servidor.";
+      emptyEl.hidden = false;
+    }
+    return;
+  }
+
+  if (emptyEl) emptyEl.hidden = true;
+  const recent = data.backups.slice(0, 8);
+  listEl.innerHTML = recent
+    .map(
+      (b) => `<li class="admin-settings-backup-row">
+        <span class="admin-settings-backup-row-meta">
+          <strong>${escapeHtml(formatBackupDate(b.createdAt))}</strong>
+          <span class="muted">${escapeHtml(formatBackupSize(b.size))}</span>
+        </span>
+        <button type="button" class="btn btn-sm admin-settings-backup-restore" data-backup-file="${escapeHtmlAttr(
+          b.filename,
+        )}">Restaurar</button>
+      </li>`,
+    )
+    .join("");
+
+  listEl.querySelectorAll(".admin-settings-backup-restore").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const session = loadSession();
+      if (!session || !canEditOfficialResults(session.participantId)) return;
+      const filename = btn.getAttribute("data-backup-file");
+      if (!filename) return;
+      if (
+        !confirm(
+          `¿Restaurar la copia del ${formatBackupDate(
+            recent.find((x) => x.filename === filename)?.createdAt ?? "",
+          )}? Sustituirá predicciones, resultados oficiales y participantes actuales.`,
+        )
+      ) {
+        return;
+      }
+      if (!confirm("Última confirmación: esta acción no se puede deshacer fácilmente. ¿Continuar?")) return;
+      setAdminBackupStatus("Restaurando copia del servidor…");
+      try {
+        const res = await restoreServerBackup(filename);
+        if (!res.ok) throw new Error(String(res.status));
+        const body = await res.json();
+        if (body.data) applyRemoteState(body.data);
+        setAdminBackupStatus("Copia restaurada correctamente.");
+        closeAdminSettingsOverlay();
+        refreshAll(loadSession());
+      } catch {
+        setAdminBackupStatus("No se pudo restaurar la copia del servidor.", true);
+      }
+    });
+  });
 }
 
 function closeAdminSettingsOverlay() {
@@ -1503,7 +1917,48 @@ function bindAdminSettings(afterSessionReady) {
   const closeBtn = $("#admin-settings-close");
   const form = $("#form-admin-add-participant");
   const resetAllBtn = $("#btn-admin-reset-all-predictions");
+  const downloadBackupBtn = $("#btn-admin-download-backup");
+  const backupFileInput = $("#admin-backup-file-input");
   if (!openBtn || !overlay || !form) return;
+
+  downloadBackupBtn?.addEventListener("click", () => {
+    const session = loadSession();
+    if (!session || !canEditOfficialResults(session.participantId)) return;
+    try {
+      downloadBackupFile();
+      setAdminBackupStatus("Backup descargado.");
+    } catch {
+      setAdminBackupStatus("No se pudo generar el backup.", true);
+    }
+  });
+
+  backupFileInput?.addEventListener("change", async () => {
+    const session = loadSession();
+    if (!session || !canEditOfficialResults(session.participantId)) return;
+    const file = backupFileInput.files?.[0];
+    backupFileInput.value = "";
+    if (!file) return;
+    if (
+      !confirm(
+        "¿Restaurar desde este archivo? Se sustituirán predicciones, resultados oficiales y la lista de participantes.",
+      )
+    ) {
+      return;
+    }
+    if (!confirm("Última confirmación: ¿continuar con la restauración?")) return;
+    setAdminBackupStatus("Restaurando backup…");
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      await restoreFromBackupFile(parsed);
+      setAdminBackupStatus("Backup restaurado correctamente.");
+      closeAdminSettingsOverlay();
+      refreshAll(loadSession());
+      void renderAdminBackupSection();
+    } catch {
+      setAdminBackupStatus("Archivo inválido o error al restaurar.", true);
+    }
+  });
 
   openBtn.addEventListener("click", () => {
     const session = loadSession();
@@ -1603,16 +2058,42 @@ function generalesPredictionsAdminBlocked() {
 
 /** Pestaña Predicciones generales: nadie puede editar el formulario de participante (incl. admin). */
 function generalesPredictionsFormLocked() {
+  if (isArenaPrivadasMirrorUser()) return true;
   return generalesPredictionsAdminBlocked() || isAnyTournamentMatchKickoffLocked();
 }
 
 /** Fase de grupos: bloqueo global de predicciones para todos (incl. admin). */
 function groupPredictionsFormLocked() {
+  if (isArenaPrivadasMirrorUser()) return true;
+  if (isArenaMode()) return isAnyTournamentMatchKickoffLocked();
   return loadOfficialResults().groupPredictionsBlockedForAll === true;
+}
+
+function arenaPrivadasReadOnlyBannerHtml() {
+  if (!isArenaPrivadasMirrorUser()) return "";
+  return `<p class="generales-locked-banner muted" role="status">Jugador de la <strong>quiniela privada</strong>: tus predicciones se guardan en Predicciones Amigos. En Arena solo puedes consultar rankings y tablas; usa el mismo usuario y PIN de 8 caracteres para entrar.</p>`;
+}
+
+function scheduleArenaGeneralesDeadlineRefresh(onDeadline) {
+  if (!isArenaMode()) return;
+  const deadline = arenaGeneralesGroupsDeadlineMs();
+  const delay = deadline - Date.now();
+  if (delay <= 0) return;
+  window.setTimeout(() => {
+    onDeadline();
+    scheduleArenaGeneralesDeadlineRefresh(onDeadline);
+  }, delay + 100);
 }
 
 function bindSessionChange(handler) {
   $("#btn-cambiar-sesion").addEventListener("click", () => {
+    if (isArenaMode()) {
+      if (confirm("¿Salir de tu cuenta?")) {
+        clearSession();
+        arenaLogout();
+      }
+      return;
+    }
     if (confirm("¿Cambiar de participante en este navegador? Podrás elegir otro nombre.")) {
       clearSession();
       handler();
@@ -2137,6 +2618,224 @@ function generalesTextAwardCellHtml(text, awardPts, hasOfficialData) {
   </td>`;
 }
 
+/** @type {{ key: string, label: string, kind: "team" | "player", group: "podium" | "awards" }[]} */
+const GENERALES_VOTE_SLOTS = [
+  { key: "first", label: "1.º", kind: "team", group: "podium" },
+  { key: "second", label: "2.º", kind: "team", group: "podium" },
+  { key: "third", label: "3.º", kind: "team", group: "podium" },
+  { key: "bestPlayer", label: "Mejor jugador", kind: "player", group: "awards" },
+  { key: "bestGk", label: "Mejor portero", kind: "player", group: "awards" },
+  { key: "topScorer", label: "Goleador", kind: "player", group: "awards" },
+];
+
+function getGeneralesVoteCountsBySlot() {
+  /** @type {Record<string, Map<string, { count: number, display: string }>>} */
+  const bySlot = Object.fromEntries(GENERALES_VOTE_SLOTS.map((s) => [s.key, new Map()]));
+  for (const part of getParticipantsForDisplay()) {
+    const gen = loadPredictions(part.id).general ?? {};
+    for (const slot of GENERALES_VOTE_SLOTS) {
+      const raw = String(gen[slot.key] ?? "").trim();
+      if (!raw) continue;
+      const id = slot.kind === "team" ? raw : normalizeAwardText(raw);
+      const map = bySlot[slot.key];
+      const prev = map.get(id);
+      if (prev) prev.count += 1;
+      else map.set(id, { count: 1, display: raw });
+    }
+  }
+  return bySlot;
+}
+
+/** @param {number} count @param {number} total */
+function formatVotePercent(count, total) {
+  if (total <= 0) return "0%";
+  const pct = (count / total) * 100;
+  const rounded = Math.round(pct * 10) / 10;
+  if (Number.isInteger(rounded)) return `${rounded}%`;
+  return `${String(rounded).replace(".", ",")}%`;
+}
+
+/**
+ * @param {string} label
+ * @param {Map<string, number | { count: number, display: string }>} countsMap
+ */
+function voteStatsTeamSlotHtml(label, countsMap) {
+  const entries = [...countsMap.entries()]
+    .map(([team, raw]) => {
+      if (typeof raw === "number") return { display: team, count: raw };
+      return { display: raw.display || team, count: raw.count };
+    })
+    .filter((entry) => entry.count > 0)
+    .sort((a, b) => b.count - a.count || a.display.localeCompare(b.display, "es"));
+  if (entries.length === 0) return "";
+
+  const total = entries.reduce((sum, entry) => sum + entry.count, 0);
+  const items = entries
+    .map(
+      (entry) => `<li class="generales-vote-stats-item">
+        <span class="generales-vote-stats-item__label">${teamLabelHtml(entry.display)}</span>
+        <span class="generales-vote-stats-item__pct">${formatVotePercent(entry.count, total)}</span>
+      </li>`,
+    )
+    .join("");
+
+  return `<div class="generales-vote-stats-slot">
+    <h4 class="generales-vote-stats-slot__title">${escapeHtml(label)}</h4>
+    <ul class="generales-vote-stats-list">${items}</ul>
+  </div>`;
+}
+
+/**
+ * @param {{ key: string, label: string, kind: "team" | "player", group: "podium" | "awards" }} slot
+ * @param {Map<string, { count: number, display: string }>} countsMap
+ */
+function generalesVoteStatsSlotHtml(slot, countsMap) {
+  if (slot.kind === "team") return voteStatsTeamSlotHtml(slot.label, countsMap);
+
+  const entries = [...countsMap.values()].sort(
+    (a, b) => b.count - a.count || a.display.localeCompare(b.display, "es"),
+  );
+  if (entries.length === 0) return "";
+
+  const total = entries.reduce((sum, entry) => sum + entry.count, 0);
+  const items = entries
+    .map((entry) => {
+      const labelInner = playerLabelHtml(entry.display) || escapeHtml(entry.display);
+      return `<li class="generales-vote-stats-item">
+        <span class="generales-vote-stats-item__label">${labelInner}</span>
+        <span class="generales-vote-stats-item__pct">${formatVotePercent(entry.count, total)}</span>
+      </li>`;
+    })
+    .join("");
+
+  return `<div class="generales-vote-stats-slot">
+    <h4 class="generales-vote-stats-slot__title">${escapeHtml(slot.label)}</h4>
+    <ul class="generales-vote-stats-list">${items}</ul>
+  </div>`;
+}
+
+const GROUP_ORDER_VOTE_LABELS = ["1.º", "2.º", "3.º", "4.º"];
+
+/** @param {string} groupId */
+function getGroupThirdAdvanceVoteCounts(groupId) {
+  /** @type {{ yes: number, no: number }} */
+  const counts = { yes: 0, no: 0 };
+  for (const part of getParticipantsForDisplay()) {
+    const v = loadPredictions(part.id).groupThirdAdvances?.[groupId];
+    if (v === true) counts.yes += 1;
+    else if (v === false) counts.no += 1;
+  }
+  return counts;
+}
+
+/** @param {string} groupId */
+function buildGroupThirdAdvanceVoteSlotHtml(groupId) {
+  const { yes, no } = getGroupThirdAdvanceVoteCounts(groupId);
+  const total = yes + no;
+  if (total === 0) {
+    return `<div class="generales-vote-stats-slot">
+      <h4 class="generales-vote-stats-slot__title">3.º pasa</h4>
+      <p class="generales-vote-stats-slot-empty muted">Todavía no hay votos.</p>
+    </div>`;
+  }
+
+  const items = [];
+  if (yes > 0) {
+    items.push(`<li class="generales-vote-stats-item">
+      <span class="generales-vote-stats-item__label">Sí pasa <span aria-hidden="true">✓</span></span>
+      <span class="generales-vote-stats-item__pct">${formatVotePercent(yes, total)}</span>
+    </li>`);
+  }
+  if (no > 0) {
+    items.push(`<li class="generales-vote-stats-item">
+      <span class="generales-vote-stats-item__label">No pasa <span aria-hidden="true">✕</span></span>
+      <span class="generales-vote-stats-item__pct">${formatVotePercent(no, total)}</span>
+    </li>`);
+  }
+
+  return `<div class="generales-vote-stats-slot">
+    <h4 class="generales-vote-stats-slot__title">3.º pasa</h4>
+    <ul class="generales-vote-stats-list">${items.join("")}</ul>
+  </div>`;
+}
+
+/** @param {string} groupId */
+function buildGroupVoteStatsHtml(groupId) {
+  if (!isArenaMode()) return "";
+  const voteCountsByPos = getGroupOrderVoteCountsByPosition(groupId);
+  const orderHtml = GROUP_ORDER_VOTE_LABELS.map((label, i) =>
+    voteStatsTeamSlotHtml(label, voteCountsByPos[i]),
+  )
+    .filter(Boolean)
+    .join("");
+  const hasAnyOrderVotes = voteCountsByPos.some((m) => m.size > 0);
+  const { yes, no } = getGroupThirdAdvanceVoteCounts(groupId);
+  const hasThirdVotes = yes + no > 0;
+  if (!hasAnyOrderVotes && !hasThirdVotes) return "";
+
+  const thirdSlotHtml = buildGroupThirdAdvanceVoteSlotHtml(groupId);
+
+  return `<section class="generales-vote-stats" aria-label="Distribución de votos del grupo ${escapeHtml(groupId)}">
+    <h2 class="subsection-title generales-vote-stats__title">Distribución de votos</h2>
+    <div class="generales-vote-stats-layout">
+      <div class="generales-vote-stats-block">
+        ${
+          hasAnyOrderVotes
+            ? `<h3 class="generales-side-title">Orden del grupo</h3>
+        <div class="generales-vote-stats-slots generales-vote-stats-slots--group-order">${orderHtml}</div>`
+            : ""
+        }
+        <div class="generales-vote-stats-slots generales-vote-stats-slots--third-advance">${thirdSlotHtml}</div>
+      </div>
+    </div>
+    <p class="muted generales-vote-stats__hint">Porcentaje sobre quienes eligieron cada casilla. Solo se listan opciones con al menos un voto.</p>
+  </section>`;
+}
+
+function buildGeneralesVoteStatsHtml() {
+  if (!isArenaMode()) return "";
+  const bySlot = getGeneralesVoteCountsBySlot();
+  const podiumSlots = GENERALES_VOTE_SLOTS.filter((s) => s.group === "podium");
+  const awardSlots = GENERALES_VOTE_SLOTS.filter((s) => s.group === "awards");
+  const podiumHtml = podiumSlots
+    .map((s) => generalesVoteStatsSlotHtml(s, bySlot[s.key]))
+    .filter(Boolean)
+    .join("");
+  const awardsHtml = awardSlots
+    .map((s) => generalesVoteStatsSlotHtml(s, bySlot[s.key]))
+    .filter(Boolean)
+    .join("");
+  const hasAnyPodiumVotes = podiumSlots.some((s) => bySlot[s.key].size > 0);
+  const hasAnyAwardVotes = awardSlots.some((s) => bySlot[s.key].size > 0);
+  if (!hasAnyPodiumVotes && !hasAnyAwardVotes) return "";
+
+  const awardsBlock = hasAnyAwardVotes
+    ? `<div class="generales-vote-stats-block">
+        <h3 class="generales-side-title">Premios individuales</h3>
+        <div class="generales-vote-stats-slots generales-vote-stats-slots--awards">${awardsHtml}</div>
+      </div>`
+    : `<div class="generales-vote-stats-block">
+        <h3 class="generales-side-title">Premios individuales</h3>
+        <p class="generales-vote-stats-empty muted">Todavía no hay votos en premios individuales.</p>
+      </div>`;
+
+  return `<section class="generales-vote-stats" aria-label="Porcentaje de votos por opción">
+    <h2 class="subsection-title generales-vote-stats__title">Distribución de votos</h2>
+    <div class="generales-vote-stats-layout">
+      ${
+        hasAnyPodiumVotes
+          ? `<div class="generales-vote-stats-block">
+        <h3 class="generales-side-title">Podio</h3>
+        <div class="generales-vote-stats-slots generales-vote-stats-slots--podium">${podiumHtml}</div>
+      </div>`
+          : ""
+      }
+      ${awardsBlock}
+    </div>
+    <p class="muted generales-vote-stats__hint">Porcentaje sobre quienes eligieron cada casilla. Solo se listan opciones con al menos un voto.</p>
+  </section>`;
+}
+
 /**
  * @param {string} currentParticipantId
  */
@@ -2193,16 +2892,14 @@ function buildGeneralesPredictionsTableHtml(currentParticipantId) {
     </tr>`;
   }
 
-  const participantScores = [...getParticipantsForDisplay()].map((p) => {
+  const participantScores = getParticipantsForListDisplay(currentParticipantId).map((p) => {
     const gen = loadPredictions(p.id).general ?? {};
     const score = computeGeneralPredictionsScore(gen, officialGen, hasOfficialData);
     return { p, gen, score };
   });
   const maxPts = Math.max(0, ...participantScores.map((x) => x.score.total));
 
-  const participantRows = participantScores
-    .sort((a, b) => a.p.name.localeCompare(b.p.name))
-    .map(({ p, gen, score }) => {
+  const participantRows = participantScores.map(({ p, gen, score }) => {
       const rowClasses = ["group-preds-row", p.id === currentParticipantId ? "row-self" : ""]
         .filter(Boolean)
         .join(" ");
@@ -2280,7 +2977,8 @@ function buildGeneralesPredictionsTableHtml(currentParticipantId) {
         </thead>
         <tbody>${officialRowHtml}${participantRows}</tbody>
       </table>
-    </div>`;
+    </div>
+    ${buildGeneralesVoteStatsHtml()}`;
 }
 
 /**
@@ -2628,7 +3326,9 @@ function renderGenerales(participantId, predictions, disabled) {
         ? `<p class="generales-locked-banner generales-locked-banner--admin muted" role="status">Tus predicciones de participante están <strong>bloqueadas</strong> mientras defines el resultado oficial. Usa el panel <strong>Resultado oficial (admin)</strong> más abajo.</p>`
         : `<p class="generales-locked-banner muted" role="status">Un administrador ha <strong>bloqueado</strong> esta pestaña: no puedes cambiar el podio ni los premios individuales hasta que lo desbloqueen.</p>`
       : isAnyTournamentMatchKickoffLocked()
-        ? `<p class="generales-locked-banner muted" role="status">Las predicciones generales están <strong>cerradas</strong>: ya comenzó al menos un partido del torneo.</p>`
+        ? isArenaMode()
+          ? `<p class="generales-locked-banner muted" role="status">Las predicciones generales están <strong>cerradas</strong> desde el 13 de julio a las 23:59 (hora CDMX).</p>`
+          : `<p class="generales-locked-banner muted" role="status">Las predicciones generales están <strong>cerradas</strong>: ya comenzó al menos un partido del torneo.</p>`
         : "";
 
   const canToggleUserConfirm = !disabled && !officialLocked && !generalesPredictionsFormLocked();
@@ -2645,7 +3345,7 @@ function renderGenerales(participantId, predictions, disabled) {
         }</span>
       </div>`
     : "";
-  form.innerHTML = `${lockBanner}
+  form.innerHTML = `${arenaPrivadasReadOnlyBannerHtml()}${lockBanner}
     ${generalesFullFormInnerHtml(g, formDisabled)}
     ${userConfirmActionsHtml}`;
 
@@ -3019,7 +3719,9 @@ function renderGrupos(participantId, predictions) {
       } else if (groupsBlocked) {
         orderWrap.innerHTML += `<p class="muted">Bloqueado por administración.</p>`;
       } else if (orderKickoffLocked) {
-        orderWrap.innerHTML += `<p class="muted">Cerrado: ya comenzó al menos un partido del torneo.</p>`;
+        orderWrap.innerHTML += isArenaMode()
+          ? `<p class="muted">Cerrado desde el 13 de julio a las 23:59 (hora CDMX).</p>`
+          : `<p class="muted">Cerrado: ya comenzó al menos un partido del torneo.</p>`;
       }
     } else {
       const ol = document.createElement("ol");
@@ -3230,6 +3932,7 @@ function renderGrupos(participantId, predictions) {
   });
 
   syncThirdLimitRibbon(predictions);
+  syncParticipantSearchInputs();
 }
 
 /**
@@ -3529,6 +4232,8 @@ function computeLiveParticipantRows(currentParticipantId) {
       const officialOrder = liveOfficial.orderByGroup?.[grp.id] ?? [];
       const hasOfficialData = liveOfficial.hasOfficialDataByGroup?.[grp.id] === true;
       if (!hasOfficialData) continue;
+      // Ranking global: puntos de orden de grupo solo cuando el grupo terminó (6 partidos confirmados).
+      if (liveOfficial.groupCompletedByGroup?.[grp.id] !== true) continue;
       const officialThird = liveOfficial.thirdAdvanceByGroup?.[grp.id];
       const officialThirdDefined = officialThird === true || officialThird === false;
       const order = pStore.groupOrder?.[grp.id];
@@ -3672,12 +4377,13 @@ function renderFloatingRanking(session) {
   const body = $("#floating-ranking-body");
   if (!host || !body) return;
   const currentId = session?.participantId ?? "";
-  const rows = computeLiveParticipantRows(currentId).sort((a, b) => {
+  const sortedRows = computeLiveParticipantRows(currentId).sort((a, b) => {
     if (b.pts !== a.pts) return b.pts - a.pts;
     if (b.totalPerfect !== a.totalPerfect) return b.totalPerfect - a.totalPerfect;
     if (b.totalBonus !== a.totalBonus) return b.totalBonus - a.totalBonus;
     return a.p.name.localeCompare(b.p.name);
   });
+  const rows = orderRankingRowsForDisplay(sortedRows, currentId);
 
   body.innerHTML = `<table class="floating-ranking-table" aria-label="Ranking en vivo">
     <thead><tr>
@@ -3687,12 +4393,18 @@ function renderFloatingRanking(session) {
     </tr></thead>
     <tbody>
       ${rows
-        .map((r, i) => {
+        .map((r) => {
           const podium =
-            i === 0 ? "floating-ranking-row--gold" : i === 1 ? "floating-ranking-row--silver" : i === 2 ? "floating-ranking-row--bronze" : "";
+            r.displayRank === 1
+              ? "floating-ranking-row--gold"
+              : r.displayRank === 2
+                ? "floating-ranking-row--silver"
+                : r.displayRank === 3
+                  ? "floating-ranking-row--bronze"
+                  : "";
           const rowClass = [podium, r.self ? "floating-ranking-row-self" : ""].filter(Boolean).join(" ");
           const you = r.self ? " (tu)" : "";
-          return `<tr class="${rowClass}"><td>${i + 1}</td><th scope="row">${escapeHtml(r.p.name)}${you}</th><td><strong>${r.pts}</strong></td></tr>`;
+          return `<tr class="${rowClass}"><td>${r.displayRank}</td><th scope="row">${escapeHtml(r.p.name)}${you}</th><td><strong>${r.pts}</strong></td></tr>`;
         })
         .join("")}
     </tbody>
@@ -3975,24 +4687,32 @@ function renderFinalRanking(session) {
     return;
   }
   if (loginHint) loginHint.hidden = true;
-  const rows = computeLiveParticipantRows(session.participantId).sort((a, b) => {
+  const sortedRows = computeLiveParticipantRows(session.participantId).sort((a, b) => {
     if (b.pts !== a.pts) return b.pts - a.pts;
     if (b.totalPerfect !== a.totalPerfect) return b.totalPerfect - a.totalPerfect;
     if (b.totalBonus !== a.totalBonus) return b.totalBonus - a.totalBonus;
     return a.p.name.localeCompare(b.p.name);
   });
-  const maxBonus = Math.max(0, ...rows.map((r) => r.totalBonus));
-  const maxPerfect = Math.max(0, ...rows.map((r) => r.totalPerfect));
-  const maxBien = Math.max(0, ...rows.map((r) => r.totalBien));
-  const maxExcelente = Math.max(0, ...rows.map((r) => r.totalExcelente));
-  const maxPts = Math.max(0, ...rows.map((r) => r.pts));
+  const rows = orderRankingRowsForDisplay(sortedRows, session.participantId);
+  const maxBonus = Math.max(0, ...sortedRows.map((r) => r.totalBonus));
+  const maxPerfect = Math.max(0, ...sortedRows.map((r) => r.totalPerfect));
+  const maxBien = Math.max(0, ...sortedRows.map((r) => r.totalBien));
+  const maxExcelente = Math.max(0, ...sortedRows.map((r) => r.totalExcelente));
+  const maxPts = Math.max(0, ...sortedRows.map((r) => r.pts));
   body.innerHTML = rows
-    .map((r, i) => {
-      const podium = i === 0 ? "group-ranking-row--gold" : i === 1 ? "group-ranking-row--silver" : i === 2 ? "group-ranking-row--bronze" : "";
+    .map((r) => {
+      const podium =
+        r.displayRank === 1
+          ? "group-ranking-row--gold"
+          : r.displayRank === 2
+            ? "group-ranking-row--silver"
+            : r.displayRank === 3
+              ? "group-ranking-row--bronze"
+              : "";
       const rowCls = [podium, r.self ? "row-self" : ""].filter(Boolean).join(" ");
       const you = r.self ? ' <span class="td-muted">(tú)</span>' : "";
       return `<tr class="${rowCls}">
-        <td class="group-ranking-rank">${i + 1}</td>
+        <td class="group-ranking-rank">${r.displayRank}</td>
         <th scope="row" class="group-ranking-name">${escapeHtml(r.p.name)}${you}</th>
         ${groupOrderRankingStatCell(
           r.totalBien,
@@ -4289,21 +5009,22 @@ function renderStats(session) {
     if (b.totalBonus !== a.totalBonus) return b.totalBonus - a.totalBonus;
     return a.p.name.localeCompare(b.p.name);
   });
+  const acDisplay = orderRankingRowsForDisplay(acSorted, session.participantId);
 
   if (!acHead || !acBody) return;
 
-  if (acSorted.length === 0) {
+  if (acDisplay.length === 0) {
     acHead.innerHTML = "";
     acBody.innerHTML = "";
     return;
   }
 
-  const selfIdx = acSorted.findIndex((r) => r.self);
+  const selfIdx = acDisplay.findIndex((r) => r.self);
   const hintRow =
     showStatsColorHint && selfIdx >= 0
       ? `<tr class="stats-color-hint-row" aria-hidden="true">` +
         `<th class="stats-color-hint-cell stats-color-hint-cell--empty"></th>` +
-        acSorted
+        acDisplay
           .map((_, idx) =>
             idx === selfIdx
               ? '<th class="stats-color-hint-cell stats-color-hint-cell--active"><span class="stats-color-hint-badge" role="status" aria-live="polite">CAMBIA TU COLOR</span></th>'
@@ -4317,7 +5038,7 @@ function renderStats(session) {
     hintRow +
     `<tr>` +
     `<th scope="col" class="stats-matrix-corner">Métrica</th>` +
-    acSorted
+    acDisplay
       .map((r) => {
         const hex = getParticipantAccentHex(r.p);
         const selfCls = r.self ? " stats-matrix-player--self" : "";
@@ -4374,7 +5095,7 @@ function renderStats(session) {
 
   acBody.innerHTML = metricRows
     .map((m) => {
-      const rawVals = acSorted.map((r) => m.value(r));
+      const rawVals = acDisplay.map((r) => m.value(r));
       let bestFlags;
       if (m.higherIsBetter) {
         const max = Math.max(...rawVals);
@@ -4392,7 +5113,7 @@ function renderStats(session) {
       return (
         `<tr>` +
         `<th scope="row" class="stats-matrix-metric" title="${escapeHtml(m.title)}">${escapeHtml(m.label)}</th>` +
-        acSorted
+        acDisplay
           .map((r, i) => {
             const raw = m.value(r);
             const display = m.format(raw);
@@ -5133,9 +5854,9 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
   /** Tras iniciar el partido la última columna muestra Pts; antes solo acciones (confirmar/cambiar). */
   const showPtsColumn = matchStage !== "ready";
 
-  const preliminary = [...getParticipantsForDisplay()]
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((p) => {
+  const preliminary = getParticipantsForListDisplay(session.participantId, getParticipantSearchQuery(), {
+    hasSubmission: (p) => participantHasMatchScoreSubmission(p, m.id, false),
+  }).map((p) => {
       const pStore = loadPredictions(p.id);
       const pred = pStore.groupScores[m.id] ?? { home: "", away: "" };
       const predCommitted = pStore.groupScoresConfirmed?.[m.id] === true;
@@ -5144,20 +5865,23 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
 
   const improbableSign = officialCompleteForScoring ? getImprobableOutcomeSignForMatch(m.id, off) : null;
 
-  const rows = preliminary.map((r) => {
-    const pts =
-      officialCompleteForScoring && r.predCommitted
-        ? computeGroupMatchPoints(off, r.pred, improbableSign, matchScoring)
-        : null;
-    const breakdown =
-      officialCompleteForScoring && r.predCommitted
-        ? computeGroupMatchPointsBreakdown(off, r.pred, improbableSign, matchScoring)
-        : null;
-    const exactTier = breakdown?.exactTier ?? null;
-    const exact =
-      breakdown && r.predCommitted ? isExactGroupPrediction(off, r.pred) : false;
-    return { ...r, pts, breakdown, exact, exactTier };
-  });
+  const rows = sortQuinielaPredictionRows(
+    preliminary.map((r) => {
+      const pts =
+        officialCompleteForScoring && r.predCommitted
+          ? computeGroupMatchPoints(off, r.pred, improbableSign, matchScoring)
+          : null;
+      const breakdown =
+        officialCompleteForScoring && r.predCommitted
+          ? computeGroupMatchPointsBreakdown(off, r.pred, improbableSign, matchScoring)
+          : null;
+      const exactTier = breakdown?.exactTier ?? null;
+      const exact =
+        breakdown && r.predCommitted ? isExactGroupPrediction(off, r.pred) : false;
+      return { ...r, pts, breakdown, exact, exactTier };
+    }),
+    session.participantId,
+  );
 
   const scoredPts = rows.filter(
     (d) => officialCompleteForScoring && d.predCommitted && d.pts !== null,
@@ -5168,6 +5892,9 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
     .map((d) => {
       let cls = "quiniela-pred-row";
       if (d.p.id === session.participantId) cls += " quiniela-pred-row--self";
+      if (matchPredictionSubmissionRank(d.pred, d.predCommitted) === 0) {
+        cls += " quiniela-pred-row--empty-pred";
+      }
       if (showPtsColumn) {
         cls += quinielaPredRowTierExtraClasses(d, {
           officialCompleteForScoring,
@@ -5180,7 +5907,12 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
       }
 
       const isSelf = d.p.id === session.participantId;
-      const rowEditableByActor = (isSelf || canEditAll) && !predictionsLocked && !d.predCommitted && teamsDecided;
+      const rowEditableByActor =
+        (isSelf || canEditAll) &&
+        !isArenaPrivadasMirrorUser() &&
+        !predictionsLocked &&
+        !d.predCommitted &&
+        teamsDecided;
       /** Borrador no confirmado: otros no ven marcador ni ganador hasta «Confirmar». */
       const hideDraftScoresFromOthers = !isSelf && !canEditAll && !d.predCommitted;
       const scoreCellPlain = (side) => {
@@ -5415,9 +6147,9 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
   const koOfficialSlotsDecided =
     isQuinielaTeamSlotDecided(koOfficialHome) && isQuinielaTeamSlotDecided(koOfficialAway);
   const koSlotsReadyForEdit = koOfficialSlotsDecided || canEditAll;
-  const preliminary = [...getParticipantsForDisplay()]
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((p) => {
+  const preliminary = getParticipantsForListDisplay(session.participantId, getParticipantSearchQuery(), {
+    hasSubmission: (p) => participantHasMatchScoreSubmission(p, m.id, true),
+  }).map((p) => {
       const pStore = loadPredictions(p.id);
       const pred = pStore.knockoutScores?.[m.id] ?? { home: "", away: "" };
       const predCommitted = pStore.knockoutScoresConfirmed?.[m.id] === true;
@@ -5431,20 +6163,23 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
     ? getImprobableOutcomeSignForKoMatch(m.id, off)
     : null;
 
-  const rows = preliminary.map((r) => {
-    const pts =
-      officialCompleteForScoring && r.predCommitted
-        ? computeGroupMatchPoints(off, r.pred, improbableSign, matchScoring, koPenaltyPhase)
-        : null;
-    const breakdown =
-      officialCompleteForScoring && r.predCommitted
-        ? computeGroupMatchPointsBreakdown(off, r.pred, improbableSign, matchScoring, koPenaltyPhase)
-        : null;
-    const exactTier = breakdown?.exactTier ?? null;
-    const exact =
-      breakdown && r.predCommitted ? isExactGroupPrediction(off, r.pred) : false;
-    return { ...r, pts, breakdown, exact, exactTier };
-  });
+  const rows = sortQuinielaPredictionRows(
+    preliminary.map((r) => {
+      const pts =
+        officialCompleteForScoring && r.predCommitted
+          ? computeGroupMatchPoints(off, r.pred, improbableSign, matchScoring, koPenaltyPhase)
+          : null;
+      const breakdown =
+        officialCompleteForScoring && r.predCommitted
+          ? computeGroupMatchPointsBreakdown(off, r.pred, improbableSign, matchScoring, koPenaltyPhase)
+          : null;
+      const exactTier = breakdown?.exactTier ?? null;
+      const exact =
+        breakdown && r.predCommitted ? isExactGroupPrediction(off, r.pred) : false;
+      return { ...r, pts, breakdown, exact, exactTier };
+    }),
+    session.participantId,
+  );
 
   const scoredPtsKo = rows.filter(
     (d) => officialCompleteForScoring && d.predCommitted && d.pts !== null,
@@ -5458,6 +6193,9 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
     .map((d) => {
       let cls = "quiniela-pred-row partidos-ko-pred-row";
       if (d.p.id === session.participantId) cls += " quiniela-pred-row--self";
+      if (matchPredictionSubmissionRank(d.pred, d.predCommitted) === 0) {
+        cls += " quiniela-pred-row--empty-pred";
+      }
       if (showPtsColumn) {
         cls += quinielaPredRowTierExtraClasses(d, {
           officialCompleteForScoring,
@@ -5472,7 +6210,11 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
       const vm = d.virtualM;
       const isSelf = d.p.id === session.participantId;
       const rowEditableByActor =
-        (isSelf || canEditAll) && !predictionsLocked && !d.predCommitted && koSlotsReadyForEdit;
+        (isSelf || canEditAll) &&
+        !isArenaPrivadasMirrorUser() &&
+        !predictionsLocked &&
+        !d.predCommitted &&
+        koSlotsReadyForEdit;
       const hideDraftScoresFromOthers = !isSelf && !canEditAll && !d.predCommitted;
       const scoreCellPlain = (side) => {
         const v = side === "home" ? d.pred.home : d.pred.away;
@@ -5810,8 +6552,12 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
           ${partidosAccKickoffBodyHtml(m)}
           ${statusBanner}
           ${officialMini}
-          <div class="quiniela-preds-head">Predicciones</div>
-          <div class="table-scroll quiniela-table-wrap">
+          <div class="quiniela-preds-head-row">
+            <div class="quiniela-preds-head">Predicciones</div>
+            ${participantSearchToolbarHtml({ ariaLabel: "Buscar jugador en este partido" })}
+          </div>
+          ${buildMatchVoteBarsHtml(homeLab, awayLab, m.id, true, m.roundId)}
+          <div class="${quinielaPredsTableWrapClass()}">
             <table class="${quinielaPredsTableClsKo}">
               <thead>
                 <tr>
@@ -5902,7 +6648,7 @@ function refreshAfterParticipantPredictionScores(session, matchId) {
   } else if (wrap) {
     patchQuinielaKoMatchPredRows(wrap, matchId);
   }
-  refreshAll(session, { skipPartidosRender: true });
+  refreshAll(session, { skipPartidosRender: true, onlyActivePanel: isArenaMode() });
 }
 
 /**
@@ -6535,15 +7281,23 @@ function computeMatchRankingRows(scope, groupId, sessionParticipantId) {
   const maxPerfect = Math.max(0, ...rows.map((r) => r.perfectCount));
   const maxBonus = Math.max(0, ...rows.map((r) => r.bonusCount));
   const maxTotal = Math.max(0, ...rows.map((r) => r.totalPoints));
+  const displayRows = orderRankingRowsForDisplay(rows, sessionParticipantId);
 
-  return rows
-    .map((r, idx) => {
+  return displayRows
+    .map((r) => {
       const isSelf = r.participant.id === sessionParticipantId;
-      const podium = idx === 0 ? "group-ranking-row--gold" : idx === 1 ? "group-ranking-row--silver" : idx === 2 ? "group-ranking-row--bronze" : "";
+      const podium =
+        r.displayRank === 1
+          ? "group-ranking-row--gold"
+          : r.displayRank === 2
+            ? "group-ranking-row--silver"
+            : r.displayRank === 3
+              ? "group-ranking-row--bronze"
+              : "";
       const rowCls = ["match-ranking-row", podium, isSelf ? "row-self" : ""].filter(Boolean).join(" ");
       const you = isSelf ? ' <span class="td-muted">(tú)</span>' : "";
       return `<tr class="${rowCls}">
-        <td class="group-ranking-rank">${idx + 1}</td>
+        <td class="group-ranking-rank">${r.displayRank}</td>
         <th scope="row" class="group-ranking-name">${escapeHtml(r.participant.name)}${you}</th>
         ${groupOrderRankingStatCell(
           r.bienCount,
@@ -7298,8 +8052,12 @@ function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds) 
           ${partidosAccKickoffBodyHtml(m)}
           ${quinielaMatchStatusBanner(matchStage, officialConfirmed, groupTeamsDecided, kickoffLocked)}
           ${officialHtml}
-          <div class="quiniela-preds-head">Predicciones</div>
-          <div class="table-scroll quiniela-table-wrap">
+          <div class="quiniela-preds-head-row">
+            <div class="quiniela-preds-head">Predicciones</div>
+            ${participantSearchToolbarHtml({ ariaLabel: "Buscar jugador en este partido" })}
+          </div>
+          ${buildMatchVoteBarsHtml(m.home, m.away, m.id, false)}
+          <div class="${quinielaPredsTableWrapClass()}">
             <table class="${quinielaPredsTableCls}">
               <thead>
                 <tr>
@@ -9078,16 +9836,23 @@ function buildGroupOrderRankingRows(sessionParticipantId) {
   const maxPerfecto = Math.max(0, ...rows.map((r) => r.perfectoBonusCount));
   const maxBonus = Math.max(0, ...rows.map((r) => r.bonusCount));
   const maxPts = Math.max(0, ...rows.map((r) => r.totalPoints));
+  const displayRows = orderRankingRowsForDisplay(rows, sessionParticipantId);
 
-  return rows
-    .map((r, idx) => {
+  return displayRows
+    .map((r) => {
       const isSelf = r.participant.id === sessionParticipantId;
-      const podium = idx === 0 ? "group-ranking-row--gold" : idx === 1 ? "group-ranking-row--silver" : idx === 2 ? "group-ranking-row--bronze" : "";
+      const podium =
+        r.displayRank === 1
+          ? "group-ranking-row--gold"
+          : r.displayRank === 2
+            ? "group-ranking-row--silver"
+            : r.displayRank === 3
+              ? "group-ranking-row--bronze"
+              : "";
       const rowCls = ["group-ranking-row", podium, isSelf ? "row-self" : ""].filter(Boolean).join(" ");
-      const rank = idx + 1;
       const you = isSelf ? ' <span class="td-muted">(tú)</span>' : "";
       return `<tr class="${rowCls}">
-        <td class="group-ranking-rank">${rank}</td>
+        <td class="group-ranking-rank">${r.displayRank}</td>
         <th scope="row" class="group-ranking-name">${escapeHtml(r.participant.name)}${you}</th>
         ${groupOrderRankingStatCell(
           r.bienCount,
@@ -9130,6 +9895,48 @@ function redrawTeamOrderRanking() {
   body.innerHTML = buildGroupOrderRankingRows(session.participantId);
 }
 
+/** Arena: actualiza rankings/stats sin reemplazar formularios de predicción. */
+function refreshArenaRemoteLight() {
+  const session = loadSession();
+  updateSessionBar(session);
+  renderStats(session);
+  renderFloatingRanking(session);
+  if (session) {
+    updatePredictionTabsProgress(session, loadPredictions(session.participantId));
+  }
+  const tab = getActiveTabId();
+  if (tab === "team-stats") {
+    redrawTeamStats();
+    rebuildTeamStatsSelectOptions();
+  }
+  if (tab === "team-order") {
+    redrawTeamOrder();
+    rebuildTeamOrderSelectOptions();
+  }
+  if (tab === "team-order-ranking") redrawTeamOrderRanking();
+  if (tab === "match-ranking") redrawMatchRanking();
+  if (tab === "match-history") redrawMatchHistory();
+  if (tab === "final-ranking") renderFinalRanking(session);
+}
+
+/** Arena: refresco de bloqueos (kickoff / fecha tope) cuando el usuario no está interactuando. */
+function refreshArenaPanelsIfIdle() {
+  if (isArenaInteractionPaused()) {
+    scheduleArenaDeferredRefresh(refreshArenaPanelsIfIdle);
+    return;
+  }
+  refreshArenaRemoteLight();
+  const session = loadSession();
+  if (!session) return;
+  const tab = getActiveTabId();
+  const predictions = loadPredictions(session.participantId);
+  const official = loadOfficialResults();
+  if (tab === "generales") renderGenerales(session.participantId, predictions, false);
+  else if (tab === "grupos") renderGrupos(session.participantId, predictions);
+  else if (tab === "brackets") renderBrackets(session.participantId, predictions);
+  else if (tab === "partidos") renderQuiniela(session, official);
+}
+
 /**
  * @param {{ participantId: string } | null} session
  * @param {{ skipPartidosRender?: boolean, preserveScroll?: boolean, onlyActivePanel?: boolean }} [opts]
@@ -9146,7 +9953,13 @@ function refreshAll(session, opts = {}) {
 
   if (session) {
     const p = getParticipantById(session.participantId);
-    if (p && p.pin != null && p.pin !== "" && !isPinVerified(p.id, p.pin)) {
+    if (
+      !isArenaMode() &&
+      p &&
+      p.pin != null &&
+      p.pin !== "" &&
+      !isPinVerified(p.id, p.pin)
+    ) {
       clearSession();
       session = null;
       window.dispatchEvent(new CustomEvent("pm26-pin-stale"));
@@ -9158,6 +9971,7 @@ function refreshAll(session, opts = {}) {
     clearCompareTableParticipantBinding();
   }
   updateSessionBar(session);
+  syncParticipantSearchInputs();
   renderStats(session);
   renderFloatingRanking(session);
   ensureFaseGruposFilter();
@@ -9192,9 +10006,11 @@ function refreshAll(session, opts = {}) {
     updateProximosNavShortcutButton(null);
     updatePredictionTabsProgress(null, null);
     syncGroupPtsBadgeCanvases(document.body);
-    scheduleKickoffLockRefresh(() => {
-      refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true });
-    });
+    scheduleKickoffLockRefresh(
+      isArenaMode()
+        ? () => scheduleArenaDeferredRefresh(refreshArenaPanelsIfIdle)
+        : () => refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true }),
+    );
     return;
   }
   const predictions = loadPredictions(session.participantId);
@@ -9234,9 +10050,11 @@ function refreshAll(session, opts = {}) {
   updateProximosNavShortcutButton(session);
   syncGroupPtsBadgeCanvases(document.body);
   if (scrollAnchor) restoreWindowScrollAnchor(scrollAnchor);
-  scheduleKickoffLockRefresh(() => {
-    refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true });
-  });
+  const onTimedLockRefresh = isArenaMode()
+    ? () => scheduleArenaDeferredRefresh(refreshArenaPanelsIfIdle)
+    : () => refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true });
+  scheduleKickoffLockRefresh(onTimedLockRefresh);
+  scheduleArenaGeneralesDeadlineRefresh(onTimedLockRefresh);
 }
 
 export function initApp() {
@@ -9248,6 +10066,9 @@ export function initApp() {
   bindGeneralesOfficialAdminActions();
   initNavDrawer();
   initFloatingRanking();
+  initParticipantSearch(() => {
+    refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true });
+  });
   ensureFaseGruposFilter();
   tabsController = initTabs((tabId) => {
     syncDrawerExpandableSubmenus(tabId);
@@ -9286,6 +10107,10 @@ export function initApp() {
   let externalSyncRefreshChain = Promise.resolve();
 
   function queueRefreshAfterExternalSync() {
+    if (isArenaMode()) {
+      refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true });
+      return;
+    }
     externalSyncRefreshChain = externalSyncRefreshChain
       .then(() => {
         refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true });
@@ -9309,6 +10134,7 @@ export function initApp() {
   }
 
   window.addEventListener("pm26-pin-stale", () => {
+    if (isArenaMode()) return;
     showOnboarding(afterSessionReady);
   });
 
@@ -9316,17 +10142,27 @@ export function initApp() {
   bindParticipantAccentPopover();
 
   bindSessionChange(() => {
+    if (isArenaMode()) return;
     showOnboarding(afterSessionReady);
     refreshAll(null);
   });
 
-  let s = loadSession();
-  if (s && getParticipantById(s.participantId)) {
-    afterSessionReady();
+  if (isArenaMode()) {
+    const sess = loadSession();
+    if (sess && getParticipantById(sess.participantId)) {
+      afterSessionReady();
+    } else {
+      location.href = "/ArenaMundial/login/";
+    }
   } else {
-    clearSession();
-    showOnboarding(afterSessionReady);
-    refreshAll(null);
+    let s = loadSession();
+    if (s && getParticipantById(s.participantId)) {
+      afterSessionReady();
+    } else {
+      clearSession();
+      showOnboarding(afterSessionReady);
+      refreshAll(null);
+    }
   }
 
   requestAnimationFrame(() => syncGroupPtsBadgeCanvases(document.body));

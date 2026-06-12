@@ -3,6 +3,12 @@
  */
 
 import { isRemoteSyncActive } from "./remote-sync-flags.js";
+import {
+  isArenaMode,
+  getArenaUserId,
+  pushArenaMyPredictions,
+  isArenaPrivadasMirrorUser,
+} from "./arena-mode.js";
 import { migrateStoredTeamNames } from "./tournament.js";
 import { pushPredictions, deleteRemotePredictions } from "./sync-push.js";
 
@@ -78,10 +84,22 @@ export function loadPredictions(participantId) {
 /** @param {Record<string, unknown>} [map] */
 export function hydratePredictionsFromRemote(map) {
   useRemotePredictions = true;
+  const arenaUserId = isArenaMode() ? getArenaUserId() : "";
+  const keepMineRemote =
+    arenaUserId && !isArenaPrivadasMirrorUser()
+      ? normalizePredictionsData(predictionsRemoteMap[arenaUserId])
+      : null;
   predictionsRemoteMap = {};
   const src = map && typeof map === "object" ? map : {};
   for (const [id, raw] of Object.entries(src)) {
+    if (arenaUserId && id === arenaUserId && keepMineRemote) {
+      predictionsRemoteMap[id] = keepMineRemote;
+      continue;
+    }
     predictionsRemoteMap[id] = normalizePredictionsData(raw);
+  }
+  if (arenaUserId && keepMineRemote && !predictionsRemoteMap[arenaUserId]) {
+    predictionsRemoteMap[arenaUserId] = keepMineRemote;
   }
 }
 
@@ -96,6 +114,9 @@ export function disableRemotePredictions() {
  * Si `replaceGroupScoresConfirmed === true`, `groupScoresConfirmed` sustituye al mapa anterior (sirve para quitar claves al desbloquear).
  */
 export function savePredictions(participantId, patch) {
+  if (isArenaMode() && isArenaPrivadasMirrorUser()) {
+    return loadPredictions(participantId);
+  }
   const prev = loadPredictions(participantId);
   const { replaceGroupScoresConfirmed, replaceKnockoutScoresConfirmed, ...patchRest } = patch;
   const prevGsc = prev.groupScoresConfirmed ?? {};
@@ -123,7 +144,11 @@ export function savePredictions(participantId, patch) {
   };
   if (useRemotePredictions) {
     predictionsRemoteMap[participantId] = next;
-    if (isRemoteSyncActive()) {
+    if (isArenaMode()) {
+      if (participantId === getArenaUserId()) {
+        pushArenaMyPredictions(next).catch((e) => console.error("[arena sync]", e));
+      }
+    } else if (isRemoteSyncActive()) {
       pushPredictions(participantId, next).catch((e) => console.error("[pm26 sync]", e));
     }
   } else {
@@ -169,5 +194,31 @@ export function clearAllParticipantsPredictions() {
     predictionsRemoteMap = {};
   } else {
     predictionsLocalMap = {};
+  }
+}
+
+/** Mapa completo de predicciones (para exportar backup). */
+export function getAllPredictionsMap() {
+  const map = useRemotePredictions ? predictionsRemoteMap : predictionsLocalMap;
+  /** @type {Record<string, Predictions>} */
+  const out = {};
+  for (const [id, raw] of Object.entries(map)) {
+    out[id] = normalizePredictionsData(raw);
+  }
+  return out;
+}
+
+/** Sustituye todas las predicciones (restauración desde backup). */
+export function replacePredictionsState(map) {
+  /** @type {Record<string, Predictions>} */
+  const next = {};
+  const src = map && typeof map === "object" ? map : {};
+  for (const [id, raw] of Object.entries(src)) {
+    next[id] = normalizePredictionsData(raw);
+  }
+  if (useRemotePredictions) {
+    predictionsRemoteMap = next;
+  } else {
+    predictionsLocalMap = next;
   }
 }
