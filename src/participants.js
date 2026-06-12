@@ -8,6 +8,7 @@
 
 import { isRemoteSyncActive } from "./remote-sync-flags.js";
 import { isArenaMode, isArenaAdmin, getArenaUserId, getArenaUser } from "./arena-mode.js";
+import { searchTextIncludes } from "./search-normalize.js";
 import { prunePredictionsToParticipantIds } from "./predictions-store.js";
 import { pushParticipants } from "./sync-push.js";
 import { clearPinVerifiedForParticipant } from "./session.js";
@@ -515,11 +516,9 @@ export function setParticipantSearchQuery(query) {
  * @param {string} query
  */
 export function participantMatchesSearchQuery(p, query) {
-  const q = String(query ?? "").trim().toLowerCase();
+  const q = String(query ?? "").trim();
   if (!q) return true;
-  const name = String(p?.name ?? "").toLowerCase();
-  const id = String(p?.id ?? "").toLowerCase();
-  return name.includes(q) || id.includes(q);
+  return searchTextIncludes(p?.name, q) || searchTextIncludes(p?.id, q);
 }
 
 /**

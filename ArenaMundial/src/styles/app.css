@@ -43,6 +43,18 @@ a {
   gap: 1rem;
 }
 
+.arena-account-admin {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.arena-account-self + .arena-account-admin {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
 .arena-panel {
   background: var(--card);
   border: 1px solid rgba(255, 255, 255, 0.08);

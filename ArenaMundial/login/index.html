@@ -31,7 +31,7 @@
               name="username"
               autocomplete="username"
               required
-              maxlength="24"
+              maxlength="20"
               autocapitalize="off"
               spellcheck="false"
             />
@@ -67,23 +67,26 @@
       <section id="panel-register" class="auth-panel" aria-labelledby="auth-heading" hidden>
         <form id="register-form" class="auth-form">
           <label class="field">
-            <span>Usuario</span>
+            <span>Usuario <span class="field-limit">(3–20 caracteres: minúsculas, números o _)</span></span>
             <input
+              id="register-username"
               name="username"
               autocomplete="username"
               required
-              maxlength="24"
-              pattern="[a-z0-9_]{3,24}"
+              minlength="3"
+              maxlength="20"
+              pattern="[a-z0-9_]{3,20}"
               autocapitalize="off"
               spellcheck="false"
             />
           </label>
           <label class="field">
-            <span>Nombre visible (así te verán los demás en la tabla)</span>
+            <span>Nombre visible <span class="field-limit">(máx. 20 caracteres; opcional)</span></span>
             <input
+              id="register-display-name"
               name="displayName"
               autocomplete="name"
-              maxlength="48"
+              maxlength="20"
               placeholder="Puede quedar vacío"
             />
           </label>

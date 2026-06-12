@@ -153,6 +153,12 @@ body.auth-body {
   color: var(--muted);
 }
 
+.field-limit {
+  font-size: 0.82em;
+  font-weight: 400;
+  opacity: 0.88;
+}
+
 .field input {
   width: 100%;
   border-radius: var(--radius);

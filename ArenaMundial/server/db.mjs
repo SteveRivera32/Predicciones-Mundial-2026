@@ -9,6 +9,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { emptyOfficialResults } from "../../src/official-results-store.js";
 import { emptyPredictions } from "../../src/predictions-store.js";
+import { normalizeForSearch } from "../../src/search-normalize.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.ARENA_DATA_DIR || path.join(__dirname, "data");
@@ -208,6 +209,50 @@ export function isPrivadasUser(userId) {
 
 export function countUsers() {
   return /** @type {{ n: number }} */ (getDb().prepare("SELECT COUNT(*) AS n FROM users").get()).n;
+}
+
+export function countAdmins() {
+  return /** @type {{ n: number }} */ (
+    getDb().prepare("SELECT COUNT(*) AS n FROM users WHERE is_admin = 1").get()
+  ).n;
+}
+
+/**
+ * @param {number} userId
+ * @returns {{ ok: true, username: string } | { ok: false, error: "not_found" | "last_admin" }}
+ */
+export function deleteUserById(userId) {
+  const user = findUserById(userId);
+  if (!user) return { ok: false, error: "not_found" };
+  if (user.is_admin && countAdmins() <= 1) {
+    return { ok: false, error: "last_admin" };
+  }
+  getDb().prepare("DELETE FROM users WHERE id = ?").run(userId);
+  return { ok: true, username: user.username };
+}
+
+/**
+ * @param {string} query
+ * @param {number} [limit]
+ */
+export function searchUsersByQuery(query, limit = 25) {
+  const q = normalizeForSearch(query);
+  if (!q || q.length < 2) return [];
+  const lim = Math.max(1, Math.min(50, Number(limit) || 25));
+  return getDb()
+    .prepare(`SELECT id, username, display_name, is_admin FROM users`)
+    .all()
+    .filter(
+      (row) =>
+        normalizeForSearch(row.username).includes(q) ||
+        normalizeForSearch(row.display_name).includes(q),
+    )
+    .sort((a, b) =>
+      normalizeForSearch(a.display_name).localeCompare(normalizeForSearch(b.display_name), "es", {
+        sensitivity: "base",
+      }),
+    )
+    .slice(0, lim);
 }
 
 export function getAllArenaParticipants() {

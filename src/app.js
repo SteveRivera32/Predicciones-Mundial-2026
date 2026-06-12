@@ -37,14 +37,20 @@ import { isRemoteSyncActive } from "./remote-sync-flags.js";
 import {
   isArenaMode,
   isArenaPrivadasMirrorUser,
+  isArenaAdmin,
+  getArenaUser,
   arenaGeneralesGroupsDeadlineMs,
   arenaLogout,
+  arenaDeleteMyAccount,
+  arenaSearchUsers,
+  arenaAdminDeleteUser,
   isArenaInteractionPaused,
   scheduleArenaDeferredRefresh,
 } from "./arena-mode.js";
 import { applyRemoteState } from "./sync.js";
 import { pushResetQuiniela, fetchBackupsList, restoreServerBackup } from "./sync-push.js";
 import { downloadBackupFile, restoreFromBackupFile } from "./backup.js";
+import { normalizeForSearch } from "./search-normalize.js";
 import {
   computeGroupMatchPoints,
   computeGroupMatchPointsBreakdown,
@@ -1672,11 +1678,19 @@ function updateSessionBar(session) {
     if (btn) btn.hidden = false;
     if (nameEl) nameEl.textContent = p.name;
     if (settingsBtn) {
-      const isAdmin = canEditOfficialResults(session.participantId);
-      const hideInArena = isArenaMode();
-      settingsBtn.hidden = hideInArena || !isAdmin;
-      settingsBtn.style.display = hideInArena || !isAdmin ? "none" : "";
-      settingsBtn.disabled = hideInArena || !isAdmin;
+      if (isArenaMode()) {
+        settingsBtn.hidden = false;
+        settingsBtn.style.display = "";
+        settingsBtn.disabled = false;
+        settingsBtn.title = isArenaAdmin()
+          ? "Ajustes de cuenta y administración"
+          : "Ajustes de cuenta";
+      } else {
+        const isAdmin = canEditOfficialResults(session.participantId);
+        settingsBtn.hidden = !isAdmin;
+        settingsBtn.style.display = !isAdmin ? "none" : "";
+        settingsBtn.disabled = !isAdmin;
+      }
     }
   } else {
     if (chip) chip.hidden = true;
@@ -1907,6 +1921,167 @@ function closeAdminSettingsOverlay() {
   if (o) o.hidden = true;
 }
 
+function closeArenaAccountOverlay() {
+  const o = $("#overlay-arena-account");
+  if (o) o.hidden = true;
+}
+
+function setArenaAccountError(el, message) {
+  if (!el) return;
+  if (!message) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  el.hidden = false;
+  el.textContent = message;
+}
+
+function renderArenaAdminUserResults(users) {
+  const wrap = $("#arena-admin-user-results");
+  const errEl = $("#arena-admin-user-error");
+  if (!wrap) return;
+  setArenaAccountError(errEl, "");
+  const session = loadSession();
+  const myId = session?.participantId ?? "";
+  if (!users.length) {
+    wrap.innerHTML = `<p class="muted">Sin resultados. Escribe al menos 2 caracteres.</p>`;
+    return;
+  }
+  wrap.innerHTML = `<ul class="admin-settings-list" aria-label="Usuarios encontrados">
+    ${users
+      .map((u) => {
+        const isSelf = u.username === myId;
+        const adminTag = u.isAdmin ? ' <span class="muted">(admin)</span>' : "";
+        return `<li class="admin-settings-row">
+          <span class="admin-settings-row-meta">
+            <strong>${escapeHtml(u.displayName)}${adminTag}${isSelf ? " (tú)" : ""}</strong>
+            <span class="muted">${escapeHtml(u.username)}</span>
+          </span>
+          <button type="button" class="btn btn-sm" data-arena-delete-user="${escapeHtmlAttr(u.username)}">Eliminar</button>
+        </li>`;
+      })
+      .join("")}
+  </ul>`;
+  wrap.querySelectorAll("[data-arena-delete-user]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const username = btn.getAttribute("data-arena-delete-user");
+      if (!username) return;
+      const match = users.find((u) => u.username === username);
+      const label = match?.displayName ?? username;
+      if (
+        !confirm(
+          `¿Eliminar a ${label} (${username})? Se borrarán sus predicciones y mensajes de chat.`,
+        )
+      ) {
+        return;
+      }
+      btn.disabled = true;
+      try {
+        await arenaAdminDeleteUser(username);
+        setArenaAccountError(errEl, "");
+        const q = String($("#arena-admin-user-search")?.value ?? "").trim();
+        if (q.length >= 2) {
+          const next = await arenaSearchUsers(q);
+          renderArenaAdminUserResults(next);
+        } else {
+          wrap.innerHTML = "";
+        }
+        refreshAll(loadSession());
+      } catch (e) {
+        setArenaAccountError(errEl, e instanceof Error ? e.message : "No se pudo eliminar el usuario.");
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+function openArenaAccountOverlay() {
+  const session = loadSession();
+  if (!session) return;
+  const overlay = $("#overlay-arena-account");
+  if (!overlay) return;
+  const p = getParticipantById(session.participantId);
+  const au = getArenaUser();
+  const nameEl = $("#arena-account-self-name");
+  const userEl = $("#arena-account-self-username");
+  if (nameEl) nameEl.textContent = p?.name ?? au?.displayName ?? session.participantId;
+  if (userEl) userEl.textContent = session.participantId;
+  setArenaAccountError($("#arena-account-self-error"), "");
+  setArenaAccountError($("#arena-admin-user-error"), "");
+  const adminWrap = $("#arena-account-admin-wrap");
+  const searchInput = $("#arena-admin-user-search");
+  const resultsWrap = $("#arena-admin-user-results");
+  if (adminWrap) adminWrap.hidden = !isArenaAdmin();
+  if (searchInput) searchInput.value = "";
+  if (resultsWrap) resultsWrap.innerHTML = "";
+  const deleteBtn = $("#btn-arena-delete-my-account");
+  if (deleteBtn) {
+    deleteBtn.hidden = isArenaPrivadasMirrorUser();
+    deleteBtn.disabled = isArenaPrivadasMirrorUser();
+  }
+  overlay.hidden = false;
+  searchInput?.focus();
+}
+
+function bindArenaAccountSettings() {
+  const overlay = $("#overlay-arena-account");
+  const closeBtn = $("#arena-account-close");
+  const deleteBtn = $("#btn-arena-delete-my-account");
+  const searchInput = $("#arena-admin-user-search");
+  if (!overlay) return;
+
+  let searchTimer = null;
+
+  closeBtn?.addEventListener("click", () => closeArenaAccountOverlay());
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) closeArenaAccountOverlay();
+  });
+
+  deleteBtn?.addEventListener("click", async () => {
+    const errEl = $("#arena-account-self-error");
+    setArenaAccountError(errEl, "");
+    if (
+      !confirm(
+        "¿Eliminar tu cuenta de forma permanente? Se borrarán tus predicciones y no podrás recuperarlas.",
+      )
+    ) {
+      return;
+    }
+    if (!confirm("Última confirmación: esta acción no se puede deshacer. ¿Continuar?")) return;
+    deleteBtn.disabled = true;
+    try {
+      await arenaDeleteMyAccount();
+      clearSession();
+      closeArenaAccountOverlay();
+    } catch (e) {
+      setArenaAccountError(errEl, e instanceof Error ? e.message : "No se pudo eliminar la cuenta.");
+      deleteBtn.disabled = false;
+    }
+  });
+
+  searchInput?.addEventListener("input", () => {
+    if (searchTimer != null) window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(async () => {
+      searchTimer = null;
+      const q = String(searchInput.value ?? "").trim();
+      if (q.length < 2) {
+        renderArenaAdminUserResults([]);
+        return;
+      }
+      try {
+        const users = await arenaSearchUsers(q);
+        renderArenaAdminUserResults(users);
+      } catch (e) {
+        setArenaAccountError(
+          $("#arena-admin-user-error"),
+          e instanceof Error ? e.message : "Error al buscar usuarios.",
+        );
+      }
+    }, 280);
+  });
+}
+
 /** @type {() => void} */
 let adminSettingsAfterSessionFn = () => {};
 
@@ -1962,7 +2137,12 @@ function bindAdminSettings(afterSessionReady) {
 
   openBtn.addEventListener("click", () => {
     const session = loadSession();
-    if (!session || !canEditOfficialResults(session.participantId)) return;
+    if (!session) return;
+    if (isArenaMode()) {
+      openArenaAccountOverlay();
+      return;
+    }
+    if (!canEditOfficialResults(session.participantId)) return;
     openAdminSettingsOverlay();
   });
   closeBtn?.addEventListener("click", () => closeAdminSettingsOverlay());
@@ -2244,11 +2424,7 @@ const AWARD_FIELD_META = {
 const PODIUM_SLOT_NAMES = ["first", "second", "third"];
 
 function normalizeAwardSearchText(s) {
-  return String(s ?? "")
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "");
+  return normalizeForSearch(s);
 }
 
 /** @param {string} playerName */
@@ -10139,6 +10315,7 @@ export function initApp() {
   });
 
   bindAdminSettings(afterSessionReady);
+  bindArenaAccountSettings();
   bindParticipantAccentPopover();
 
   bindSessionChange(() => {

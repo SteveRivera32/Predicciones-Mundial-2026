@@ -1,13 +1,14 @@
 import "@shared/style.css";
 import { requireAuthOrRedirect, LOGIN_URL } from "./auth-client.js";
-import { logout, saveMyPredictions, saveOfficialResults } from "./api.js";
-import { initArenaSyncPoll } from "./arena-sync.js";
+import { logout, saveMyPredictions, saveOfficialResults, deleteMyAccount, searchAdminUsers, deleteAdminUser } from "./api.js";
+import { initArenaSyncPoll, pullArenaSync } from "./arena-sync.js";
 import { setRemoteSyncActive } from "@shared/remote-sync-flags.js";
 import {
   setArenaMode,
   setArenaUser,
   setArenaPushHandlers,
   setArenaLogout,
+  setArenaAccountApi,
   bindArenaInteractionGuard,
 } from "@shared/arena-mode.js";
 import { saveSession } from "@shared/session.js";
@@ -39,6 +40,18 @@ async function bootstrap() {
       .finally(() => {
         location.href = LOGIN_URL;
       });
+  });
+
+  setArenaAccountApi({
+    deleteMyAccount: async () => {
+      await deleteMyAccount();
+      location.href = LOGIN_URL;
+    },
+    searchUsers: (q) => searchAdminUsers(q).then((res) => res.users ?? []),
+    deleteUser: async (username) => {
+      await deleteAdminUser(username);
+      await pullArenaSync();
+    },
   });
 
   try {

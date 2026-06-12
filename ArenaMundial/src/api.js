@@ -56,6 +56,20 @@ export function saveMyPredictions(predictions) {
   });
 }
 
+export function deleteMyAccount() {
+  return apiFetch("/me", { method: "DELETE" });
+}
+
+export function searchAdminUsers(q) {
+  return apiFetch(`/admin/users/search?q=${encodeURIComponent(String(q ?? ""))}`);
+}
+
+export function deleteAdminUser(username) {
+  return apiFetch(`/admin/users/${encodeURIComponent(String(username ?? ""))}`, {
+    method: "DELETE",
+  });
+}
+
 export function saveOfficialResults(official) {
   return apiFetch("/admin/official", {
     method: "PUT",

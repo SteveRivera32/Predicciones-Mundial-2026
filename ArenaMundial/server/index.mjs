@@ -26,6 +26,8 @@ import {
   getChatMessagesSince,
   getLatestChatMessageId,
   isPrivadasUser,
+  deleteUserById,
+  searchUsersByQuery,
 } from "./db.mjs";
 import {
   sanitizeChatBody,
@@ -50,7 +52,7 @@ import { isValidArenaPassword, passwordRuleMessage } from "./password-rules.mjs"
 import { startOfficialKickoffPoll } from "./official-kickoff.mjs";
 import { syncPrivadasToArena, startPrivadasSyncPoll } from "./privadas-bridge.mjs";
 import { isPrivadasArenaMirrorId } from "../../src/participants.js";
-import { applyOfficialFromPrivadasIfNewer } from "./official-privadas-sync.mjs";
+import { applyOfficialFromPrivadasIfNewer, saveArenaOfficial } from "./official-privadas-sync.mjs";
 import { isSyncSecretValid } from "../../server/sync-secret.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -80,7 +82,7 @@ function invalidateSharedCache() {
 }
 
 function usernameValid(s) {
-  return /^[a-z0-9_]{3,24}$/.test(s);
+  return /^[a-z0-9_]{3,20}$/.test(s);
 }
 
 // ── Auth ────────────────────────────────────────────────────────────────────
@@ -98,7 +100,7 @@ app.post("/api/arena/auth/register", authTrafficGuard, async (req, res) => {
     const displayNameRaw = String(req.body?.displayName ?? "").trim();
 
     if (!usernameValid(username)) {
-      res.status(400).json({ error: "usuario: 3–24 caracteres, letras, números o _" });
+      res.status(400).json({ error: "usuario: 3–20 caracteres, letras, números o _" });
       return;
     }
     if (isPrivadasArenaMirrorId(username)) {
@@ -111,8 +113,8 @@ app.post("/api/arena/auth/register", authTrafficGuard, async (req, res) => {
       res.status(400).json({ error: passwordRuleMessage() });
       return;
     }
-    if (displayNameRaw.length > 48) {
-      res.status(400).json({ error: "nombre visible: máx. 48 caracteres" });
+    if (displayNameRaw.length > 20) {
+      res.status(400).json({ error: "nombre visible: máx. 20 caracteres" });
       return;
     }
     if (isPublicNameTaken(username)) {
@@ -179,6 +181,65 @@ app.get("/api/arena/auth/me", requireAuth, (req, res) => {
 app.get("/api/arena/me/predictions", requireAuth, (req, res) => {
   const { data, updatedAt } = getUserPredictions(req.userId);
   res.json({ predictions: data, updatedAt });
+});
+
+app.delete("/api/arena/me", requireAuth, (req, res) => {
+  if (isPrivadasUser(req.userId)) {
+    res.status(403).json({
+      error: "cuenta espejo de la quiniela privada; no se puede eliminar desde Arena",
+    });
+    return;
+  }
+  const result = deleteUserById(req.userId);
+  if (!result.ok) {
+    if (result.error === "last_admin") {
+      res.status(403).json({
+        error: "eres el último administrador; nombra otro admin antes de borrarte",
+      });
+      return;
+    }
+    res.status(404).json({ error: "usuario no encontrado" });
+    return;
+  }
+  clearAuthCookie(res);
+  invalidateSharedCache();
+  res.json({ ok: true });
+});
+
+app.get("/api/arena/admin/users/search", requireAuth, requireAdmin, (req, res) => {
+  const q = String(req.query.q ?? "").trim();
+  if (q.length < 2) {
+    res.json({ users: [] });
+    return;
+  }
+  const users = searchUsersByQuery(q, 30).map((row) => ({
+    username: row.username,
+    displayName: row.display_name,
+    isAdmin: Boolean(row.is_admin),
+  }));
+  res.json({ users });
+});
+
+app.delete("/api/arena/admin/users/:username", requireAuth, requireAdmin, (req, res) => {
+  const username = String(req.params.username ?? "")
+    .trim()
+    .toLowerCase();
+  const target = findUserByUsername(username);
+  if (!target) {
+    res.status(404).json({ error: "usuario no encontrado" });
+    return;
+  }
+  const result = deleteUserById(target.id);
+  if (!result.ok) {
+    if (result.error === "last_admin") {
+      res.status(403).json({ error: "no se puede eliminar al último administrador" });
+      return;
+    }
+    res.status(404).json({ error: "usuario no encontrado" });
+    return;
+  }
+  invalidateSharedCache();
+  res.json({ ok: true, username: result.username });
 });
 
 app.put("/api/arena/me/predictions", requireAuth, (req, res) => {

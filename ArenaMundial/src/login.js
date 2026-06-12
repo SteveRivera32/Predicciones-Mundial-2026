@@ -3,6 +3,10 @@ import { login, register } from "./api.js";
 import { redirectIfAuthenticated } from "./auth-client.js";
 
 const PASSWORD_LEN = 8;
+const USERNAME_MIN = 3;
+const USERNAME_MAX = 20;
+const DISPLAY_NAME_MAX = 20;
+const USERNAME_PATTERN = /^[a-z0-9_]+$/;
 const USERNAME_KEY = "arena-last-username";
 
 const $ = (sel) => document.querySelector(sel);
@@ -33,6 +37,25 @@ function setSubmitting(active) {
 
 function validatePasswordLen(password) {
   return password.length === PASSWORD_LEN;
+}
+
+function validateUsername(username) {
+  const u = String(username ?? "").trim().toLowerCase();
+  if (u.length < USERNAME_MIN || u.length > USERNAME_MAX) {
+    return `El usuario debe tener entre ${USERNAME_MIN} y ${USERNAME_MAX} caracteres.`;
+  }
+  if (!USERNAME_PATTERN.test(u)) {
+    return "El usuario solo puede usar letras minúsculas, números o guión bajo (_).";
+  }
+  return "";
+}
+
+function validateDisplayName(displayName) {
+  const n = String(displayName ?? "").trim();
+  if (n.length > DISPLAY_NAME_MAX) {
+    return `El nombre visible admite máximo ${DISPLAY_NAME_MAX} caracteres.`;
+  }
+  return "";
 }
 
 function rememberUsername(username) {
@@ -128,7 +151,18 @@ registerForm?.addEventListener("submit", async (e) => {
   const fd = new FormData(registerForm);
   const password = String(fd.get("password") ?? "");
   const confirm = String(fd.get("passwordConfirm") ?? "");
-  const username = String(fd.get("username") ?? "").trim();
+  const username = String(fd.get("username") ?? "").trim().toLowerCase();
+  const displayName = String(fd.get("displayName") ?? "").trim();
+  const usernameErr = validateUsername(username);
+  if (usernameErr) {
+    showError(usernameErr);
+    return;
+  }
+  const displayNameErr = validateDisplayName(displayName);
+  if (displayNameErr) {
+    showError(displayNameErr);
+    return;
+  }
   if (!validatePasswordLen(password)) {
     showError(`La contraseña debe tener exactamente ${PASSWORD_LEN} caracteres.`);
     return;
@@ -141,7 +175,7 @@ registerForm?.addEventListener("submit", async (e) => {
   try {
     await register({
       username,
-      displayName: String(fd.get("displayName") ?? "").trim(),
+      displayName,
       password,
     });
     rememberUsername(username);

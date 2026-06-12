@@ -188,6 +188,66 @@ export function arenaLogout() {
 
 
 
+/** @type {(() => Promise<void>) | null} */
+
+let deleteMyAccountFn = null;
+
+
+
+/** @type {((q: string) => Promise<Array<{ username: string, displayName: string, isAdmin: boolean }>>) | null} */
+
+let searchUsersFn = null;
+
+
+
+/** @type {((username: string) => Promise<void>) | null} */
+
+let deleteUserFn = null;
+
+
+
+/** @param {{ deleteMyAccount?: () => Promise<void>, searchUsers?: (q: string) => Promise<Array<{ username: string, displayName: string, isAdmin: boolean }>>, deleteUser?: (username: string) => Promise<void> }} api */
+
+export function setArenaAccountApi({ deleteMyAccount, searchUsers, deleteUser }) {
+
+  deleteMyAccountFn = deleteMyAccount ?? null;
+
+  searchUsersFn = searchUsers ?? null;
+
+  deleteUserFn = deleteUser ?? null;
+
+}
+
+
+
+export function arenaDeleteMyAccount() {
+
+  if (!deleteMyAccountFn) return Promise.reject(new Error("no disponible"));
+
+  return deleteMyAccountFn();
+
+}
+
+
+
+export function arenaSearchUsers(q) {
+
+  return searchUsersFn?.(q) ?? Promise.resolve([]);
+
+}
+
+
+
+export function arenaAdminDeleteUser(username) {
+
+  if (!deleteUserFn) return Promise.reject(new Error("no disponible"));
+
+  return deleteUserFn(username);
+
+}
+
+
+
 /** 13 jul 2026 23:59 hora Ciudad de México. */
 
 export function arenaGeneralesGroupsDeadlineMs() {

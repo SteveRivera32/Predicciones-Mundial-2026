@@ -3235,6 +3235,7 @@ span.td-muted {
 .table-scroll--preds-body,
 .quiniela-table-wrap--scroll-y,
 .table-scroll--ranking,
+.table-scroll--stats-matrix,
 .floating-ranking-card,
 .bracket-arena-scroll {
   scrollbar-width: thin;
@@ -3246,6 +3247,7 @@ span.td-muted {
 .table-scroll--preds-body::-webkit-scrollbar,
 .quiniela-table-wrap--scroll-y::-webkit-scrollbar,
 .table-scroll--ranking::-webkit-scrollbar,
+.table-scroll--stats-matrix::-webkit-scrollbar,
 .floating-ranking-card::-webkit-scrollbar,
 .bracket-arena-scroll::-webkit-scrollbar {
   width: var(--pm26-scrollbar-size);
@@ -3257,6 +3259,7 @@ span.td-muted {
 .table-scroll--preds-body::-webkit-scrollbar-track,
 .quiniela-table-wrap--scroll-y::-webkit-scrollbar-track,
 .table-scroll--ranking::-webkit-scrollbar-track,
+.table-scroll--stats-matrix::-webkit-scrollbar-track,
 .floating-ranking-card::-webkit-scrollbar-track,
 .bracket-arena-scroll::-webkit-scrollbar-track {
   background: var(--pm26-scrollbar-track);
@@ -3269,6 +3272,7 @@ span.td-muted {
 .table-scroll--preds-body::-webkit-scrollbar-thumb,
 .quiniela-table-wrap--scroll-y::-webkit-scrollbar-thumb,
 .table-scroll--ranking::-webkit-scrollbar-thumb,
+.table-scroll--stats-matrix::-webkit-scrollbar-thumb,
 .floating-ranking-card::-webkit-scrollbar-thumb,
 .bracket-arena-scroll::-webkit-scrollbar-thumb {
   background: var(--pm26-scrollbar-thumb);
@@ -3282,6 +3286,7 @@ span.td-muted {
 .table-scroll--preds-body::-webkit-scrollbar-thumb:hover,
 .quiniela-table-wrap--scroll-y::-webkit-scrollbar-thumb:hover,
 .table-scroll--ranking::-webkit-scrollbar-thumb:hover,
+.table-scroll--stats-matrix::-webkit-scrollbar-thumb:hover,
 .floating-ranking-card::-webkit-scrollbar-thumb:hover,
 .bracket-arena-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--pm26-scrollbar-thumb-hover);
@@ -3293,6 +3298,7 @@ span.td-muted {
 .table-scroll--preds-body::-webkit-scrollbar-corner,
 .quiniela-table-wrap--scroll-y::-webkit-scrollbar-corner,
 .table-scroll--ranking::-webkit-scrollbar-corner,
+.table-scroll--stats-matrix::-webkit-scrollbar-corner,
 .floating-ranking-card::-webkit-scrollbar-corner,
 .bracket-arena-scroll::-webkit-scrollbar-corner {
   background: transparent;
@@ -4426,6 +4432,7 @@ span.td-muted {
 .table-scroll--group-preds,
 .table-scroll--preds-body,
 .table-scroll--ranking,
+.table-scroll--stats-matrix,
 .quiniela-table-wrap--scroll-y {
   max-height: var(--table-scroll-max-h);
   overflow-y: auto;
@@ -4438,12 +4445,25 @@ span.td-muted {
 .quiniela-table-wrap--scroll-y .quiniela-preds thead th,
 .table-scroll--ranking .table-group-order-ranking thead th,
 .table-scroll--ranking .table-match-ranking thead th,
-.table-scroll--ranking .table-final-ranking thead th {
+.table-scroll--ranking .table-final-ranking thead th,
+.table-scroll--stats-matrix .table-stats-matrix thead tr:not(.stats-color-hint-row) th {
   position: sticky;
   top: 0;
   z-index: 2;
   background: var(--surface);
   box-shadow: 0 1px 0 var(--border);
+}
+
+.table-scroll--stats-matrix .table-stats-matrix thead:has(.stats-color-hint-row) tr.stats-color-hint-row th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+}
+
+.table-scroll--stats-matrix .table-stats-matrix thead:has(.stats-color-hint-row) tr:not(.stats-color-hint-row) th {
+  top: 1.72rem;
+  z-index: 4;
 }
 
 .group-preds-row--empty-pred .quiniela-participant-line,
@@ -5809,7 +5829,6 @@ span.td-muted {
 
 /* Estadísticas: matriz (métricas en filas, jugadores en columnas) */
 .table-scroll--stats-matrix {
-  overflow-x: auto;
   margin-top: 0.35rem;
 }
 
@@ -5830,12 +5849,12 @@ span.td-muted {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.25;
   white-space: normal;
   word-break: break-word;
   hyphens: auto;
-  min-width: 4.25rem;
-  max-width: 11.75rem;
+  min-width: 9.5rem;
+  max-width: 20rem;
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
   background: color-mix(in srgb, var(--surface-2) 92%, transparent);
   overflow: visible;
@@ -5845,7 +5864,7 @@ span.td-muted {
 .table-stats-matrix th.stats-matrix-corner {
   position: sticky;
   left: 0;
-  z-index: 3;
+  z-index: 7;
   min-width: 12.5rem;
   max-width: min(18rem, 40vw);
   padding: 0.64rem 0.55rem 0.64rem 1rem;
@@ -5863,6 +5882,10 @@ span.td-muted {
   text-align: center;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  min-width: 10.5rem;
+  max-width: 22rem;
+  padding-left: 0.55rem;
+  padding-right: 0.55rem;
 }
 
 .table-stats-matrix .stats-matrix-player--self {
@@ -6020,7 +6043,7 @@ span.td-muted {
 .table-stats-matrix th.stats-matrix-metric {
   position: sticky;
   left: 0;
-  z-index: 2;
+  z-index: 3;
   text-align: left;
   font-weight: 600;
   line-height: 1.35;
@@ -10430,7 +10453,7 @@ span.quiniela-legend {
     padding: 0.14rem 0.26rem;
   }
 
-  /* Rankings (grupos, partidos, global): sin intro y tabla legible en móvil */
+  /* Rankings (grupos, partidos, global): compactos en móvil (mismo tamaño que Arena) */
   #team-order-ranking-intro,
   #match-ranking-intro,
   #final-ranking-intro {
@@ -10440,13 +10463,40 @@ span.quiniela-legend {
   #panel-team-order-ranking .panel-title,
   #panel-match-ranking .panel-title,
   #panel-final-ranking .panel-title {
-    font-size: 1.05rem;
-    margin-bottom: 0.55rem;
+    font-size: 0.95rem;
+    margin-bottom: 0.22rem;
+  }
+
+  #panel-team-order-ranking .panel-intro,
+  #panel-match-ranking .panel-intro,
+  #panel-final-ranking .panel-intro {
+    font-size: 0.66rem;
+    margin-bottom: 0.38rem;
+    line-height: 1.28;
+  }
+
+  #panel-team-order-ranking .participant-search-toolbar,
+  #panel-match-ranking .participant-search-toolbar,
+  #panel-final-ranking .participant-search-toolbar {
+    margin-bottom: 0.22rem;
+  }
+
+  #panel-team-order-ranking .participant-search-toolbar__label,
+  #panel-match-ranking .participant-search-toolbar__label,
+  #panel-final-ranking .participant-search-toolbar__label {
+    font-size: 0.58rem;
+  }
+
+  #panel-team-order-ranking .participant-search-input,
+  #panel-match-ranking .participant-search-input,
+  #panel-final-ranking .participant-search-input {
+    padding: 0.22rem 0.38rem;
+    font-size: 0.68rem;
   }
 
   #panel-match-ranking .team-stats-source-wrap {
-    margin-bottom: 0.55rem;
-    gap: 0.35rem 0.5rem;
+    margin-bottom: 0.38rem;
+    gap: 0.24rem 0.35rem;
     max-width: none;
   }
 
@@ -10456,15 +10506,15 @@ span.quiniela-legend {
   }
 
   #panel-match-ranking .team-stats-source-wrap .field-label {
-    font-size: 0.72rem;
+    font-size: 0.64rem;
   }
 
   #panel-match-ranking .team-stats-source-wrap .input.input-sm {
     max-width: none !important;
     width: 100%;
     flex: none;
-    padding: 0.32rem 0.48rem;
-    font-size: 0.82rem;
+    padding: 0.24rem 0.38rem;
+    font-size: 0.68rem;
   }
 
   #panel-match-ranking #match-ranking-group-wrap:not([hidden]) {
@@ -10481,15 +10531,17 @@ span.quiniela-legend {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
     max-width: 100%;
+    max-height: min(58vh, 24rem);
   }
 
   #panel-team-order-ranking .table-group-order-ranking,
   #panel-match-ranking .table-match-ranking,
   #panel-final-ranking .table-final-ranking {
     table-layout: auto;
-    min-width: 20.5rem;
-    width: max(100%, 20.5rem);
-    font-size: 0.82rem;
+    min-width: 17.5rem;
+    width: max(100%, 17.5rem);
+    font-size: 0.62rem;
+    line-height: 1.2;
   }
 
   #panel-team-order-ranking .table-group-order-ranking th,
@@ -10498,7 +10550,7 @@ span.quiniela-legend {
   #panel-match-ranking .table-match-ranking td,
   #panel-final-ranking .table-final-ranking th,
   #panel-final-ranking .table-final-ranking td {
-    padding: 0.32rem 0.14rem;
+    padding: 0.3rem 0.08rem;
     font-size: inherit;
   }
 
@@ -10509,30 +10561,20 @@ span.quiniela-legend {
     vertical-align: bottom;
   }
 
-  /* Cuerpo (filas 2+): mismo tamaño en #, badges y PTS; nombres más pequeños aparte */
   #panel-team-order-ranking .table-group-order-ranking tbody th,
   #panel-team-order-ranking .table-group-order-ranking tbody td,
   #panel-match-ranking .table-match-ranking tbody th,
   #panel-match-ranking .table-match-ranking tbody td,
   #panel-final-ranking .table-final-ranking tbody th,
   #panel-final-ranking .table-final-ranking tbody td {
-    font-size: 0.82rem;
-  }
-
-  #panel-team-order-ranking .table-group-order-ranking tbody .group-ranking-stat-num,
-  #panel-match-ranking .table-match-ranking tbody .group-ranking-stat-num,
-  #panel-final-ranking .table-final-ranking tbody .group-ranking-stat-num,
-  #panel-team-order-ranking .table-group-order-ranking tbody .group-ranking-total strong,
-  #panel-match-ranking .table-match-ranking tbody .group-ranking-total strong,
-  #panel-final-ranking .table-final-ranking tbody .group-ranking-total strong {
-    font-size: inherit;
+    font-size: 0.62rem;
   }
 
   #panel-team-order-ranking .table-group-order-ranking tbody th.group-ranking-name,
   #panel-match-ranking .table-match-ranking tbody th.group-ranking-name,
   #panel-final-ranking .table-final-ranking tbody th.group-ranking-name {
-    font-size: 0.68rem;
-    line-height: 1.2;
+    font-size: 0.58rem;
+    line-height: 1.1;
     font-weight: 600;
     text-align: center;
     vertical-align: middle;
@@ -10541,7 +10583,7 @@ span.quiniela-legend {
   #panel-team-order-ranking .table-group-order-ranking tbody th.group-ranking-name .td-muted,
   #panel-match-ranking .table-match-ranking tbody th.group-ranking-name .td-muted,
   #panel-final-ranking .table-final-ranking tbody th.group-ranking-name .td-muted {
-    font-size: 0.62rem;
+    font-size: 0.52rem;
   }
 
   #panel-team-order-ranking .table-group-order-ranking th:first-child,
@@ -10550,10 +10592,10 @@ span.quiniela-legend {
   #panel-team-order-ranking .group-ranking-rank,
   #panel-match-ranking .group-ranking-rank,
   #panel-final-ranking .group-ranking-rank {
-    width: 1.85rem;
-    min-width: 1.85rem;
-    padding-left: 0.08rem;
-    padding-right: 0.08rem;
+    width: 1.45rem;
+    min-width: 1.45rem;
+    padding-left: 0.04rem;
+    padding-right: 0.04rem;
   }
 
   #panel-team-order-ranking .table-group-order-ranking thead th:first-child,
@@ -10562,9 +10604,9 @@ span.quiniela-legend {
   #panel-match-ranking .table-match-ranking thead th:nth-child(2),
   #panel-final-ranking .table-final-ranking thead th:first-child,
   #panel-final-ranking .table-final-ranking thead th:nth-child(2) {
-    font-size: 0.58rem;
-    letter-spacing: 0.03em;
-    line-height: 1.15;
+    font-size: 0.48rem;
+    letter-spacing: 0.02em;
+    line-height: 1.1;
   }
 
   #panel-team-order-ranking .group-ranking-name,
@@ -10574,34 +10616,34 @@ span.quiniela-legend {
   #panel-match-ranking .table-match-ranking th:nth-child(2),
   #panel-final-ranking .table-final-ranking th:nth-child(2) {
     width: auto;
-    min-width: 4.25rem;
-    max-width: 6.5rem;
-    padding-left: 0.22rem;
-    padding-right: 0.22rem;
+    min-width: 3.15rem;
+    max-width: 5rem;
+    padding-left: 0.14rem;
+    padding-right: 0.14rem;
     text-align: center;
   }
 
   #panel-team-order-ranking .group-ranking-th-stat,
   #panel-match-ranking .group-ranking-th-stat,
   #panel-final-ranking .group-ranking-th-stat {
-    min-width: 2.35rem;
-    max-width: 3.1rem;
-    padding-left: 0.06rem;
-    padding-right: 0.06rem;
+    min-width: 1.85rem;
+    max-width: 2.45rem;
+    padding-left: 0.04rem;
+    padding-right: 0.04rem;
   }
 
   #panel-team-order-ranking .group-ranking-th-stat--pts,
   #panel-match-ranking .group-ranking-th-stat--pts,
   #panel-final-ranking .group-ranking-th-stat--pts {
-    min-width: 2.15rem;
+    min-width: 1.65rem;
   }
 
   #panel-team-order-ranking .group-ranking-label,
   #panel-match-ranking .group-ranking-label,
   #panel-final-ranking .group-ranking-label {
-    font-size: 0.58rem;
-    letter-spacing: 0.03em;
-    line-height: 1.15;
+    font-size: 0.48rem;
+    letter-spacing: 0.02em;
+    line-height: 1.08;
   }
 
   #panel-team-order-ranking .group-ranking-label--excelente,
@@ -10610,19 +10652,28 @@ span.quiniela-legend {
   #panel-team-order-ranking .group-ranking-label--perfecto,
   #panel-match-ranking .group-ranking-label--perfecto,
   #panel-final-ranking .group-ranking-label--perfecto {
-    font-size: 0.52rem;
+    font-size: 0.42rem;
   }
 
   #panel-team-order-ranking .group-ranking-stat,
   #panel-match-ranking .group-ranking-stat,
   #panel-final-ranking .group-ranking-stat {
-    padding: 0.28rem 0.06rem;
+    padding: 0.3rem 0.04rem;
   }
 
   #panel-team-order-ranking .group-ranking-total::before,
   #panel-match-ranking .group-ranking-total::before,
   #panel-final-ranking .group-ranking-total::before {
-    inset: 0.18rem 0.04rem;
+    inset: 0.2rem 0.02rem;
+  }
+
+  #panel-team-order-ranking .table-group-order-ranking tbody .group-ranking-stat-num,
+  #panel-match-ranking .table-match-ranking tbody .group-ranking-stat-num,
+  #panel-final-ranking .table-final-ranking tbody .group-ranking-stat-num,
+  #panel-team-order-ranking .table-group-order-ranking tbody .group-ranking-total strong,
+  #panel-match-ranking .table-match-ranking tbody .group-ranking-total strong,
+  #panel-final-ranking .table-final-ranking tbody .group-ranking-total strong {
+    font-size: 0.62rem;
   }
 
   /* Historial de partidos y estadísticas: compacto en móvil (intro visible) */
@@ -10799,9 +10850,11 @@ span.quiniela-legend {
   #panel-match-history .table-scroll,
   #panel-stats .table-scroll--stats-matrix {
     overflow-x: auto;
+    overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    overscroll-behavior-x: contain;
+    overscroll-behavior: contain;
     max-width: 100%;
+    max-height: min(58vh, 28rem);
   }
 
   #panel-match-history .table-scroll:has(.table-match-history)::before {
@@ -11085,27 +11138,27 @@ span.quiniela-legend {
     font-size: inherit;
   }
 
-  #panel-stats .table-stats-matrix thead th.stats-matrix-player {
-    white-space: nowrap;
-    word-break: normal;
-    hyphens: none;
-    overflow: visible;
-    max-width: none;
-    min-width: max-content;
-    width: max-content;
-    font-size: 0.58rem;
-    letter-spacing: 0.03em;
-    line-height: 1.1;
-    padding: 0.28rem 0.38rem 0.32rem;
+  #panel-stats .table-stats-matrix thead th.stats-matrix-player,
+  #panel-stats .table-stats-matrix thead th.stats-matrix-corner {
+    vertical-align: middle;
   }
 
-  #panel-stats .table-stats-matrix thead tr.stats-color-hint-row th.stats-matrix-player {
-    padding-top: 0.04rem;
-    padding-bottom: 0.1rem;
+  #panel-stats .table-stats-matrix thead th.stats-matrix-player {
+    white-space: normal;
+    word-break: break-word;
+    hyphens: auto;
+    overflow: visible;
+    max-width: 16rem;
+    min-width: 8.5rem;
+    width: auto;
+    font-size: 0.62rem;
+    letter-spacing: 0.03em;
+    line-height: 1.15;
+    padding: 0.32rem 0.5rem;
   }
 
   #panel-stats .table-stats-matrix .stats-matrix-cell {
-    min-width: max-content;
+    min-width: 3.25rem;
     white-space: nowrap;
   }
 
@@ -11143,6 +11196,15 @@ span.quiniela-legend {
 
   #panel-stats .table-stats-matrix thead tr.stats-color-hint-row th {
     padding: 0.04rem 0.06rem 0.08rem;
+  }
+
+  #panel-stats
+    .table-scroll--stats-matrix
+    .table-stats-matrix
+    thead:has(.stats-color-hint-row)
+    tr:not(.stats-color-hint-row)
+    th {
+    top: 1rem;
   }
 
   #panel-stats .table-scroll--stats-matrix {
@@ -12622,7 +12684,94 @@ span.quiniela-legend {
   }
 
   .floating-ranking-card {
-    width: min(88vw, 280px);
+    width: min(72vw, 220px);
+    max-height: min(62vh, 360px);
+    padding: 0.55rem 0.58rem;
+  }
+
+  .floating-ranking-title {
+    font-size: 0.78rem;
+  }
+
+  .floating-ranking-close {
+    font-size: 1rem;
+    padding: 0.08rem 0.28rem;
+  }
+
+  .floating-ranking-card-head {
+    margin-bottom: 0.22rem;
+  }
+
+  .floating-ranking-table {
+    font-size: 0.62rem;
+    line-height: 1.12;
+  }
+
+  .floating-ranking-table thead th {
+    font-size: 0.5rem;
+    padding: 0.24rem 0.14rem;
+    letter-spacing: 0.03em;
+  }
+
+  .floating-ranking-table tbody th,
+  .floating-ranking-table tbody td {
+    padding: 0.26rem 0.12rem;
+  }
+
+  .floating-ranking-th-num,
+  .floating-ranking-table tbody td:first-child {
+    width: 1.35rem;
+    min-width: 1.35rem;
+    font-size: 0.58rem;
+  }
+
+  .floating-ranking-th-player,
+  .floating-ranking-table tbody th[scope="row"] {
+    font-size: 0.58rem;
+    line-height: 1.1;
+    max-width: 7.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .floating-ranking-th-pts,
+  .floating-ranking-table tbody td:last-child {
+    font-size: 0.58rem;
+    min-width: 1.65rem;
+  }
+
+  .floating-ranking-table tbody td:last-child strong {
+    font-size: 0.62rem;
+  }
+
+  #floating-ranking-body::before {
+    content: "Desliza para ver más →";
+    display: block;
+    margin-bottom: 0.28rem;
+    font-size: 0.62rem;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.25;
+  }
+
+  body:not(.app-arena) #panel-team-order-ranking .table-scroll--ranking::before,
+  body:not(.app-arena) #panel-match-ranking .table-scroll--ranking::before,
+  body:not(.app-arena) #panel-final-ranking .table-scroll--ranking::before {
+    content: "Desliza para ver más →";
+    display: block;
+    margin-bottom: 0.28rem;
+    font-size: 0.62rem;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.25;
+  }
+
+  body:not(.app-arena) #panel-team-order-ranking .table-scroll--ranking::after,
+  body:not(.app-arena) #panel-match-ranking .table-scroll--ranking::after,
+  body:not(.app-arena) #panel-final-ranking .table-scroll--ranking::after {
+    content: none;
+    display: none;
   }
 
   .overlay {
@@ -12742,5 +12891,901 @@ body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds td.qui
     min-height: 1.35rem;
     font-size: 0.78rem;
     padding: 0 0.08rem;
+  }
+}
+
+/* Arena móvil: tablas de partidos más densas para ver más filas */
+@media (max-width: 40rem) {
+  body.app-arena #panel-partidos .partidos-match-card:has(.partidos-acc[open]) {
+    padding: 0.48rem 0.52rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-acc[open] .partidos-acc__body {
+    padding-top: 0.28rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-acc[open] .partidos-acc__body .quiniela-match-status {
+    margin-bottom: 0.38rem;
+    padding: 0.28rem 0.42rem;
+    font-size: 0.66rem;
+    line-height: 1.28;
+  }
+
+  body.app-arena #panel-partidos .partidos-acc[open] .partidos-acc__body .quiniela-official {
+    margin-bottom: 0.38rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-acc[open] .partidos-acc__body .quiniela-official-head {
+    padding: 0.28rem 0.45rem;
+    font-size: 0.62rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-acc[open] .partidos-acc__body .quiniela-official-grid {
+    gap: 0.32rem 0.22rem;
+    padding: 0.38rem 0.35rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-acc[open] .partidos-acc__body .quiniela-official-grid > .quiniela-cell--team .team-label,
+  body.app-arena #panel-partidos .partidos-acc[open] .partidos-acc__body .quiniela-official-grid > .quiniela-cell--team .bracket-team-line {
+    font-size: 0.72rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-acc[open] .partidos-acc__body .quiniela-official-grid--readonly .quiniela-cell--score {
+    font-size: 0.88rem;
+    min-width: 1.75rem;
+    padding: 0.22rem 0.32rem;
+    border-radius: 7px;
+  }
+
+  body.app-arena #panel-partidos .partidos-acc[open] .partidos-acc__body .quiniela-official-grid--edit .score-stepper__btn {
+    min-width: 1.28rem;
+    min-height: 1.42rem;
+    font-size: 0.68rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-acc[open] .partidos-acc__body .quiniela-official-grid--edit .score-stepper__input {
+    width: 1.85rem;
+    min-width: 1.85rem;
+    min-height: 1.42rem;
+    font-size: 0.76rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-acc[open] .partidos-acc__body .quiniela-preds-head {
+    margin-bottom: 0.12rem;
+    font-size: 0.62rem;
+  }
+
+  body.app-arena .partidos-match-card .quiniela-preds-head {
+    font-size: 0.58rem;
+    margin-bottom: 0.08rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds {
+    font-size: 0.6rem;
+    line-height: 1.1;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds thead th {
+    font-size: 0.5rem;
+    line-height: 1.1;
+    padding: 0.08rem 0.08rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds th,
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds td {
+    padding: 0.06rem 0.08rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds .quiniela-num {
+    padding: 0.06rem 0.06rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds th:first-child,
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds td:first-child {
+    min-width: 3rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds th.quiniela-num,
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds td.quiniela-num {
+    min-width: 2.75rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds th.quiniela-ganador-col,
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds td.quiniela-ganador-col {
+    min-width: 2.45rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds th.quiniela-last-col,
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds td.quiniela-last-col {
+    min-width: 2.15rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds--preplay th.quiniela-last-col--preplay,
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds--preplay td.quiniela-last-col {
+    min-width: 3.65rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds .quiniela-participant-line {
+    font-size: 0.62rem;
+    line-height: 1.08;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds .quiniela-participant-cell {
+    gap: 0.04rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds .td-muted {
+    font-size: 0.54rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds .quiniela-ganador-pick {
+    font-size: 0.58rem;
+    line-height: 1.08;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds .quiniela-cell-badges-wrap--ganador .quiniela-cell-badges-main {
+    padding-left: 0.65rem;
+    padding-right: 0.65rem;
+    min-height: 1.22rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds .quiniela-cell-badges-wrap > .group-preds-pt-badge,
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds .quiniela-perfect-inline .group-preds-pt-badge {
+    font-size: 0.42rem;
+    padding: 0.04rem 0.08rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds .quiniela-perfect-inline {
+    gap: 0.06rem 0.14rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds .quiniela-perfect-inline .quiniela-perfect-label {
+    font-size: 0.44rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds .score-stepper__btn {
+    min-width: 1.05rem;
+    min-height: 1.18rem;
+    font-size: 0.56rem;
+    padding: 0 0.04rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds .score-stepper__input {
+    width: 1.32rem;
+    min-width: 1.32rem;
+    min-height: 1.18rem;
+    font-size: 0.64rem;
+    padding: 0 0.02rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds .quiniela-pred-actions {
+    padding: 0.06rem 0.06rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds .quiniela-pred-actions .btn {
+    font-size: 0.48rem;
+    padding: 0.1rem 0.14rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds .quiniela-cell-score-num {
+    font-size: 0.66rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td {
+    padding-top: 0.12rem;
+    padding-bottom: 0.12rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:first-child::before {
+    top: -0.1rem;
+    bottom: -0.1rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td:first-child .quiniela-participant-line {
+    font-size: 0.66rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead .score-stepper__btn {
+    min-width: 1.1rem;
+    min-height: 1.22rem;
+    font-size: 0.6rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead .score-stepper__input {
+    width: 1.38rem;
+    min-width: 1.38rem;
+    min-height: 1.22rem;
+    font-size: 0.68rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead td .quiniela-cell-score-num {
+    font-size: 0.72rem;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-table-wrap.table-scroll {
+    max-height: min(58vh, 24rem);
+    overflow-y: auto;
+  }
+
+  body.app-arena .quiniela-preds-head-row .participant-search-toolbar--table {
+    margin-bottom: 0.08rem;
+  }
+
+  body.app-arena .quiniela-preds-head-row .participant-search-toolbar__label {
+    font-size: 0.58rem;
+  }
+
+  body.app-arena .quiniela-preds-head-row .participant-search-input {
+    padding: 0.22rem 0.38rem;
+    font-size: 0.68rem;
+  }
+
+  /* Grupos: orden + tabla comparativa más densos */
+  body.app-arena #panel-grupos .card--grupos {
+    padding: 0.48rem 0.52rem;
+  }
+
+  body.app-arena #panel-grupos .generales-user-pred-header {
+    margin-bottom: 0.48rem;
+    padding: 0.42rem 0.48rem;
+  }
+
+  body.app-arena #panel-grupos .generales-user-pred-title {
+    margin-bottom: 0.18rem;
+    font-size: 0.88rem;
+  }
+
+  body.app-arena #panel-grupos .generales-user-pred-hint {
+    font-size: 0.66rem;
+    line-height: 1.25;
+  }
+
+  body.app-arena #panel-grupos .grupos-card-group-label {
+    margin-bottom: 0.32rem;
+    font-size: 0.74rem;
+  }
+
+  body.app-arena #panel-grupos .group-teams-bar {
+    gap: 0.2rem 0.28rem;
+    margin-bottom: 0.32rem;
+    font-size: 0.68rem;
+  }
+
+  body.app-arena #panel-grupos .group-teams-bar .team-flag-img,
+  body.app-arena #panel-grupos .group-teams-bar .team-flag-placeholder {
+    width: 1.1rem;
+    height: 0.82rem;
+  }
+
+  body.app-arena #panel-grupos .group-order {
+    margin-bottom: 0.42rem;
+  }
+
+  body.app-arena #panel-grupos .order-row {
+    gap: 0.28rem;
+    margin: 0.14rem 0;
+  }
+
+  body.app-arena #panel-grupos .order-row .order-pos {
+    min-width: 1.2rem;
+    font-size: 0.64rem;
+  }
+
+  body.app-arena #panel-grupos .order-row .group-order-combobox {
+    flex: 0 0 6.65rem;
+    width: 6.65rem;
+    min-width: 6.65rem;
+    max-width: 6.65rem;
+  }
+
+  body.app-arena #panel-grupos .order-row:has(.third-choice) .group-order-combobox {
+    max-width: 6.65rem;
+  }
+
+  body.app-arena #panel-grupos .order-row:has(.third-choice) .third-choice {
+    gap: 0.14rem;
+  }
+
+  body.app-arena #panel-grupos .order-row:has(.third-choice) .third-choice__label {
+    font-size: 0.58rem;
+  }
+
+  body.app-arena #panel-grupos .order-row:has(.third-choice) .third-choice__btn {
+    min-width: 1.35rem;
+    padding: 0.1rem 0.2rem;
+    font-size: 0.68rem;
+  }
+
+  body.app-arena #panel-grupos .third-inline-lock {
+    font-size: 0.58rem;
+    padding: 0.12rem 0.32rem;
+  }
+
+  body.app-arena #panel-grupos .order-row .group-order-combobox__trigger,
+  body.app-arena #panel-grupos .order-row select.input:not(.group-order-combobox__native),
+  body.app-arena #panel-grupos .order-row .input:not(.group-order-combobox__trigger) {
+    padding-inline: 0.22rem 0.95rem;
+    font-size: 0.66rem;
+  }
+
+  body.app-arena #panel-grupos .order-row .group-order-combobox__option {
+    padding: 0.2rem 0.32rem;
+    font-size: 0.66rem;
+  }
+
+  body.app-arena #panel-grupos .group-order-actions {
+    margin-top: 0.28rem;
+    gap: 0.24rem;
+  }
+
+  body.app-arena #panel-grupos .group-order-actions .btn,
+  body.app-arena #panel-grupos .group-admin-lock__actions .btn {
+    font-size: 0.66rem;
+    padding: 0.22rem 0.42rem;
+  }
+
+  body.app-arena #panel-grupos .group-order-actions .pill {
+    font-size: 0.54rem;
+    padding: 0.1rem 0.28rem;
+  }
+
+  body.app-arena #panel-grupos .group-order .muted {
+    font-size: 0.66rem;
+  }
+
+  body.app-arena #panel-grupos .group-best-third-summary--in-card {
+    margin-top: 0.32rem;
+    padding: 0.24rem 0.35rem;
+  }
+
+  body.app-arena #panel-grupos .group-best-third-summary__title {
+    font-size: 0.54rem;
+  }
+
+  body.app-arena #panel-grupos .group-best-third-summary__fraction strong {
+    font-size: 0.78rem;
+  }
+
+  body.app-arena #panel-grupos .group-best-third-summary__hint {
+    font-size: 0.58rem;
+  }
+
+  body.app-arena #panel-grupos .group-preds-host {
+    margin-top: 0.48rem;
+    padding-top: 0.08rem;
+  }
+
+  body.app-arena #panel-grupos .group-preds-table-head {
+    margin-bottom: 0.08rem;
+  }
+
+  body.app-arena #panel-grupos .group-preds-table-title {
+    margin-bottom: 0.18rem;
+    font-size: 0.82rem;
+  }
+
+  body.app-arena #panel-grupos .group-preds-table-head .participant-search-toolbar__label {
+    font-size: 0.58rem;
+  }
+
+  body.app-arena #panel-grupos .group-preds-table-head .participant-search-input {
+    padding: 0.22rem 0.38rem;
+    font-size: 0.68rem;
+  }
+
+  body.app-arena #panel-grupos .table-scroll--group-preds {
+    max-height: min(58vh, 24rem);
+    overflow-y: auto;
+  }
+
+  body.app-arena #panel-grupos .table-group-preds {
+    font-size: 0.6rem;
+    line-height: 1.12;
+  }
+
+  body.app-arena #panel-grupos .table-group-preds th,
+  body.app-arena #panel-grupos .table-group-preds td {
+    padding: 0.14rem 0.22rem;
+  }
+
+  body.app-arena #panel-grupos .table-group-preds th {
+    font-size: 0.52rem;
+    letter-spacing: 0.03em;
+  }
+
+  body.app-arena #panel-grupos .table-group-preds thead th.group-preds-th-third {
+    min-width: 2.85rem;
+  }
+
+  body.app-arena #panel-grupos .table-group-preds th.group-preds-pts,
+  body.app-arena #panel-grupos .table-group-preds td.group-preds-pts {
+    min-width: 1.75rem;
+  }
+
+  body.app-arena #panel-grupos .table-group-preds .team-flag-img,
+  body.app-arena #panel-grupos .table-group-preds .team-flag-placeholder {
+    width: 0.95rem;
+    height: 0.72rem;
+  }
+
+  body.app-arena #panel-grupos .table-group-preds .group-preds-pos .team-label {
+    font-size: 0.58rem;
+    gap: 0.12rem;
+  }
+
+  body.app-arena #panel-grupos .table-group-preds .group-preds-pos .team-label .team-text {
+    line-height: 1.15;
+  }
+
+  body.app-arena #panel-grupos .table-group-preds .group-preds-name-col .quiniela-participant-line {
+    font-size: 0.62rem;
+    line-height: 1.08;
+  }
+
+  body.app-arena #panel-grupos .table-group-preds .group-preds-name-col .td-muted {
+    font-size: 0.54rem;
+  }
+
+  body.app-arena #panel-grupos .group-preds-bien-label,
+  body.app-arena #panel-grupos .group-preds-excelente-label,
+  body.app-arena #panel-grupos .group-preds-perfecto-label {
+    font-size: 0.48rem;
+  }
+
+  body.app-arena #panel-grupos .table-group-preds .group-preds-cell-wrap {
+    min-height: 0.95rem;
+    padding-right: 1.55rem;
+  }
+
+  body.app-arena #panel-grupos .table-group-preds .group-preds-cell-wrap--center {
+    min-width: 1.1rem;
+  }
+
+  body.app-arena #panel-grupos .group-preds-pt-badge {
+    top: -0.24rem;
+    right: -0.1rem;
+    font-size: 0.44rem;
+    padding: 0.08rem 0.18rem;
+  }
+
+  body.app-arena #panel-grupos .group-preds-pts-cell {
+    min-height: 0.82rem;
+    font-size: 0.62rem;
+  }
+
+  body.app-arena #panel-grupos .table-group-preds .group-preds-third {
+    font-size: 0.58rem;
+  }
+
+  body.app-arena #panel-grupos .group-preds-legend {
+    margin-bottom: 0.38rem;
+    font-size: 0.62rem;
+    gap: 0.22rem 0.55rem;
+  }
+
+  body.app-arena #panel-grupos .group-preds-legend-swatch {
+    width: 0.68rem;
+    height: 0.68rem;
+  }
+
+  /* Hint de scroll arriba de las tablas comparativas y rankings */
+  body.app-arena #panel-partidos .partidos-match-card .quiniela-table-wrap.table-scroll::before,
+  body.app-arena #panel-grupos .table-scroll--group-preds::before,
+  body.app-arena #panel-generales #generales-preds-host .table-scroll--group-preds::before,
+  body.app-arena #panel-team-order-ranking .table-scroll--ranking::before,
+  body.app-arena #panel-match-ranking .table-scroll--ranking::before,
+  body.app-arena #panel-final-ranking .table-scroll--ranking::before,
+  body.app-arena #floating-ranking-body::before {
+    content: "Desliza para ver más →";
+    display: block;
+    margin-bottom: 0.28rem;
+    font-size: 0.62rem;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.25;
+  }
+
+  body.app-arena #panel-partidos .partidos-match-card .table-scroll.quiniela-table-wrap::after,
+  body.app-arena #panel-grupos .table-scroll--group-preds::after,
+  body.app-arena #panel-generales #generales-preds-host .table-scroll--group-preds::after,
+  body.app-arena #panel-team-order-ranking .table-scroll--ranking::after,
+  body.app-arena #panel-match-ranking .table-scroll--ranking::after,
+  body.app-arena #panel-final-ranking .table-scroll--ranking::after {
+    content: none;
+    display: none;
+  }
+
+  /* Generales: tabla comparativa más densa */
+  body.app-arena #panel-generales .card--generales,
+  body.app-arena #panel-generales .card--generales-admin {
+    padding: 0.48rem 0.52rem;
+  }
+
+  body.app-arena #panel-generales .generales-user-pred-header {
+    margin-bottom: 0.48rem;
+    padding: 0.42rem 0.48rem;
+  }
+
+  body.app-arena #panel-generales .generales-user-pred-title {
+    margin-bottom: 0.18rem;
+    font-size: 0.88rem;
+  }
+
+  body.app-arena #panel-generales .generales-user-pred-hint {
+    font-size: 0.66rem;
+    line-height: 1.25;
+  }
+
+  body.app-arena #panel-generales .generales-stack {
+    margin-top: 0.48rem;
+    gap: 0.65rem;
+  }
+
+  body.app-arena #panel-generales .generales-side-title {
+    margin-bottom: 0.42rem;
+    font-size: 0.78rem;
+  }
+
+  body.app-arena #panel-generales .field-label {
+    font-size: 0.68rem;
+  }
+
+  body.app-arena #panel-generales .generales-podium-slot .input,
+  body.app-arena #panel-generales .generales-award-slot .input,
+  body.app-arena #panel-generales .award-combobox__picked {
+    font-size: 0.72rem;
+    padding: 0.28rem 0.42rem;
+  }
+
+  body.app-arena #panel-generales .group-pred-actions {
+    margin-top: 0.32rem;
+    gap: 0.24rem;
+  }
+
+  body.app-arena #panel-generales .group-pred-actions .btn {
+    font-size: 0.66rem;
+    padding: 0.22rem 0.42rem;
+  }
+
+  body.app-arena #panel-generales .group-pred-actions .pill {
+    font-size: 0.54rem;
+    padding: 0.1rem 0.28rem;
+  }
+
+  body.app-arena #panel-generales #generales-preds-host {
+    margin-top: 0.48rem;
+    padding-top: 0.08rem;
+  }
+
+  body.app-arena #panel-generales #generales-preds-host .group-preds-table-title {
+    margin-bottom: 0.18rem;
+    font-size: 0.82rem;
+  }
+
+  body.app-arena #panel-generales #generales-preds-host .table-scroll--group-preds {
+    max-height: min(58vh, 24rem);
+    overflow-y: auto;
+  }
+
+  body.app-arena #panel-generales .table-generales-preds {
+    font-size: 0.6rem;
+    line-height: 1.12;
+  }
+
+  body.app-arena #panel-generales .table-generales-preds th,
+  body.app-arena #panel-generales .table-generales-preds td {
+    padding: 0.14rem 0.22rem;
+  }
+
+  body.app-arena #panel-generales .table-generales-preds th {
+    font-size: 0.52rem;
+    letter-spacing: 0.03em;
+  }
+
+  body.app-arena #panel-generales .table-generales-preds th.group-preds-pts,
+  body.app-arena #panel-generales .table-generales-preds td.group-preds-pts {
+    min-width: 1.75rem;
+  }
+
+  body.app-arena #panel-generales .table-generales-preds .team-flag-img,
+  body.app-arena #panel-generales .table-generales-preds .team-flag-placeholder {
+    width: 0.95rem;
+    height: 0.72rem;
+  }
+
+  body.app-arena #panel-generales .table-generales-preds .group-preds-pos .team-label {
+    font-size: 0.58rem;
+    gap: 0.12rem;
+  }
+
+  body.app-arena #panel-generales .table-generales-preds .group-preds-pos .team-label .team-text {
+    line-height: 1.15;
+  }
+
+  body.app-arena #panel-generales .table-generales-preds .group-preds-name-col .quiniela-participant-line {
+    font-size: 0.62rem;
+    line-height: 1.08;
+  }
+
+  body.app-arena #panel-generales .table-generales-preds .group-preds-name-col .td-muted {
+    font-size: 0.54rem;
+  }
+
+  body.app-arena #panel-generales .generales-preds-text {
+    font-size: 0.58rem;
+  }
+
+  body.app-arena #panel-generales .generales-preds-cell--text {
+    min-height: 0.95rem;
+  }
+
+  body.app-arena #panel-generales .table-generales-preds .group-preds-cell-wrap {
+    min-height: 0.95rem;
+    padding-right: 1.55rem;
+  }
+
+  body.app-arena #panel-generales .group-preds-bien-label,
+  body.app-arena #panel-generales .group-preds-excelente-label,
+  body.app-arena #panel-generales .group-preds-perfecto-label {
+    font-size: 0.48rem;
+  }
+
+  body.app-arena #panel-generales .group-preds-pt-badge {
+    top: -0.24rem;
+    right: -0.1rem;
+    font-size: 0.44rem;
+    padding: 0.08rem 0.18rem;
+  }
+
+  body.app-arena #panel-generales .group-preds-pts-cell {
+    min-height: 0.82rem;
+    font-size: 0.62rem;
+  }
+
+  /* Rankings: más densos (grupos, partidos, final global + flotante) */
+  body.app-arena #panel-team-order-ranking .panel-title,
+  body.app-arena #panel-match-ranking .panel-title,
+  body.app-arena #panel-final-ranking .panel-title {
+    font-size: 0.95rem;
+    margin-bottom: 0.22rem;
+  }
+
+  body.app-arena #panel-team-order-ranking .panel-intro,
+  body.app-arena #panel-match-ranking .panel-intro,
+  body.app-arena #panel-final-ranking .panel-intro {
+    font-size: 0.66rem;
+    margin-bottom: 0.38rem;
+    line-height: 1.28;
+  }
+
+  body.app-arena #panel-team-order-ranking .participant-search-toolbar,
+  body.app-arena #panel-match-ranking .participant-search-toolbar,
+  body.app-arena #panel-final-ranking .participant-search-toolbar {
+    margin-bottom: 0.22rem;
+  }
+
+  body.app-arena #panel-team-order-ranking .participant-search-toolbar__label,
+  body.app-arena #panel-match-ranking .participant-search-toolbar__label,
+  body.app-arena #panel-final-ranking .participant-search-toolbar__label {
+    font-size: 0.58rem;
+  }
+
+  body.app-arena #panel-team-order-ranking .participant-search-input,
+  body.app-arena #panel-match-ranking .participant-search-input,
+  body.app-arena #panel-final-ranking .participant-search-input {
+    padding: 0.22rem 0.38rem;
+    font-size: 0.68rem;
+  }
+
+  body.app-arena #panel-match-ranking .team-stats-source-wrap {
+    margin-bottom: 0.38rem;
+    gap: 0.24rem 0.35rem;
+  }
+
+  body.app-arena #panel-match-ranking .team-stats-source-wrap .field-label {
+    font-size: 0.64rem;
+  }
+
+  body.app-arena #panel-match-ranking .team-stats-source-wrap .input.input-sm {
+    padding: 0.24rem 0.38rem;
+    font-size: 0.68rem;
+  }
+
+  body.app-arena #panel-team-order-ranking .table-scroll--ranking,
+  body.app-arena #panel-match-ranking .table-scroll--ranking,
+  body.app-arena #panel-final-ranking .table-scroll--ranking {
+    max-height: min(58vh, 24rem);
+  }
+
+  body.app-arena #panel-team-order-ranking .table-group-order-ranking,
+  body.app-arena #panel-match-ranking .table-match-ranking,
+  body.app-arena #panel-final-ranking .table-final-ranking {
+    min-width: 17.5rem;
+    width: max(100%, 17.5rem);
+    font-size: 0.62rem;
+    line-height: 1.2;
+  }
+
+  body.app-arena #panel-team-order-ranking .table-group-order-ranking th,
+  body.app-arena #panel-team-order-ranking .table-group-order-ranking td,
+  body.app-arena #panel-match-ranking .table-match-ranking th,
+  body.app-arena #panel-match-ranking .table-match-ranking td,
+  body.app-arena #panel-final-ranking .table-final-ranking th,
+  body.app-arena #panel-final-ranking .table-final-ranking td {
+    padding: 0.3rem 0.08rem;
+    font-size: inherit;
+  }
+
+  body.app-arena #panel-team-order-ranking .table-group-order-ranking tbody th,
+  body.app-arena #panel-team-order-ranking .table-group-order-ranking tbody td,
+  body.app-arena #panel-match-ranking .table-match-ranking tbody th,
+  body.app-arena #panel-match-ranking .table-match-ranking tbody td,
+  body.app-arena #panel-final-ranking .table-final-ranking tbody th,
+  body.app-arena #panel-final-ranking .table-final-ranking tbody td {
+    font-size: 0.62rem;
+  }
+
+  body.app-arena #panel-team-order-ranking .table-group-order-ranking tbody th.group-ranking-name,
+  body.app-arena #panel-match-ranking .table-match-ranking tbody th.group-ranking-name,
+  body.app-arena #panel-final-ranking .table-final-ranking tbody th.group-ranking-name {
+    font-size: 0.58rem;
+    line-height: 1.1;
+  }
+
+  body.app-arena #panel-team-order-ranking .table-group-order-ranking tbody th.group-ranking-name .td-muted,
+  body.app-arena #panel-match-ranking .table-match-ranking tbody th.group-ranking-name .td-muted,
+  body.app-arena #panel-final-ranking .table-final-ranking tbody th.group-ranking-name .td-muted {
+    font-size: 0.52rem;
+  }
+
+  body.app-arena #panel-team-order-ranking .table-group-order-ranking th:first-child,
+  body.app-arena #panel-match-ranking .table-match-ranking th:first-child,
+  body.app-arena #panel-final-ranking .table-final-ranking th:first-child,
+  body.app-arena #panel-team-order-ranking .group-ranking-rank,
+  body.app-arena #panel-match-ranking .group-ranking-rank,
+  body.app-arena #panel-final-ranking .group-ranking-rank {
+    width: 1.45rem;
+    min-width: 1.45rem;
+    padding-left: 0.04rem;
+    padding-right: 0.04rem;
+  }
+
+  body.app-arena #panel-team-order-ranking .table-group-order-ranking thead th:first-child,
+  body.app-arena #panel-team-order-ranking .table-group-order-ranking thead th:nth-child(2),
+  body.app-arena #panel-match-ranking .table-match-ranking thead th:first-child,
+  body.app-arena #panel-match-ranking .table-match-ranking thead th:nth-child(2),
+  body.app-arena #panel-final-ranking .table-final-ranking thead th:first-child,
+  body.app-arena #panel-final-ranking .table-final-ranking thead th:nth-child(2) {
+    font-size: 0.48rem;
+    letter-spacing: 0.02em;
+    line-height: 1.1;
+  }
+
+  body.app-arena #panel-team-order-ranking .group-ranking-name,
+  body.app-arena #panel-match-ranking .group-ranking-name,
+  body.app-arena #panel-final-ranking .group-ranking-name,
+  body.app-arena #panel-team-order-ranking .table-group-order-ranking th:nth-child(2),
+  body.app-arena #panel-match-ranking .table-match-ranking th:nth-child(2),
+  body.app-arena #panel-final-ranking .table-final-ranking th:nth-child(2) {
+    min-width: 3.15rem;
+    max-width: 5rem;
+    padding-left: 0.14rem;
+    padding-right: 0.14rem;
+  }
+
+  body.app-arena #panel-team-order-ranking .group-ranking-th-stat,
+  body.app-arena #panel-match-ranking .group-ranking-th-stat,
+  body.app-arena #panel-final-ranking .group-ranking-th-stat {
+    min-width: 1.85rem;
+    max-width: 2.45rem;
+    padding-left: 0.04rem;
+    padding-right: 0.04rem;
+  }
+
+  body.app-arena #panel-team-order-ranking .group-ranking-th-stat--pts,
+  body.app-arena #panel-match-ranking .group-ranking-th-stat--pts,
+  body.app-arena #panel-final-ranking .group-ranking-th-stat--pts {
+    min-width: 1.65rem;
+  }
+
+  body.app-arena #panel-team-order-ranking .group-ranking-label,
+  body.app-arena #panel-match-ranking .group-ranking-label,
+  body.app-arena #panel-final-ranking .group-ranking-label {
+    font-size: 0.48rem;
+    letter-spacing: 0.02em;
+    line-height: 1.08;
+  }
+
+  body.app-arena #panel-team-order-ranking .group-ranking-label--excelente,
+  body.app-arena #panel-match-ranking .group-ranking-label--excelente,
+  body.app-arena #panel-final-ranking .group-ranking-label--excelente,
+  body.app-arena #panel-team-order-ranking .group-ranking-label--perfecto,
+  body.app-arena #panel-match-ranking .group-ranking-label--perfecto,
+  body.app-arena #panel-final-ranking .group-ranking-label--perfecto {
+    font-size: 0.42rem;
+  }
+
+  body.app-arena #panel-team-order-ranking .group-ranking-stat,
+  body.app-arena #panel-match-ranking .group-ranking-stat,
+  body.app-arena #panel-final-ranking .group-ranking-stat {
+    padding: 0.3rem 0.04rem;
+  }
+
+  body.app-arena #panel-team-order-ranking .group-ranking-total::before,
+  body.app-arena #panel-match-ranking .group-ranking-total::before,
+  body.app-arena #panel-final-ranking .group-ranking-total::before {
+    inset: 0.2rem 0.02rem;
+  }
+
+  body.app-arena #panel-team-order-ranking .table-group-order-ranking tbody .group-ranking-stat-num,
+  body.app-arena #panel-match-ranking .table-match-ranking tbody .group-ranking-stat-num,
+  body.app-arena #panel-final-ranking .table-final-ranking tbody .group-ranking-stat-num,
+  body.app-arena #panel-team-order-ranking .table-group-order-ranking tbody .group-ranking-total strong,
+  body.app-arena #panel-match-ranking .table-match-ranking tbody .group-ranking-total strong,
+  body.app-arena #panel-final-ranking .table-final-ranking tbody .group-ranking-total strong {
+    font-size: 0.62rem;
+  }
+
+  /* Ranking flotante */
+  body.app-arena .floating-ranking-card {
+    width: min(72vw, 220px);
+    max-height: min(62vh, 360px);
+    padding: 0.55rem 0.58rem;
+  }
+
+  body.app-arena .floating-ranking-title {
+    font-size: 0.78rem;
+  }
+
+  body.app-arena .floating-ranking-close {
+    font-size: 1rem;
+    padding: 0.08rem 0.28rem;
+  }
+
+  body.app-arena .floating-ranking-card-head {
+    margin-bottom: 0.22rem;
+  }
+
+  body.app-arena .floating-ranking-table {
+    font-size: 0.62rem;
+    line-height: 1.12;
+  }
+
+  body.app-arena .floating-ranking-table thead th {
+    font-size: 0.5rem;
+    padding: 0.24rem 0.14rem;
+    letter-spacing: 0.03em;
+  }
+
+  body.app-arena .floating-ranking-table tbody th,
+  body.app-arena .floating-ranking-table tbody td {
+    padding: 0.26rem 0.12rem;
+  }
+
+  body.app-arena .floating-ranking-th-num,
+  body.app-arena .floating-ranking-table tbody td:first-child {
+    width: 1.35rem;
+    min-width: 1.35rem;
+    font-size: 0.58rem;
+  }
+
+  body.app-arena .floating-ranking-th-player,
+  body.app-arena .floating-ranking-table tbody th[scope="row"] {
+    font-size: 0.58rem;
+    line-height: 1.1;
+    max-width: 7.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body.app-arena .floating-ranking-th-pts,
+  body.app-arena .floating-ranking-table tbody td:last-child {
+    font-size: 0.58rem;
+    min-width: 1.65rem;
+  }
+
+  body.app-arena .floating-ranking-table tbody td:last-child strong {
+    font-size: 0.62rem;
   }
 }

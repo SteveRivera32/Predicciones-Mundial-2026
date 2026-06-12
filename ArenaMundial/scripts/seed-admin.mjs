@@ -13,8 +13,8 @@ const username = String(process.env.ARENA_ADMIN_USER ?? "admin").trim().toLowerC
 const password = String(process.env.ARENA_ADMIN_PASS ?? "Mund@26!");
 const displayName = String(process.env.ARENA_ADMIN_NAME ?? "Admin").trim() || "Admin";
 
-if (!/^[a-z0-9_]{3,24}$/.test(username)) {
-  console.error("Usuario inválido (3–24: letras, números, _)");
+if (!/^[a-z0-9_]{3,20}$/.test(username)) {
+  console.error("Usuario inválido (3–20: letras, números, _)");
   process.exit(1);
 }
 if (!isStrongAdminPassword(password)) {

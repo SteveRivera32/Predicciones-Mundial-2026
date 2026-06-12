@@ -82,6 +82,52 @@
     </div>
 
     <div
+      id="overlay-arena-account"
+      class="overlay"
+      hidden
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="arena-account-title"
+    >
+      <div class="overlay-card overlay-card--admin-settings">
+        <h2 id="arena-account-title" class="overlay-title">Ajustes de cuenta</h2>
+        <div class="arena-account-self admin-settings-danger">
+          <p class="admin-settings-danger-title">Mi cuenta</p>
+          <p class="muted">
+            Conectado como <strong id="arena-account-self-name"></strong>
+            (<span id="arena-account-self-username" class="muted"></span>)
+          </p>
+          <p class="admin-settings-danger-desc">
+            Elimina tu usuario y todas tus predicciones de Arena. Esta acción no se puede deshacer.
+          </p>
+          <button type="button" id="btn-arena-delete-my-account" class="btn btn-sm admin-settings-danger-btn">
+            Eliminar mi cuenta
+          </button>
+          <p id="arena-account-self-error" class="form-error" role="alert" hidden></p>
+        </div>
+        <div id="arena-account-admin-wrap" class="arena-account-admin" hidden>
+          <p class="admin-settings-danger-title">Administrar usuarios</p>
+          <p class="muted admin-settings-danger-desc">
+            Busca por nombre visible o usuario y elimina cuentas de prueba o abusivas.
+          </p>
+          <label class="field">
+            <span class="field-label">Buscar usuario</span>
+            <input
+              id="arena-admin-user-search"
+              class="input"
+              type="search"
+              autocomplete="off"
+              placeholder="Ej. María García o arena_012"
+            />
+          </label>
+          <div id="arena-admin-user-results" class="admin-settings-list-wrap"></div>
+          <p id="arena-admin-user-error" class="form-error" role="alert" hidden></p>
+        </div>
+        <button type="button" id="arena-account-close" class="btn btn-sm admin-settings-close">Cerrar</button>
+      </div>
+    </div>
+
+    <div
       id="overlay-generales-points"
       class="overlay"
       hidden
