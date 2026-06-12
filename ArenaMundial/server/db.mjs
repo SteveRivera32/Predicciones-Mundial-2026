@@ -265,6 +265,32 @@ export function bindDeviceToUser(deviceId, userId) {
 }
 
 /**
+ * Registro atómico: crea usuario y vincula dispositivo, o no hace nada si ya hay vínculo.
+ * @param {{ username: string, passwordHash: string, displayName: string, isAdmin?: boolean, deviceId: string }}
+ * @returns {{ ok: true, user: ReturnType<typeof findUserById> } | { ok: false, error: "device_bound", username: string }}
+ */
+export function registerArenaUserWithDevice({ username, passwordHash, displayName, isAdmin = false, deviceId }) {
+  const database = getDb();
+  const run = database.transaction(() => {
+    const existing = getDeviceBindingByDeviceId(deviceId);
+    if (existing) {
+      return { ok: false, error: "device_bound", username: existing.username };
+    }
+    const result = database
+      .prepare(
+        `INSERT INTO users (username, email, password_hash, display_name, is_admin, is_privadas)
+         VALUES (?, NULL, ?, ?, ?, 0)`,
+      )
+      .run(username, passwordHash, displayName, isAdmin ? 1 : 0);
+    const userId = Number(result.lastInsertRowid);
+    setUserPredictions(userId, emptyPredictions());
+    bindDeviceToUser(deviceId, userId);
+    return { ok: true, user: findUserById(userId) };
+  });
+  return run();
+}
+
+/**
  * @param {string} query
  * @param {number} [limit]
  */

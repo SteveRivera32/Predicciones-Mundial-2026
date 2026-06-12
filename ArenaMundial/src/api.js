@@ -27,10 +27,12 @@ export function getMe() {
   return apiFetch("/auth/me");
 }
 
-export function login(username, password, deviceId) {
+export function login(username, password, migrationDeviceId) {
+  const body = { username, password };
+  if (migrationDeviceId) body.deviceId = migrationDeviceId;
   return apiFetch("/auth/login", {
     method: "POST",
-    body: JSON.stringify({ username, password, deviceId }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -41,14 +43,20 @@ export function register(payload) {
   });
 }
 
-export function getDeviceBinding(deviceId) {
-  return apiFetch(`/auth/device-binding?deviceId=${encodeURIComponent(String(deviceId ?? ""))}`);
+/** @param {string} [migrationDeviceId] id legado en localStorage para migrar a cookie httpOnly */
+export function getDeviceBinding(migrationDeviceId) {
+  const q = migrationDeviceId
+    ? `?deviceId=${encodeURIComponent(String(migrationDeviceId))}`
+    : "";
+  return apiFetch(`/auth/device-binding${q}`);
 }
 
-export function deleteDeviceAccount(deviceId, username) {
+export function deleteDeviceAccount(username, migrationDeviceId) {
+  const body = { username };
+  if (migrationDeviceId) body.deviceId = migrationDeviceId;
   return apiFetch("/auth/delete-device-account", {
     method: "POST",
-    body: JSON.stringify({ deviceId, username }),
+    body: JSON.stringify(body),
   });
 }
 

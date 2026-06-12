@@ -30,7 +30,9 @@ import {
   searchUsersByQuery,
   getDeviceBindingByDeviceId,
   bindDeviceToUser,
+  registerArenaUserWithDevice,
 } from "./db.mjs";
+import { resolveDeviceId } from "./device-cookie.mjs";
 import {
   sanitizeChatBody,
   checkChatRateLimit,
@@ -87,20 +89,10 @@ function usernameValid(s) {
   return /^[a-z0-9_]{3,20}$/.test(s);
 }
 
-function deviceIdValid(s) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    String(s ?? ""),
-  );
-}
-
 // ── Auth ────────────────────────────────────────────────────────────────────
 
 app.get("/api/arena/auth/device-binding", authTrafficGuard, (req, res) => {
-  const deviceId = String(req.query.deviceId ?? "").trim();
-  if (!deviceIdValid(deviceId)) {
-    res.status(400).json({ error: "identificador de dispositivo inválido" });
-    return;
-  }
+  const deviceId = resolveDeviceId(req, res);
   const binding = getDeviceBindingByDeviceId(deviceId);
   if (!binding) {
     res.json({ bound: false });
@@ -115,14 +107,10 @@ app.get("/api/arena/auth/device-binding", authTrafficGuard, (req, res) => {
 });
 
 app.post("/api/arena/auth/delete-device-account", authTrafficGuard, (req, res) => {
-  const deviceId = String(req.body?.deviceId ?? "").trim();
+  const deviceId = resolveDeviceId(req, res);
   const username = String(req.body?.username ?? "")
     .trim()
     .toLowerCase();
-  if (!deviceIdValid(deviceId)) {
-    res.status(400).json({ error: "identificador de dispositivo inválido" });
-    return;
-  }
   if (!usernameValid(username)) {
     res.status(400).json({ error: "usuario inválido" });
     return;
@@ -170,19 +158,7 @@ app.post("/api/arena/auth/register", authTrafficGuard, async (req, res) => {
       .toLowerCase();
     const password = String(req.body?.password ?? "");
     const displayNameRaw = String(req.body?.displayName ?? "").trim();
-    const deviceId = String(req.body?.deviceId ?? "").trim();
-
-    if (!deviceIdValid(deviceId)) {
-      res.status(400).json({ error: "no se pudo identificar este dispositivo; recarga la página" });
-      return;
-    }
-    const deviceBinding = getDeviceBindingByDeviceId(deviceId);
-    if (deviceBinding) {
-      res.status(409).json({
-        error: `este dispositivo ya tiene la cuenta «${deviceBinding.username}»; entra con tu contraseña o bórrala desde el login`,
-      });
-      return;
-    }
+    const deviceId = resolveDeviceId(req, res);
 
     if (!usernameValid(username)) {
       res.status(400).json({ error: "usuario: 3–20 caracteres, letras, números o _" });
@@ -213,13 +189,21 @@ app.post("/api/arena/auth/register", authTrafficGuard, async (req, res) => {
     }
 
     const isFirstUser = countUsers() === 0;
-    const user = createUser({
+    const passwordHash = await hashPassword(password);
+    const registered = registerArenaUserWithDevice({
       username,
-      passwordHash: await hashPassword(password),
+      passwordHash,
       displayName,
       isAdmin: isFirstUser,
+      deviceId,
     });
-    bindDeviceToUser(deviceId, user.id);
+    if (!registered.ok) {
+      res.status(409).json({
+        error: `este dispositivo ya tiene la cuenta «${registered.username}»; entra con tu contraseña o bórrala desde el login`,
+      });
+      return;
+    }
+    const user = registered.user;
     const token = signToken(user);
     setAuthCookie(res, token);
     res.status(201).json({ ok: true, user: publicUser(user) });
@@ -243,8 +227,15 @@ app.post("/api/arena/auth/login", authTrafficGuard, async (req, res) => {
     res.status(401).json({ error: "usuario o contraseña incorrectos" });
     return;
   }
-  const deviceId = String(req.body?.deviceId ?? "").trim();
-  if (deviceIdValid(deviceId) && !getDeviceBindingByDeviceId(deviceId)) {
+  const deviceId = resolveDeviceId(req, res);
+  const deviceBinding = getDeviceBindingByDeviceId(deviceId);
+  if (deviceBinding && deviceBinding.user_id !== user.id) {
+    res.status(403).json({
+      error: `este dispositivo ya está vinculado a «${deviceBinding.username}»; solo puedes entrar con esa cuenta aquí`,
+    });
+    return;
+  }
+  if (!deviceBinding) {
     bindDeviceToUser(deviceId, user.id);
   }
   const token = signToken(user);

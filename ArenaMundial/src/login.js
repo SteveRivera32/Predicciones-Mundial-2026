@@ -138,14 +138,8 @@ function applyDeviceBindingUi() {
 }
 
 async function refreshDeviceBinding() {
-  const deviceId = getArenaDeviceId();
-  if (!deviceId) {
-    deviceBinding = null;
-    applyDeviceBindingUi();
-    return;
-  }
   try {
-    deviceBinding = await getDeviceBinding(deviceId);
+    deviceBinding = await getDeviceBinding(getArenaDeviceId() ?? undefined);
   } catch {
     deviceBinding = null;
   }
@@ -220,14 +214,9 @@ form?.addEventListener("submit", async (e) => {
     showError(`La contraseña debe tener exactamente ${PASSWORD_LEN} caracteres.`);
     return;
   }
-  const deviceId = getArenaDeviceId();
-  if (!deviceId) {
-    showError("No se pudo identificar este dispositivo. Prueba otro navegador o desactiva el bloqueo de almacenamiento.");
-    return;
-  }
   setSubmitting(true);
   try {
-    await login(username, password, deviceId);
+    await login(username, password, getArenaDeviceId() ?? undefined);
     rememberUsername(username);
     const params = new URLSearchParams(location.search);
     location.href = params.get("next") || "/ArenaMundial/app/";
@@ -268,18 +257,14 @@ registerForm?.addEventListener("submit", async (e) => {
     showError("Este dispositivo ya tiene una cuenta.");
     return;
   }
-  const deviceId = getArenaDeviceId();
-  if (!deviceId) {
-    showError("No se pudo identificar este dispositivo. Prueba otro navegador o desactiva el bloqueo de almacenamiento.");
-    return;
-  }
   setSubmitting(true);
   try {
+    const migrationDeviceId = getArenaDeviceId();
     await register({
       username,
       displayName,
       password,
-      deviceId,
+      ...(migrationDeviceId ? { deviceId: migrationDeviceId } : {}),
     });
     rememberUsername(username);
     location.href = "/ArenaMundial/app/";
@@ -307,15 +292,10 @@ deleteDeviceBtn?.addEventListener("click", async () => {
   if (!confirm("Última confirmación: ¿seguro que quieres borrar esta cuenta?")) {
     return;
   }
-  const deviceId = getArenaDeviceId();
-  if (!deviceId) {
-    showError("No se pudo identificar este dispositivo.");
-    return;
-  }
   setSubmitting(true);
   showError("");
   try {
-    await deleteDeviceAccount(deviceId, username);
+    await deleteDeviceAccount(username, getArenaDeviceId() ?? undefined);
     try {
       localStorage.removeItem(USERNAME_KEY);
     } catch {

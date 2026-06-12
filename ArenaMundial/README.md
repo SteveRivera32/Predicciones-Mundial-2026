@@ -54,6 +54,7 @@ Sirve `dist-arena/` desde el proceso arena. Mismo dominio que la quiniela privad
 | `ARENA_DATA_DIR` | `ArenaMundial/server/data` | SQLite y datos |
 | `ARENA_MAX_USERS` | `10000` | Cupo máximo |
 | `ARENA_JWT_SECRET` | *(dev)* | **Obligatorio cambiar en prod** |
+| `ARENA_COOKIE_DOMAIN` | *(vacío)* | En prod con `www` y sin `www`: `.tivotabo.com` (1 cuenta por dispositivo) |
 | `ARENA_SHARED_CACHE_MS` | `30000` | Cache servidor para oficial/rankings |
 | `ARENA_KICKOFF_CHECK_MS` | `60000` | Revisión auto-inicio al llegar kickoff |
 
