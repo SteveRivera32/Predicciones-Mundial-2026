@@ -25,6 +25,15 @@ function isKickoffPlaceholder(sc) {
   return (h === 0 || h === "0") && (a === 0 || a === "0");
 }
 
+/** Admin confirmó resultado final en este snapshot. */
+function isExplicitMatchFinish(side, id, kind) {
+  const stateKey = kind === "group" ? "groupMatchState" : "knockoutMatchState";
+  const confirmedKey = kind === "group" ? "groupScoresConfirmed" : "knockoutScoresConfirmed";
+  const is = /** @type {Record<string, string>} */ (side[stateKey] ?? {})[id] ?? "ready";
+  const ic = /** @type {Record<string, boolean>} */ (side[confirmedKey] ?? {})[id] === true;
+  return is === "finished" && ic;
+}
+
 /**
  * Reinicio o desconfirmación explícita del admin en `incoming` frente a `baseline`.
  * @param {Record<string, unknown>} incoming
@@ -92,6 +101,11 @@ function pickGroupMatchSlice(local, remote, id) {
     return sliceFrom(local, id, "group");
   }
 
+  const localFinish = isExplicitMatchFinish(local, id, "group");
+  const remoteFinish = isExplicitMatchFinish(remote, id, "group");
+  if (localFinish && !remoteFinish) return sliceFrom(local, id, "group");
+  if (remoteFinish && !localFinish) return sliceFrom(remote, id, "group");
+
   const ls = /** @type {Record<string, string>} */ (local.groupMatchState ?? {})[id] ?? "ready";
   const rs = /** @type {Record<string, string>} */ (remote.groupMatchState ?? {})[id] ?? "ready";
 
@@ -157,6 +171,11 @@ function pickKnockoutMatchSlice(local, remote, id) {
   if (isExplicitMatchDowngrade(local, remote, id, "ko")) {
     return sliceFrom(local, id, "ko");
   }
+
+  const localFinish = isExplicitMatchFinish(local, id, "ko");
+  const remoteFinish = isExplicitMatchFinish(remote, id, "ko");
+  if (localFinish && !remoteFinish) return sliceFrom(local, id, "ko");
+  if (remoteFinish && !localFinish) return sliceFrom(remote, id, "ko");
 
   const ls = /** @type {Record<string, string>} */ (local.knockoutMatchState ?? {})[id] ?? "ready";
   const rs = /** @type {Record<string, string>} */ (remote.knockoutMatchState ?? {})[id] ?? "ready";

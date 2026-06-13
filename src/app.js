@@ -72,8 +72,8 @@ import {
   computeLiveParticipantRowsFromData,
   ARENA_PRELAUNCH_EXCLUDED_GROUP_MATCH_IDS,
 } from "./live-ranking.js";
-import { applyRemoteState } from "./sync.js";
-import { pushResetQuiniela, fetchBackupsList, restoreServerBackup } from "./sync-push.js";
+import { applyRemoteState, resetRemoteOfficialFingerprint } from "./sync.js";
+import { pushResetQuiniela, fetchBackupsList, restoreServerBackup, pushOfficial } from "./sync-push.js";
 import { downloadBackupFile, restoreFromBackupFile } from "./backup.js";
 import { normalizeForSearch } from "./search-normalize.js";
 import {
@@ -7219,17 +7219,27 @@ function bindPartidosAdminHandlers(scope, session) {
 
   scope.querySelectorAll(".quiniela-btn-terminar-partido").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const mid = btn.dataset.mid;
-      if (!mid) return;
-      const cur = loadOfficialResults();
-      if ((cur.groupMatchState?.[mid] ?? "ready") !== "started") return;
-      const sc = cur.groupScores[mid] ?? { home: "", away: "" };
-      if (sc.home === "" || sc.away === "") return;
-      saveOfficialResults({
-        groupScoresConfirmed: { [mid]: true },
-        groupMatchState: { [mid]: "finished" },
-      });
-      refreshAll(loadSession());
+      void (async () => {
+        const mid = btn.dataset.mid;
+        if (!mid) return;
+        const cur = loadOfficialResults();
+        if ((cur.groupMatchState?.[mid] ?? "ready") !== "started") return;
+        const sc = cur.groupScores[mid] ?? { home: "", away: "" };
+        if (sc.home === "" || sc.away === "") return;
+        const next = saveOfficialResults({
+          groupScoresConfirmed: { [mid]: true },
+          groupMatchState: { [mid]: "finished" },
+        });
+        if (isRemoteSyncActive()) {
+          resetRemoteOfficialFingerprint();
+          try {
+            await pushOfficial(next);
+          } catch (e) {
+            console.error("[pm26 sync] terminar partido", e);
+          }
+        }
+        refreshAll(loadSession());
+      })();
     });
   });
 

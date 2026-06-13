@@ -77,7 +77,7 @@ function applyParticipantsState(list) {
 function getPublicState() {
   return {
     participants: state.participants,
-    official: state.official,
+    official: normalizeOfficialPayload(state.official),
     predictions: state.predictions,
     officialUpdatedAt: state.officialUpdatedAt ?? null,
   };
@@ -94,7 +94,10 @@ async function loadStateFromDisk() {
     if (!parsed || typeof parsed !== "object") return false;
     state = {
       participants: Array.isArray(parsed.participants) ? parsed.participants : defaultState().participants,
-      official: typeof parsed.official === "object" && parsed.official ? parsed.official : emptyOfficialResults(),
+      official:
+        typeof parsed.official === "object" && parsed.official
+          ? normalizeOfficialPayload(parsed.official)
+          : emptyOfficialResults(),
       predictions: typeof parsed.predictions === "object" && parsed.predictions ? parsed.predictions : {},
       officialUpdatedAt:
         typeof parsed.officialUpdatedAt === "string" ? parsed.officialUpdatedAt : null,

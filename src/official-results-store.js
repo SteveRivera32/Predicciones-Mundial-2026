@@ -61,6 +61,16 @@ function ensureLocalCacheHydrated() {
   if (stored) officialLocalCache = stored;
 }
 
+/** Tras HMR o recarga parcial de módulos, el flag puede quedar desincronizado del sync activo. */
+function relinkOfficialRemoteCacheIfNeeded() {
+  if (!isRemoteSyncActive() || isArenaMode()) return;
+  ensureLocalCacheHydrated();
+  officialRemoteMode = true;
+  if (!officialRemoteCache) {
+    officialRemoteCache = normalizeOfficialResultsData(officialLocalCache);
+  }
+}
+
 /** @param {ReturnType<typeof emptyOfficialResults>} next */
 function persistOfficialCaches(next) {
   if (officialRemoteMode) {
@@ -208,6 +218,7 @@ export function emptyOfficialResults() {
  * @returns {ReturnType<typeof emptyOfficialResults>}
  */
 export function loadOfficialResults() {
+  relinkOfficialRemoteCacheIfNeeded();
   if (officialRemoteMode && officialRemoteCache) {
     return normalizeOfficialResultsData(officialRemoteCache);
   }
@@ -310,23 +321,23 @@ export function saveOfficialResults(patch) {
         ? prev.knockoutScoresConfirmed
         : { ...prev.knockoutScoresConfirmed, ...patch.knockoutScoresConfirmed },
   };
-  persistOfficialCaches(next);
-  if (officialRemoteMode) {
-    if (isArenaMode()) {
-      if (isArenaAdmin()) {
-        pushArenaOfficial(next)
-          .then(() => {
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(new CustomEvent("pm26-arena-local-official-saved"));
-            }
-          })
-          .catch((e) => console.error("[arena sync]", e));
-      }
-    } else if (isRemoteSyncActive()) {
-      pushOfficial(next).catch((e) => console.error("[pm26 sync]", e));
+  const normalized = normalizeOfficialResultsData(next);
+  relinkOfficialRemoteCacheIfNeeded();
+  persistOfficialCaches(normalized);
+  if (isArenaMode()) {
+    if (officialRemoteMode && isArenaAdmin()) {
+      pushArenaOfficial(normalized)
+        .then(() => {
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("pm26-arena-local-official-saved"));
+          }
+        })
+        .catch((e) => console.error("[arena sync]", e));
     }
+  } else if (isRemoteSyncActive()) {
+    pushOfficial(normalized).catch((e) => console.error("[pm26 sync]", e));
   }
-  return next;
+  return normalized;
 }
 
 /** Quita por completo los resultados oficiales de este navegador (quiniela, grupos, podio admin, bloqueos). */
