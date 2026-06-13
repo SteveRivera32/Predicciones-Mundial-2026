@@ -16,7 +16,6 @@ import {
   findUserByUsername,
 } from "./db.mjs";
 import { PASSWORD_LEN } from "./password-rules.mjs";
-import { applyOfficialFromPrivadasIfNewer } from "./official-privadas-sync.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_STATE_PATH = path.join(__dirname, "..", "..", "server", "data", "state.json");
@@ -101,14 +100,6 @@ export async function syncPrivadasToArena(onPredictionsChanged) {
   }
 
   if (predictionsChanged) onPredictionsChanged?.();
-
-  if (state.official) {
-    applyOfficialFromPrivadasIfNewer(
-      state.official,
-      state.officialUpdatedAt ?? null,
-      onPredictionsChanged,
-    );
-  }
 
   return true;
 }

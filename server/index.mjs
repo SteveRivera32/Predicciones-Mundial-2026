@@ -17,18 +17,10 @@ import {
 import { emptyOfficialResults } from "../src/official-results-store.js";
 import { emptyPredictions } from "../src/predictions-store.js";
 import { notifyArenaPrivadasSync } from "./privadas-arena-notify.mjs";
-import {
-  pushOfficialToArena,
-  pullAndApplyOfficialFromArena,
-  isApplyingOfficialFromArena,
-  withApplyingFromArena,
-  startOfficialArenaSyncPoll,
-} from "./official-arena-sync.mjs";
+import { startOfficialKickoffPoll } from "./official-kickoff.mjs";
 import { isSyncSecretValid } from "./sync-secret.mjs";
 import {
-  compareOfficialUpdatedAt,
   normalizeOfficialPayload,
-  reconcileOfficialForSync,
   officialPayloadEqual,
 } from "./official-sync-shared.mjs";
 import { mergeOfficialPreferAdvancedNormalized } from "../src/official-sync-merge.js";
@@ -202,50 +194,6 @@ function applyFullStateBody(body) {
   applyParticipantsState(state.participants);
 }
 
-async function applyOfficialFromArenaPush(official, updatedAt) {
-  const { changed, merged, updatedAt: at } = reconcileOfficialForSync(
-    state.official,
-    state.officialUpdatedAt,
-    official,
-    updatedAt,
-  );
-  if (!changed) return false;
-  await withApplyingFromArena(async () => {
-    state.official = merged;
-    state.officialUpdatedAt = String(at ?? new Date().toISOString());
-    await saveStateToDisk();
-    broadcastState();
-  });
-  return true;
-}
-
-async function applyOfficialFromRemote(official, updatedAt) {
-  const { changed, merged, updatedAt: at } = reconcileOfficialForSync(
-    state.official,
-    state.officialUpdatedAt,
-    official,
-    updatedAt,
-  );
-  if (!changed) {
-    if (!isApplyingOfficialFromArena() || !officialPayloadEqual(merged, official)) {
-      void pushOfficialToArena(state.official, state.officialUpdatedAt ?? at);
-    }
-    return;
-  }
-  state.official = merged;
-  state.officialUpdatedAt = String(at ?? new Date().toISOString());
-  try {
-    await saveStateToDisk();
-  } catch (e) {
-    console.error(e);
-  }
-  broadcastState();
-  void notifyArenaPrivadasSync();
-  if (!isApplyingOfficialFromArena() || !officialPayloadEqual(merged, official)) {
-    void pushOfficialToArena(state.official, state.officialUpdatedAt);
-  }
-}
-
 async function commitOfficialFromClient(official) {
   const now = new Date().toISOString();
   const incoming = normalizeOfficialPayload(official);
@@ -253,21 +201,10 @@ async function commitOfficialFromClient(official) {
   const merged = normalizeOfficialPayload(
     mergeOfficialPreferAdvancedNormalized(incoming, server),
   );
-  const unchanged = officialPayloadEqual(server, merged);
-  if (!unchanged) {
-    state.official = merged;
-    state.officialUpdatedAt = now;
-    try {
-      await persistAndBroadcast();
-    } catch (e) {
-      console.error(e);
-      broadcastState();
-      void notifyArenaPrivadasSync();
-    }
-  }
-  if (!isApplyingOfficialFromArena()) {
-    void pushOfficialToArena(state.official, state.officialUpdatedAt ?? now);
-  }
+  if (officialPayloadEqual(server, merged)) return;
+  state.official = merged;
+  state.officialUpdatedAt = now;
+  await persistAndBroadcast();
 }
 
 function broadcastState() {
@@ -388,17 +325,8 @@ app.post("/api/internal/sync-official", (req, res) => {
     res.status(403).json({ error: "forbidden" });
     return;
   }
-  const { official, updatedAt } = req.body ?? {};
-  if (!official || typeof official !== "object") {
-    res.status(400).json({ error: "official requerido" });
-    return;
-  }
-  void applyOfficialFromArenaPush(official, updatedAt)
-    .then((changed) => res.json({ ok: true, changed: Boolean(changed) }))
-    .catch((e) => {
-      console.error(e);
-      res.status(500).json({ error: "sync fallido" });
-    });
+  /** Los resultados oficiales ya no se comparten con Arena. */
+  res.json({ ok: true, changed: false, ignored: true });
 });
 
 app.put("/api/predictions/:participantId", (req, res) => {
@@ -454,12 +382,7 @@ app.post("/api/reset-quiniela", (_req, res) => {
   state.official = emptyOfficialResults();
   state.officialUpdatedAt = new Date().toISOString();
   persistAndBroadcast()
-    .then(() => {
-      if (!isApplyingOfficialFromArena()) {
-        void pushOfficialToArena(state.official, state.officialUpdatedAt);
-      }
-      res.json({ ok: true, data: getPublicState() });
-    })
+    .then(() => res.json({ ok: true, data: getPublicState() }))
     .catch((e) => {
       console.error(e);
       res.status(500).json({ error: "persistencia fallida" });
@@ -521,7 +444,14 @@ async function main() {
     throw err;
   });
 
-  startOfficialArenaSyncPoll(state, applyOfficialFromRemote);
+  startOfficialKickoffPoll(
+    () => state.official,
+    (next) => {
+      state.official = normalizeOfficialPayload(next);
+      state.officialUpdatedAt = new Date().toISOString();
+      void persistAndBroadcast();
+    },
+  );
 }
 
 main().catch((e) => {

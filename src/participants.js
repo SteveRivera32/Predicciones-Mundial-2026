@@ -503,8 +503,9 @@ export function canEditOfficialResults(participantId) {
 
 /** Quién ve los controles de ciclo de vida del partido (iniciar, terminar, reiniciar, etc.). */
 export function canManagePartidosMatchFlow(participantId) {
-  /** Resultados oficiales: editar en privadas; Arena solo refleja. */
-  if (isArenaMode()) return false;
+  if (isArenaMode()) {
+    return isArenaAdmin() && participantId === getArenaUserId();
+  }
   return PARTIDOS_MATCH_FLOW_ADMIN_IDS.has(participantId);
 }
 

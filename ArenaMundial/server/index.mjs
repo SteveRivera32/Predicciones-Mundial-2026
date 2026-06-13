@@ -70,7 +70,7 @@ import { isValidArenaPassword, passwordRuleMessage } from "./password-rules.mjs"
 import { startOfficialKickoffPoll } from "./official-kickoff.mjs";
 import { syncPrivadasToArena, startPrivadasSyncPoll } from "./privadas-bridge.mjs";
 import { isPrivadasArenaMirrorId } from "../../src/participants.js";
-import { applyOfficialFromPrivadasIfNewer, saveArenaOfficial } from "./official-privadas-sync.mjs";
+import { saveArenaOfficial } from "./official-privadas-sync.mjs";
 import { isSyncSecretValid } from "../../server/sync-secret.mjs";
 import { getCachedArenaRankings, invalidateArenaRankingsCache } from "./arena-rankings.mjs";
 import { getCachedArenaMatchVoteData, invalidateArenaMatchVoteCache } from "./arena-match-votes.mjs";
@@ -529,13 +529,8 @@ app.post("/api/arena/internal/sync-official", (req, res) => {
     res.status(403).json({ error: "forbidden" });
     return;
   }
-  const { official, updatedAt } = req.body ?? {};
-  if (!official || typeof official !== "object") {
-    res.status(400).json({ error: "official requerido" });
-    return;
-  }
-  const changed = applyOfficialFromPrivadasIfNewer(official, updatedAt, invalidateSharedCache);
-  res.json({ ok: true, changed });
+  /** Los resultados oficiales ya no se comparten con privadas. */
+  res.json({ ok: true, changed: false, ignored: true });
 });
 
 app.get("/api/arena/chat/messages", requireAuth, (req, res) => {

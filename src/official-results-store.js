@@ -366,7 +366,7 @@ export function saveOfficialResults(patch) {
   relinkOfficialRemoteCacheIfNeeded();
   persistOfficialCaches(normalized);
   if (isArenaMode()) {
-    if (officialRemoteMode && isArenaAdmin()) {
+    if (isArenaAdmin()) {
       pushArenaOfficial(normalized)
         .then(() => {
           if (typeof window !== "undefined") {
