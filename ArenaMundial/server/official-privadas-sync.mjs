@@ -73,7 +73,12 @@ export function applyOfficialFromPrivadasIfNewer(official, updatedAt, onChanged)
     official,
     updatedAt,
   );
-  if (!changed) return false;
+  if (!changed) {
+    if (!officialPayloadEqual(merged, official)) {
+      void pushOfficialToPrivadas(merged, current.updatedAt ?? at ?? new Date().toISOString());
+    }
+    return false;
+  }
 
   applyingFromPrivadas = true;
   try {

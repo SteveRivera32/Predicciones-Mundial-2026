@@ -32,7 +32,13 @@ export async function withApplyingFromArena(fn) {
   }
 }
 
-/** @param {unknown} official @param {string | null | undefined} updatedAt */
+/** Empuja a Arena si el snapshot local difiere del remoto recién leído. */
+export function pushOfficialToArenaIfDiffers(localMerged, localAt, remoteOfficial) {
+  if (!remoteOfficial || typeof remoteOfficial !== "object") return;
+  if (officialPayloadEqual(localMerged, remoteOfficial)) return;
+  void pushOfficialToArena(localMerged, localAt ?? new Date().toISOString());
+}
+
 export async function pushOfficialToArena(official, updatedAt) {
   const url = process.env.PM26_ARENA_OFFICIAL_PUSH_URL ?? DEFAULT_ARENA_PUSH_URL;
   try {
@@ -83,6 +89,12 @@ export async function pullAndApplyOfficialFromArena(stateRef, apply) {
     if (at && compareOfficialUpdatedAt(at, stateRef.officialUpdatedAt) > 0) {
       stateRef.officialUpdatedAt = at;
     }
+    /** PM ya tiene el estado fusionado pero Arena puede seguir atrás (p. ej. push fallido). */
+    pushOfficialToArenaIfDiffers(
+      merged,
+      stateRef.officialUpdatedAt ?? at,
+      official,
+    );
     return false;
   }
 

@@ -168,7 +168,12 @@ async function saveStateToDisk() {
   const tmp = STATE_PATH + ".tmp";
   const json = JSON.stringify(getPublicState(), null, 0);
   await fs.promises.writeFile(tmp, json, "utf8");
-  await fs.promises.rename(tmp, STATE_PATH);
+  try {
+    await fs.promises.rename(tmp, STATE_PATH);
+  } catch {
+    await fs.promises.copyFile(tmp, STATE_PATH);
+    await fs.promises.unlink(tmp).catch(() => {});
+  }
   await maybeCreateBackupSnapshot(json);
 }
 
@@ -221,11 +226,21 @@ async function applyOfficialFromRemote(official, updatedAt) {
     official,
     updatedAt,
   );
-  if (!changed) return;
+  if (!changed) {
+    if (!isApplyingOfficialFromArena() || !officialPayloadEqual(merged, official)) {
+      void pushOfficialToArena(state.official, state.officialUpdatedAt ?? at);
+    }
+    return;
+  }
   state.official = merged;
   state.officialUpdatedAt = String(at ?? new Date().toISOString());
-  await saveStateToDisk();
+  try {
+    await saveStateToDisk();
+  } catch (e) {
+    console.error(e);
+  }
   broadcastState();
+  void notifyArenaPrivadasSync();
   if (!isApplyingOfficialFromArena() || !officialPayloadEqual(merged, official)) {
     void pushOfficialToArena(state.official, state.officialUpdatedAt);
   }
@@ -238,12 +253,20 @@ async function commitOfficialFromClient(official) {
   const merged = normalizeOfficialPayload(
     mergeOfficialPreferAdvancedNormalized(incoming, server),
   );
-  if (officialPayloadEqual(server, merged)) return;
-  state.official = merged;
-  state.officialUpdatedAt = now;
-  await persistAndBroadcast();
+  const unchanged = officialPayloadEqual(server, merged);
+  if (!unchanged) {
+    state.official = merged;
+    state.officialUpdatedAt = now;
+    try {
+      await persistAndBroadcast();
+    } catch (e) {
+      console.error(e);
+      broadcastState();
+      void notifyArenaPrivadasSync();
+    }
+  }
   if (!isApplyingOfficialFromArena()) {
-    void pushOfficialToArena(state.official, state.officialUpdatedAt);
+    void pushOfficialToArena(state.official, state.officialUpdatedAt ?? now);
   }
 }
 

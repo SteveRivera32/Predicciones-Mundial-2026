@@ -122,6 +122,19 @@ function emptyGeneralOfficial() {
 export function normalizeOfficialResultsData(data) {
   if (!data || typeof data !== "object") return emptyOfficialResults();
   data = /** @type {Record<string, unknown>} */ (migrateStoredTeamNames(data));
+  if (data.official && typeof data.official === "object") {
+    const nested = /** @type {Record<string, unknown>} */ (data.official);
+    if (
+      nested.groupMatchState ||
+      nested.groupScores ||
+      nested.groupScoresConfirmed ||
+      nested.knockoutMatchState ||
+      nested.knockoutScores
+    ) {
+      const { official: _drop, ...rest } = data;
+      data = { ...rest, ...nested };
+    }
+  }
   const base = emptyOfficialResults();
   let groupScoresConfirmed = {
     ...base.groupScoresConfirmed,

@@ -29,14 +29,18 @@ let pollTimer = null;
 
 /** @param {() => void} [onPredictionsChanged] */
 async function fetchPrivadasState() {
+  const url = process.env.ARENA_PRIVADAS_SYNC_URL || "http://127.0.0.1:8787/api/state";
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (res.ok) return res.json();
+  } catch {
+    /* servidor apagado: fallback a disco */
+  }
   const filePath = process.env.ARENA_PRIVADAS_STATE_PATH || DEFAULT_STATE_PATH;
   if (filePath && fs.existsSync(filePath)) {
     return JSON.parse(fs.readFileSync(filePath, "utf8"));
   }
-  const url = process.env.ARENA_PRIVADAS_SYNC_URL || "http://127.0.0.1:8787/api/state";
-  const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  throw new Error("quiniela privada inaccesible");
 }
 
 /**
@@ -98,9 +102,12 @@ export async function syncPrivadasToArena(onPredictionsChanged) {
 
   if (predictionsChanged) onPredictionsChanged?.();
 
-  const officialUpdatedAt = state.officialUpdatedAt ?? null;
-  if (state.official && officialUpdatedAt) {
-    applyOfficialFromPrivadasIfNewer(state.official, officialUpdatedAt, onPredictionsChanged);
+  if (state.official) {
+    applyOfficialFromPrivadasIfNewer(
+      state.official,
+      state.officialUpdatedAt ?? null,
+      onPredictionsChanged,
+    );
   }
 
   return true;
