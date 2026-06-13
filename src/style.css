@@ -12899,57 +12899,106 @@ body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds td.qui
 }
 
 @media (max-width: 40rem) {
-  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-table-wrap--full.table-scroll {
-    overflow: visible;
-    max-width: none;
-    touch-action: auto;
+  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-table-wrap--full.table-scroll,
+  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-table-wrap.table-scroll,
+  body:not(.app-arena) #panel-partidos .partidos-match-card:has(tbody tr[class*="quiniela-pred-row--tier-"]) .quiniela-table-wrap.table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    max-width: 100%;
+    touch-action: pan-x;
   }
 
   body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds {
-    table-layout: fixed;
-    width: 100%;
-    min-width: 0;
+    table-layout: auto;
+    width: max-content;
+    min-width: 100%;
   }
 
   body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds th:first-child,
   body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds td:first-child {
-    width: 28%;
-    min-width: 0;
+    width: auto;
+    min-width: 3rem;
     max-width: none;
   }
 
   body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds th.quiniela-num,
   body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds td.quiniela-num {
     width: auto;
-    min-width: 0;
-    white-space: normal;
+    min-width: 2.75rem;
+    white-space: nowrap;
   }
 
   body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds th.quiniela-ganador-col,
-  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds td.quiniela-ganador-col,
-  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds th.quiniela-last-col,
-  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds td.quiniela-last-col {
-    min-width: 0;
+  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds td.quiniela-ganador-col {
+    min-width: 2.45rem;
     max-width: none;
   }
 
-  body:not(.app-arena) .partidos-match-card .table-scroll.quiniela-table-wrap::after {
-    content: none;
-    display: none;
+  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds th.quiniela-last-col,
+  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds td.quiniela-last-col {
+    min-width: 2.15rem;
+    max-width: none;
+  }
+
+  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds .score-stepper {
+    max-width: none;
+    width: max-content;
+    flex-shrink: 0;
+  }
+
+  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds .quiniela-cell-badges-wrap,
+  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds .quiniela-cell-badges-main {
+    overflow: visible;
   }
 
   body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds .score-stepper__btn {
-    min-width: 1.35rem;
-    min-height: 1.35rem;
-    font-size: 0.72rem;
-    padding: 0 0.12rem;
+    min-width: 1.05rem;
+    min-height: 1.18rem;
+    font-size: 0.56rem;
+    padding: 0 0.04rem;
   }
 
   body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds .score-stepper__input {
-    width: 1.65rem;
-    min-width: 1.65rem;
-    min-height: 1.35rem;
-    font-size: 0.78rem;
+    width: 1.32rem;
+    min-width: 1.32rem;
+    min-height: 1.18rem;
+    font-size: 0.64rem;
+    padding: 0 0.02rem;
+  }
+
+  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead .score-stepper__btn {
+    min-width: 1.1rem;
+    min-height: 1.22rem;
+    font-size: 0.6rem;
+  }
+
+  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds tbody tr.quiniela-pred-row--lead .score-stepper__input {
+    width: 1.38rem;
+    min-width: 1.38rem;
+    min-height: 1.22rem;
+    font-size: 0.68rem;
+  }
+
+  body:not(.app-arena) #panel-partidos .partidos-match-card .partidos-acc__body .quiniela-official-grid--edit .quiniela-cell--score .score-stepper {
+    max-width: none;
+    width: max-content;
+  }
+
+  body:not(.app-arena) #panel-partidos .partidos-match-card .partidos-acc__body .quiniela-official-grid--edit .score-stepper__btn,
+  body:not(.app-arena) #panel-partidos .partidos-acc[open] .partidos-acc__body .quiniela-official-grid--edit .score-stepper__btn {
+    min-width: 1.28rem;
+    min-height: 1.42rem;
+    font-size: 0.68rem;
+    padding: 0 0.15rem;
+  }
+
+  body:not(.app-arena) #panel-partidos .partidos-match-card .partidos-acc__body .quiniela-official-grid--edit .score-stepper__input,
+  body:not(.app-arena) #panel-partidos .partidos-acc[open] .partidos-acc__body .quiniela-official-grid--edit .score-stepper__input {
+    width: 1.85rem;
+    min-width: 1.85rem;
+    min-height: 1.42rem;
+    font-size: 0.76rem;
     padding: 0 0.08rem;
   }
 }

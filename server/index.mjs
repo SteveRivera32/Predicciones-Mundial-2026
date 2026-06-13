@@ -194,11 +194,16 @@ function applyFullStateBody(body) {
 }
 
 async function applyOfficialFromArenaPush(official, updatedAt) {
-  const incoming = normalizeOfficialPayload(official);
-  if (officialPayloadEqual(incoming, state.official)) return false;
+  const { changed, merged, updatedAt: at } = reconcileOfficialForSync(
+    state.official,
+    state.officialUpdatedAt,
+    official,
+    updatedAt,
+  );
+  if (!changed) return false;
   await withApplyingFromArena(async () => {
-    state.official = incoming;
-    state.officialUpdatedAt = String(updatedAt ?? new Date().toISOString());
+    state.official = merged;
+    state.officialUpdatedAt = String(at ?? new Date().toISOString());
     await saveStateToDisk();
     broadcastState();
   });
@@ -223,10 +228,16 @@ async function applyOfficialFromRemote(official, updatedAt) {
 }
 
 async function commitOfficialFromClient(official) {
-  const incoming = normalizeOfficialPayload(official);
-  if (officialPayloadEqual(incoming, state.official)) return;
-  state.official = incoming;
-  state.officialUpdatedAt = new Date().toISOString();
+  const now = new Date().toISOString();
+  const { changed, merged, updatedAt: at } = reconcileOfficialForSync(
+    state.official,
+    state.officialUpdatedAt,
+    official,
+    now,
+  );
+  if (!changed) return;
+  state.official = merged;
+  state.officialUpdatedAt = String(at ?? now);
   await persistAndBroadcast();
   if (!isApplyingOfficialFromArena()) {
     void pushOfficialToArena(state.official, state.officialUpdatedAt);

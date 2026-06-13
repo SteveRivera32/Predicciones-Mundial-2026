@@ -7,6 +7,7 @@ import { isRemoteSyncActive } from "./remote-sync-flags.js";
 import { isArenaMode, isArenaAdmin, pushArenaOfficial } from "./arena-mode.js";
 import { migrateStoredTeamNames } from "./tournament.js";
 import { pushOfficial } from "./sync-push.js";
+import { mergeOfficialPreferAdvancedNormalized } from "./official-sync-merge.js";
 
 const OFFICIAL_STORAGE_KEY_PRIVATE = "pm26-official-results";
 const OFFICIAL_STORAGE_KEY_ARENA = "pm26-arena-official-results";
@@ -58,44 +59,6 @@ function ensureLocalCacheHydrated() {
   localStorageHydrated = true;
   const stored = readOfficialFromLocalStorage();
   if (stored) officialLocalCache = stored;
-}
-
-/**
- * Conserva partidos terminados del navegador si el servidor aún no los refleja
- * (p. ej. admin confirmó sin API o recarga antes del poll).
- * @param {unknown} serverData
- * @param {ReturnType<typeof emptyOfficialResults>} localData
- */
-function mergePersistedFinishedMatches(serverData, localData) {
-  const server = normalizeOfficialResultsData(serverData);
-  const local = normalizeOfficialResultsData(localData);
-  const next = { ...server };
-
-  for (const [id, stage] of Object.entries(local.groupMatchState ?? {})) {
-    if (stage !== "finished") continue;
-    if ((server.groupMatchState?.[id] ?? "ready") === "finished") continue;
-    next.groupMatchState = { ...next.groupMatchState, [id]: "finished" };
-    if (local.groupScores?.[id]) {
-      next.groupScores = { ...next.groupScores, [id]: local.groupScores[id] };
-    }
-    if (local.groupScoresConfirmed?.[id]) {
-      next.groupScoresConfirmed = { ...next.groupScoresConfirmed, [id]: true };
-    }
-  }
-
-  for (const [id, stage] of Object.entries(local.knockoutMatchState ?? {})) {
-    if (stage !== "finished") continue;
-    if ((server.knockoutMatchState?.[id] ?? "ready") === "finished") continue;
-    next.knockoutMatchState = { ...next.knockoutMatchState, [id]: "finished" };
-    if (local.knockoutScores?.[id]) {
-      next.knockoutScores = { ...next.knockoutScores, [id]: local.knockoutScores[id] };
-    }
-    if (local.knockoutScoresConfirmed?.[id]) {
-      next.knockoutScoresConfirmed = { ...next.knockoutScoresConfirmed, [id]: true };
-    }
-  }
-
-  return next;
 }
 
 /** @param {ReturnType<typeof emptyOfficialResults>} next */
@@ -238,11 +201,11 @@ export function loadOfficialResults() {
 /** @param {unknown} data */
 export function hydrateOfficialFromRemote(data) {
   ensureLocalCacheHydrated();
-  const normalized = normalizeOfficialResultsData(data);
-  const merged =
-    isRemoteSyncActive() || isArenaMode()
-      ? normalized
-      : mergePersistedFinishedMatches(data, officialLocalCache);
+  const remote = normalizeOfficialResultsData(data);
+  const local = normalizeOfficialResultsData(officialRemoteCache ?? officialLocalCache);
+  const merged = normalizeOfficialResultsData(
+    mergeOfficialPreferAdvancedNormalized(local, remote),
+  );
   officialRemoteMode = true;
   officialRemoteCache = merged;
   writeOfficialToLocalStorage(merged);
