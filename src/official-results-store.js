@@ -111,6 +111,15 @@ export function normalizeOfficialResultsData(data) {
       if (sc?.home !== "" && sc?.away !== "") knockoutScoresConfirmed[id] = true;
     }
   }
+  let groupMatchState = { ...base.groupMatchState, ...(data.groupMatchState ?? {}) };
+  for (const [id, ok] of Object.entries(groupScoresConfirmed)) {
+    if (ok !== true) continue;
+    const sc = gs[id];
+    if (sc?.home === "" || sc?.away === "") continue;
+    if ((groupMatchState[id] ?? "ready") !== "finished") {
+      groupMatchState[id] = "finished";
+    }
+  }
   let knockoutMatchState = { ...base.knockoutMatchState, ...(data.knockoutMatchState ?? {}) };
   if (data.knockoutScores && data.knockoutMatchState == null) {
     for (const [id, sc] of Object.entries(kos)) {
@@ -119,12 +128,20 @@ export function normalizeOfficialResultsData(data) {
       knockoutMatchState[id] = knockoutScoresConfirmed[id] === true ? "finished" : "started";
     }
   }
+  for (const [id, ok] of Object.entries(knockoutScoresConfirmed)) {
+    if (ok !== true) continue;
+    const sc = kos[id];
+    if (sc?.home === "" || sc?.away === "") continue;
+    if ((knockoutMatchState[id] ?? "ready") !== "finished") {
+      knockoutMatchState[id] = "finished";
+    }
+  }
   return {
     ...base,
     ...data,
     groupScores: gs,
     groupScoresConfirmed,
-    groupMatchState: { ...base.groupMatchState, ...(data.groupMatchState ?? {}) },
+    groupMatchState,
     groupOfficialOrder: { ...base.groupOfficialOrder, ...(data.groupOfficialOrder ?? {}) },
     groupOfficialThirdAdvance: {
       ...base.groupOfficialThirdAdvance,

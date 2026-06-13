@@ -97,8 +97,18 @@ export function applyServerKickoffStarts() {
 
   const next = normalizeOfficialResultsData({
     ...official,
-    ...(Object.keys(groupMatchState).length ? { groupMatchState, groupScores } : {}),
-    ...(Object.keys(knockoutMatchState).length ? { knockoutMatchState, knockoutScores } : {}),
+    ...(Object.keys(groupMatchState).length
+      ? {
+          groupMatchState: { ...official.groupMatchState, ...groupMatchState },
+          groupScores: { ...official.groupScores, ...groupScores },
+        }
+      : {}),
+    ...(Object.keys(knockoutMatchState).length
+      ? {
+          knockoutMatchState: { ...official.knockoutMatchState, ...knockoutMatchState },
+          knockoutScores: { ...official.knockoutScores, ...knockoutScores },
+        }
+      : {}),
   });
   saveArenaOfficial(next);
   const n = Object.keys(groupMatchState).length + Object.keys(knockoutMatchState).length;
