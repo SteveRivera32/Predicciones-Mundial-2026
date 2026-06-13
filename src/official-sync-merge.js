@@ -34,6 +34,17 @@ function isExplicitMatchFinish(side, id, kind) {
   return is === "finished" && ic;
 }
 
+/** Admin desconfirmó: vuelve a «en juego» con marcador pero sin confirmar. */
+function isExplicitMatchDesconfirm(side, id, kind) {
+  const stateKey = kind === "group" ? "groupMatchState" : "knockoutMatchState";
+  const confirmedKey = kind === "group" ? "groupScoresConfirmed" : "knockoutScoresConfirmed";
+  const scoresKey = kind === "group" ? "groupScores" : "knockoutScores";
+  const is = /** @type {Record<string, string>} */ (side[stateKey] ?? {})[id] ?? "ready";
+  const ic = /** @type {Record<string, boolean>} */ (side[confirmedKey] ?? {})[id] === true;
+  const sc = /** @type {Record<string, { home?: unknown, away?: unknown }>} */ (side[scoresKey] ?? {})[id];
+  return is === "started" && !ic && !scoreIsEmpty(sc) && !isKickoffPlaceholder(sc);
+}
+
 /**
  * Reinicio o desconfirmación explícita del admin en `incoming` frente a `baseline`.
  * @param {Record<string, unknown>} incoming
@@ -64,9 +75,6 @@ export function isExplicitMatchDowngrade(incoming, baseline, id, kind) {
   ) {
     return true;
   }
-  if (is === "started" && bs === "finished" && !ic && !scoreIsEmpty(sc) && !isKickoffPlaceholder(sc)) {
-    return true;
-  }
   return false;
 }
 
@@ -94,17 +102,22 @@ function sliceFrom(side, id, kind) {
 
 /** @param {Record<string, unknown>} local @param {Record<string, unknown>} remote @param {string} id */
 function pickGroupMatchSlice(local, remote, id) {
+  const localFinish = isExplicitMatchFinish(local, id, "group");
+  const remoteFinish = isExplicitMatchFinish(remote, id, "group");
+  const localDesconfirm = isExplicitMatchDesconfirm(local, id, "group");
+  const remoteDesconfirm = isExplicitMatchDesconfirm(remote, id, "group");
+
+  if (localDesconfirm && remoteFinish) return sliceFrom(local, id, "group");
+  if (localFinish && !remoteFinish) return sliceFrom(local, id, "group");
+  if (remoteFinish && !localFinish) return sliceFrom(remote, id, "group");
+  if (remoteDesconfirm && localFinish) return sliceFrom(remote, id, "group");
+
   if (isExplicitMatchDowngrade(remote, local, id, "group")) {
     return sliceFrom(remote, id, "group");
   }
   if (isExplicitMatchDowngrade(local, remote, id, "group")) {
     return sliceFrom(local, id, "group");
   }
-
-  const localFinish = isExplicitMatchFinish(local, id, "group");
-  const remoteFinish = isExplicitMatchFinish(remote, id, "group");
-  if (localFinish && !remoteFinish) return sliceFrom(local, id, "group");
-  if (remoteFinish && !localFinish) return sliceFrom(remote, id, "group");
 
   const ls = /** @type {Record<string, string>} */ (local.groupMatchState ?? {})[id] ?? "ready";
   const rs = /** @type {Record<string, string>} */ (remote.groupMatchState ?? {})[id] ?? "ready";
@@ -165,17 +178,22 @@ function pickGroupMatchSlice(local, remote, id) {
 
 /** @param {Record<string, unknown>} local @param {Record<string, unknown>} remote @param {string} id */
 function pickKnockoutMatchSlice(local, remote, id) {
+  const localFinish = isExplicitMatchFinish(local, id, "ko");
+  const remoteFinish = isExplicitMatchFinish(remote, id, "ko");
+  const localDesconfirm = isExplicitMatchDesconfirm(local, id, "ko");
+  const remoteDesconfirm = isExplicitMatchDesconfirm(remote, id, "ko");
+
+  if (localDesconfirm && remoteFinish) return sliceFrom(local, id, "ko");
+  if (localFinish && !remoteFinish) return sliceFrom(local, id, "ko");
+  if (remoteFinish && !localFinish) return sliceFrom(remote, id, "ko");
+  if (remoteDesconfirm && localFinish) return sliceFrom(remote, id, "ko");
+
   if (isExplicitMatchDowngrade(remote, local, id, "ko")) {
     return sliceFrom(remote, id, "ko");
   }
   if (isExplicitMatchDowngrade(local, remote, id, "ko")) {
     return sliceFrom(local, id, "ko");
   }
-
-  const localFinish = isExplicitMatchFinish(local, id, "ko");
-  const remoteFinish = isExplicitMatchFinish(remote, id, "ko");
-  if (localFinish && !remoteFinish) return sliceFrom(local, id, "ko");
-  if (remoteFinish && !localFinish) return sliceFrom(remote, id, "ko");
 
   const ls = /** @type {Record<string, string>} */ (local.knockoutMatchState ?? {})[id] ?? "ready";
   const rs = /** @type {Record<string, string>} */ (remote.knockoutMatchState ?? {})[id] ?? "ready";

@@ -31,6 +31,7 @@ import {
   reconcileOfficialForSync,
   officialPayloadEqual,
 } from "./official-sync-shared.mjs";
+import { mergeOfficialPreferAdvancedNormalized } from "../src/official-sync-merge.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.PM26_DATA_DIR || path.join(__dirname, "data");
@@ -232,15 +233,14 @@ async function applyOfficialFromRemote(official, updatedAt) {
 
 async function commitOfficialFromClient(official) {
   const now = new Date().toISOString();
-  const { changed, merged, updatedAt: at } = reconcileOfficialForSync(
-    state.official,
-    state.officialUpdatedAt,
-    official,
-    now,
+  const incoming = normalizeOfficialPayload(official);
+  const server = normalizeOfficialPayload(state.official);
+  const merged = normalizeOfficialPayload(
+    mergeOfficialPreferAdvancedNormalized(incoming, server),
   );
-  if (!changed) return;
+  if (officialPayloadEqual(server, merged)) return;
   state.official = merged;
-  state.officialUpdatedAt = String(at ?? now);
+  state.officialUpdatedAt = now;
   await persistAndBroadcast();
   if (!isApplyingOfficialFromArena()) {
     void pushOfficialToArena(state.official, state.officialUpdatedAt);

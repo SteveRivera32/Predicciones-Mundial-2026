@@ -22,7 +22,6 @@ export const BUILTIN_PARTICIPANTS = [
   { id: "akinian", name: "Akinian", pin: "pene9935" },
   { id: "ale", name: "Ale", pin: "jimmd237" },
   { id: "jonny", name: "Jonny", pin: "culo2104" },
-  { id: "porky", name: "Porky", pin: "pmoe0192" },
 ];
 
 /**

@@ -18,6 +18,8 @@ let officialRemoteCache = null;
 /** @type {ReturnType<typeof emptyOfficialResults>} */
 let officialLocalCache = emptyOfficialResults();
 let localStorageHydrated = false;
+/** Evita que un poll/WS obsoleto pise un guardado local reciente del admin. */
+let lastLocalOfficialWriteAt = 0;
 
 function officialStorageKey() {
   return isArenaMode() ? OFFICIAL_STORAGE_KEY_ARENA : OFFICIAL_STORAGE_KEY_PRIVATE;
@@ -73,12 +75,32 @@ function relinkOfficialRemoteCacheIfNeeded() {
 
 /** @param {ReturnType<typeof emptyOfficialResults>} next */
 function persistOfficialCaches(next) {
+  lastLocalOfficialWriteAt = Date.now();
   if (officialRemoteMode) {
     officialRemoteCache = next;
   } else {
     officialLocalCache = next;
   }
   writeOfficialToLocalStorage(next);
+}
+
+function localExplicitFinishWouldBeLost(
+  /** @type {ReturnType<typeof emptyOfficialResults>} */ local,
+  /** @type {ReturnType<typeof emptyOfficialResults>} */ merged,
+) {
+  for (const id of new Set([
+    ...Object.keys(local.groupMatchState ?? {}),
+    ...Object.keys(local.groupScoresConfirmed ?? {}),
+  ])) {
+    const wasFinished =
+      (local.groupMatchState?.[id] ?? "ready") === "finished" &&
+      local.groupScoresConfirmed?.[id] === true;
+    const staysFinished =
+      (merged.groupMatchState?.[id] ?? "ready") === "finished" &&
+      merged.groupScoresConfirmed?.[id] === true;
+    if (wasFinished && !staysFinished) return true;
+  }
+  return false;
 }
 
 /** Resultado real del podio y premios (solo admin, confirmado cuando se publica). */
@@ -231,9 +253,15 @@ export function hydrateOfficialFromRemote(data) {
   ensureLocalCacheHydrated();
   const remote = normalizeOfficialResultsData(data);
   const local = normalizeOfficialResultsData(officialRemoteCache ?? officialLocalCache);
+  const recentLocalWrite = Date.now() - lastLocalOfficialWriteAt < 5000;
   const merged = normalizeOfficialResultsData(
-    mergeOfficialPreferAdvancedNormalized(local, remote),
+    recentLocalWrite
+      ? mergeOfficialPreferAdvancedNormalized(local, remote)
+      : mergeOfficialPreferAdvancedNormalized(remote, local),
   );
+  if (recentLocalWrite && localExplicitFinishWouldBeLost(local, merged)) {
+    return;
+  }
   officialRemoteMode = true;
   officialRemoteCache = merged;
   writeOfficialToLocalStorage(merged);
