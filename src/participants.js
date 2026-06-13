@@ -612,7 +612,8 @@ export function getArenaParticipantsListMeta(searchQuery = getParticipantSearchQ
 }
 
 /**
- * Rankings: conserva puesto real en `displayRank`; tú arriba; búsqueda filtra al resto.
+ * Rankings: conserva puesto real en `displayRank`; en Arena tú arriba; en privadas orden normal.
+ * La búsqueda filtra al resto pero siempre muestra tu fila.
  * @template T
  * @param {T[]} rows filas ya ordenadas por puntos
  * @param {string | null | undefined} currentId
@@ -642,6 +643,7 @@ export function orderRankingRowsForDisplay(rows, currentId, searchQuery = getPar
   if (q) {
     list = withRank.filter((r) => isSelf(r) || participantMatchesSearchQuery(getP(r), q));
   }
+  if (!isArenaMode()) return list;
   const selfRow = list.find(isSelf);
   if (!selfRow || !currentId) return list;
   return [selfRow, ...list.filter((r) => !isSelf(r))];
