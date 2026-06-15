@@ -6,6 +6,9 @@ import {
   orderRankingRowsForDisplay,
   getParticipantSearchQuery,
   setParticipantSearchQuery,
+  cycleParticipantSortMode,
+  participantSortModeLabel,
+  getParticipantSortMode,
   getParticipantById,
   getParticipantAccentHex,
   getParticipantDisplayHue,
@@ -492,6 +495,7 @@ function quinielaPredsTableWrapClass() {
 
 function participantSearchToolbarHtml({ ariaLabel = "Buscar jugador en la tabla" } = {}) {
   if (!isArenaMode()) return "";
+  const sortLabel = participantSortModeLabel();
   return `<div class="participant-search-toolbar participant-search-toolbar--table" data-participant-search-bar>
     <label class="participant-search-toolbar__field">
       <span class="participant-search-toolbar__label">Buscar jugador</span>
@@ -504,14 +508,123 @@ function participantSearchToolbarHtml({ ariaLabel = "Buscar jugador en la tabla"
         aria-label="${escapeHtmlAttr(ariaLabel)}"
       />
     </label>
+    <button
+      type="button"
+      class="btn btn-sm btn-ghost participant-sort-toggle"
+      data-participant-sort-toggle
+      aria-label="${escapeHtmlAttr(sortLabel)}. Pulsa para cambiar."
+      title="${escapeHtmlAttr(sortLabel)}"
+    >${escapeHtml(sortLabel)}</button>
   </div>`;
 }
 
-function arenaParticipantsListHintText() {
-  if (!isArenaMode()) return "";
-  const meta = getArenaParticipantsListMeta();
-  if (!meta.truncated || getParticipantSearchQuery().trim()) return "";
-  return `Esta tabla solo muestra ${meta.shown} de ${meta.total} jugadores. Busca un nombre para ver a alguien concreto.`;
+/**
+ * @param {HTMLElement} toolbar
+ * @param {{ total: number, shown: number, withoutSubmission: number }} meta
+ * @param {string} q
+ */
+function updateArenaPredictionHints(toolbar, meta, q) {
+  const listHint = ensureArenaHintAfterSearchBar(toolbar);
+  const missingHint = ensureArenaMissingHintAfterTable(toolbar);
+  if (!q && meta.total > meta.shown) {
+    listHint.textContent = `Solo se muestran ${meta.shown} de ${meta.total} predicciones.`;
+    listHint.hidden = false;
+  } else {
+    listHint.textContent = "";
+    listHint.hidden = true;
+  }
+  if (missingHint) {
+    if (!q && meta.withoutSubmission > 0) {
+      const n = meta.withoutSubmission;
+      missingHint.textContent =
+        n === 1 ? "1 jugador no mandó predicción." : `${n} jugadores no mandaron predicción.`;
+      missingHint.hidden = false;
+    } else {
+      missingHint.textContent = "";
+      missingHint.hidden = true;
+    }
+  }
+}
+
+/** @param {HTMLElement} toolbar */
+function findArenaPredictionTableAnchor(toolbar) {
+  if (toolbar.closest(".quiniela-preds-head-row")) {
+    const body = toolbar.closest(".partidos-acc__body");
+    return body?.querySelector(".quiniela-table-wrap") ?? null;
+  }
+  if (toolbar.closest(".group-preds-table-head")) {
+    const host = toolbar.closest(".group-preds-host");
+    return host?.querySelector(":scope > .table-scroll") ?? null;
+  }
+  if (toolbar.closest("#panel-generales")) {
+    const host = document.getElementById("generales-preds-host");
+    return host?.querySelector(".table-scroll") ?? host;
+  }
+  return null;
+}
+
+/** @param {HTMLElement} toolbar */
+function ensureArenaMissingHintAfterTable(toolbar) {
+  const anchor = findArenaPredictionTableAnchor(toolbar);
+  if (!(anchor instanceof HTMLElement)) return null;
+  let next = anchor.nextElementSibling;
+  if (next instanceof HTMLElement && next.dataset.arenaMissingHint !== undefined) {
+    return next;
+  }
+  const scope =
+    toolbar.closest(".group-preds-host, .partidos-acc__body, #panel-generales") ?? anchor.parentElement;
+  scope?.querySelectorAll("[data-arena-missing-hint]").forEach((el) => el.remove());
+  const hint = document.createElement("p");
+  hint.className = "participant-list-hint participant-list-hint--missing muted";
+  hint.dataset.arenaMissingHint = "";
+  hint.setAttribute("role", "status");
+  hint.hidden = true;
+  anchor.insertAdjacentElement("afterend", hint);
+  return hint;
+}
+
+/**
+ * @param {HTMLElement} toolbar
+ * @param {{ hasSubmission?: (p: import("./participants.js").Participant) => boolean, getPoints?: (p: import("./participants.js").Participant) => number, currentId?: string | null }} listOpts
+ * @param {{ hasSubmission?: (p: import("./participants.js").Participant) => boolean, currentId?: string | null }} [metaOpts]
+ */
+function stampArenaPredictionListMeta(toolbar, listOpts, metaOpts = listOpts) {
+  if (!isArenaMode() || !(toolbar instanceof HTMLElement) || isArenaRankingPanelSearchBar(toolbar)) return;
+  const q = getParticipantSearchQuery().trim();
+  const meta = getArenaParticipantsListMeta(getParticipantSearchQuery(), metaOpts);
+  const displayList = getParticipantsForListDisplay(
+    listOpts.currentId ?? null,
+    getParticipantSearchQuery(),
+    listOpts,
+  );
+  const listHasSubmission = listOpts.hasSubmission;
+  meta.shown = listHasSubmission
+    ? displayList.filter((p) => listHasSubmission(p)).length
+    : displayList.length;
+  toolbar.dataset.arenaPredsShown = String(meta.shown);
+  toolbar.dataset.arenaPredsTotal = String(meta.total);
+  toolbar.dataset.arenaPredsTruncated = meta.truncated ? "1" : "";
+  toolbar.dataset.arenaPredsMissing = String(meta.withoutSubmission);
+  updateArenaPredictionHints(toolbar, meta, q);
+}
+
+/** Meta de partido: conteo estricto (solo confirmadas); la lista incluye «tú» aunque no hayas confirmado. */
+function getQuinielaMatchListMetaOpts(m, session, official, isKo = false) {
+  return {
+    currentId: session.participantId,
+    hasSubmission: (p) => participantHasMatchScoreSubmission(p, m.id, isKo),
+  };
+}
+
+function syncParticipantSortButtons() {
+  if (!isArenaMode()) return;
+  const label = participantSortModeLabel();
+  document.querySelectorAll("[data-participant-sort-toggle]").forEach((btn) => {
+    if (!(btn instanceof HTMLButtonElement)) return;
+    btn.textContent = label;
+    btn.title = label;
+    btn.setAttribute("aria-label", `${label}. Pulsa para cambiar.`);
+  });
 }
 
 function arenaRankingsHintText() {
@@ -593,6 +706,7 @@ function ensureArenaTruncationHintElements() {
   removeLegacyArenaRankingHints();
   document.querySelectorAll("[data-participant-search-bar]").forEach((bar) => {
     if (!(bar instanceof HTMLElement)) return;
+    ensureParticipantSortToggle(bar);
     ensureArenaHintAfterSearchBar(bar);
   });
 }
@@ -600,20 +714,22 @@ function ensureArenaTruncationHintElements() {
 function syncArenaTruncationHints() {
   if (!isArenaMode()) return;
   ensureArenaTruncationHintElements();
-  const listText = arenaParticipantsListHintText();
+  syncParticipantSortButtons();
+  const q = getParticipantSearchQuery().trim();
   const rankText = arenaRankingsHintText();
   const activeTab = getActiveTabId();
+  document.querySelectorAll("[data-participant-search-bar][data-arena-preds-total]").forEach((bar) => {
+    if (!(bar instanceof HTMLElement) || isArenaRankingPanelSearchBar(bar)) return;
+    const meta = {
+      shown: Number(bar.dataset.arenaPredsShown) || 0,
+      total: Number(bar.dataset.arenaPredsTotal) || 0,
+      withoutSubmission: Number(bar.dataset.arenaPredsMissing) || 0,
+    };
+    updateArenaPredictionHints(bar, meta, q);
+  });
   document.querySelectorAll("[data-arena-list-hint]").forEach((el) => {
     if (!(el instanceof HTMLElement)) return;
     if (isArenaRankingPanelSearchBar(el)) {
-      el.textContent = "";
-      el.hidden = true;
-      return;
-    }
-    if (listText) {
-      el.textContent = listText;
-      el.hidden = false;
-    } else {
       el.textContent = "";
       el.hidden = true;
     }
@@ -801,10 +917,179 @@ function participantHasMatchScoreSubmission(p, matchId, isKo = false) {
   const predCommitted = isKo
     ? store.knockoutScoresConfirmed?.[matchId] === true
     : store.groupScoresConfirmed?.[matchId] === true;
+  if (isArenaMode()) return predCommitted;
   const pred = isKo
     ? store.knockoutScores?.[matchId] ?? { home: "", away: "" }
     : store.groupScores?.[matchId] ?? { home: "", away: "" };
   return matchPredictionSubmissionRank(pred, predCommitted) > 0;
+}
+
+/** @param {import("./participants.js").Participant} p */
+function participantHasGeneralSubmission(p) {
+  const pred = loadPredictions(p.id);
+  if (pred.generalConfirmed === true) return true;
+  const g = pred.general ?? {};
+  return Boolean(
+    String(g.first ?? "").trim() ||
+      String(g.second ?? "").trim() ||
+      String(g.third ?? "").trim() ||
+      String(g.bestPlayer ?? "").trim() ||
+      String(g.bestGk ?? "").trim() ||
+      String(g.topScorer ?? "").trim(),
+  );
+}
+
+/**
+ * @param {import("./participants.js").Participant} p
+ * @param {{ id: string }} grp
+ * @param {ReturnType<typeof getLiveOfficialGroupSnapshot>} liveOfficial
+ */
+function computeGroupPredTablePoints(p, grp, liveOfficial) {
+  const officialOrder = liveOfficial.orderByGroup[grp.id] ?? [];
+  const hasOfficialData = liveOfficial.hasOfficialDataByGroup[grp.id] === true;
+  if (!hasOfficialData) return 0;
+  const voteCountsByPos = getGroupOrderVoteCountsByPosition(grp.id);
+  const officialThird = liveOfficial.thirdAdvanceByGroup[grp.id];
+  const officialThirdDefined = officialThird === true || officialThird === false;
+  const pred = loadPredictions(p.id);
+  const ord = pred.groupOrder?.[grp.id];
+  const orderArr =
+    Array.isArray(ord) && ord.length === 4
+      ? ord.map((x) => (typeof x === "string" ? x : ""))
+      : ["", "", "", ""];
+  const thirdP = pred.groupThirdAdvances?.[grp.id];
+  const groupOrderPts = computeGroupOrderPoints(
+    orderArr,
+    officialOrder,
+    thirdP,
+    officialThirdDefined ? officialThird : undefined,
+  );
+  const minorityBonusPts = [0, 1, 2, 3].reduce((acc, i) => {
+    const t = orderArr[i];
+    const isExact = Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
+    if (isExact && hasUniquePickBonus(voteCountsByPos[i], t)) return acc + 1;
+    return acc;
+  }, 0);
+  return groupOrderPts + minorityBonusPts;
+}
+
+/**
+ * @param {{ id: string }} grp
+ * @param {string | undefined} currentParticipantId
+ */
+function getGroupPredListOpts(grp, currentParticipantId) {
+  const liveOfficial = getLiveOfficialGroupSnapshot();
+  const scoringActive = liveOfficial.hasOfficialDataByGroup[grp.id] === true;
+  return {
+    currentId: currentParticipantId ?? null,
+    hasSubmission: (p) => participantHasGroupOrderSubmission(p, grp.id),
+    scoringActive,
+    previewSeed: `group:${grp.id}`,
+    getPoints: (p) => computeGroupPredTablePoints(p, grp, liveOfficial),
+  };
+}
+
+/**
+ * @param {{ id: string, roundId?: string }} m
+ * @param {ReturnType<typeof loadOfficialResults>} official
+ * @param {boolean} [isKo]
+ */
+function isQuinielaMatchScoringActive(m, official, isKo = false) {
+  const off = isKo
+    ? official.knockoutScores?.[m.id] ?? { home: "", away: "" }
+    : official.groupScores[m.id] ?? { home: "", away: "" };
+  if (isKo) {
+    const koStage = official.knockoutMatchState?.[m.id] ?? "ready";
+    const officialConfirmed = official.knockoutScoresConfirmed?.[m.id] === true;
+    const bothFilled = off.home !== "" && off.away !== "";
+    return bothFilled && (koStage === "started" || officialConfirmed);
+  }
+  const matchStage = official.groupMatchState?.[m.id] ?? "ready";
+  const officialConfirmed = matchStage === "finished" && official.groupScoresConfirmed?.[m.id] === true;
+  const bothFilled = off.home !== "" && off.away !== "";
+  return bothFilled && (matchStage === "started" || officialConfirmed);
+}
+
+/**
+ * @param {import("./participants.js").Participant} p
+ * @param {{ id: string, roundId?: string }} m
+ * @param {ReturnType<typeof loadOfficialResults>} official
+ * @param {boolean} isKo
+ */
+function computeQuinielaMatchListPoints(p, m, official, isKo) {
+  const pStore = loadPredictions(p.id);
+  const predCommitted = isKo
+    ? pStore.knockoutScoresConfirmed?.[m.id] === true
+    : pStore.groupScoresConfirmed?.[m.id] === true;
+  if (!predCommitted) return 0;
+  const pred = isKo
+    ? pStore.knockoutScores?.[m.id] ?? { home: "", away: "" }
+    : pStore.groupScores?.[m.id] ?? { home: "", away: "" };
+  const off = isKo
+    ? official.knockoutScores?.[m.id] ?? { home: "", away: "" }
+    : official.groupScores[m.id] ?? { home: "", away: "" };
+  if (!isQuinielaMatchScoringActive(m, official, isKo)) return 0;
+  const matchScoring = getMatchScoringForQuiniela(m);
+  const improbableSign = isKo
+    ? getImprobableOutcomeSignForKoMatch(m.id, off)
+    : getImprobableOutcomeSignForMatch(m.id, off);
+  const koPenaltyPhase = isKo ? knockoutRoundRequiresPenaltyPickOnDraw(m.roundId) : false;
+  return computeGroupMatchPoints(off, pred, improbableSign, matchScoring, koPenaltyPhase) ?? 0;
+}
+
+/**
+ * @param {{ id: string, roundId?: string }} m
+ * @param {{ participantId: string }} session
+ * @param {ReturnType<typeof loadOfficialResults>} official
+ * @param {boolean} [isKo]
+ */
+function getQuinielaMatchListOpts(m, session, official, isKo = false) {
+  const currentId = session.participantId;
+  return {
+    currentId,
+    hasSubmission: (p) =>
+      p.id === currentId || participantHasMatchScoreSubmission(p, m.id, isKo),
+    scoringActive: isQuinielaMatchScoringActive(m, official, isKo),
+    previewSeed: `match:${m.id}`,
+    getPoints: (p) => computeQuinielaMatchListPoints(p, m, official, isKo),
+  };
+}
+
+/**
+ * @param {ParentNode | null | undefined} card
+ * @param {{ id: string, roundId?: string }} m
+ * @param {{ participantId: string }} session
+ * @param {ReturnType<typeof loadOfficialResults>} official
+ * @param {boolean} [isKo]
+ */
+function stampQuinielaCardPredictionMeta(card, m, session, official, isKo = false) {
+  const bar = card?.querySelector?.("[data-participant-search-bar]");
+  if (!(bar instanceof HTMLElement)) return;
+  stampArenaPredictionListMeta(
+    bar,
+    getQuinielaMatchListOpts(m, session, official, isKo),
+    getQuinielaMatchListMetaOpts(m, session, official, isKo),
+  );
+}
+
+/**
+ * @param {ParentNode | null | undefined} wrap
+ * @param {{ participantId: string }} session
+ * @param {ReturnType<typeof loadOfficialResults>} official
+ */
+function stampAllQuinielaPredictionMetas(wrap, session, official) {
+  if (!isArenaMode() || !wrap || !session) return;
+  wrap.querySelectorAll("article.quiniela-match[data-quiniela-mid]").forEach((card) => {
+    const mid = card.getAttribute("data-quiniela-mid");
+    if (!mid) return;
+    const gm = GROUP_MATCHES.find((x) => x.id === mid);
+    if (gm) {
+      stampQuinielaCardPredictionMeta(card, gm, session, official, false);
+      return;
+    }
+    const mKo = getKnockoutMatchesFlat().find((x) => x.id === mid);
+    if (mKo) stampQuinielaCardPredictionMeta(card, mKo, session, official, true);
+  });
 }
 
 /**
@@ -813,14 +1098,30 @@ function participantHasMatchScoreSubmission(p, matchId, isKo = false) {
  * @param {string} sessionParticipantId
  */
 function sortQuinielaPredictionRows(rows, sessionParticipantId) {
+  const sortMode = isArenaMode() ? getParticipantSortMode() : "default";
+  const byName = (/** @type {{ p: { name: string } }} */ a, /** @type {{ p: { name: string } }} */ b) =>
+    a.p.name.localeCompare(b.p.name, "es", { sensitivity: "base" });
   return [...rows].sort((a, b) => {
     const aSelf = a.p.id === sessionParticipantId;
     const bSelf = b.p.id === sessionParticipantId;
     if (aSelf !== bSelf) return aSelf ? -1 : 1;
+    if (sortMode === "points-desc") {
+      const apt = a.pts ?? -1;
+      const bpt = b.pts ?? -1;
+      if (apt !== bpt) return bpt - apt;
+      return byName(a, b);
+    }
+    if (sortMode === "points-asc") {
+      const apt = a.pts ?? Number.MAX_SAFE_INTEGER;
+      const bpt = b.pts ?? Number.MAX_SAFE_INTEGER;
+      if (apt !== bpt) return apt - bpt;
+      return byName(a, b);
+    }
+    if (isArenaMode()) return byName(a, b);
     const ar = matchPredictionSubmissionRank(a.pred, a.predCommitted);
     const br = matchPredictionSubmissionRank(b.pred, b.predCommitted);
     if (ar !== br) return br - ar;
-    return a.p.name.localeCompare(b.p.name, "es", { sensitivity: "base" });
+    return byName(a, b);
   });
 }
 
@@ -1190,9 +1491,12 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
     </tr>`;
   }
 
-  const groupParticipantRowData = getParticipantsForListDisplay(currentParticipantId, getParticipantSearchQuery(), {
-    hasSubmission: (p) => participantHasGroupOrderSubmission(p, grp.id),
-  }).map((p) => {
+  const groupListOpts = getGroupPredListOpts(grp, currentParticipantId);
+  const groupParticipantRowData = getParticipantsForListDisplay(
+    currentParticipantId,
+    getParticipantSearchQuery(),
+    groupListOpts,
+  ).map((p) => {
       const pred = loadPredictions(p.id);
       const ord = pred.groupOrder?.[grp.id];
       const orderArr =
@@ -1383,6 +1687,13 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
       </table>
     </div>
     ${buildGroupVoteStatsHtml(grp.id)}`;
+}
+
+/** @param {ParentNode | null | undefined} host @param {{ id: string }} grp @param {string | undefined} currentParticipantId */
+function stampGroupPredListMeta(host, grp, currentParticipantId) {
+  const bar = host?.querySelector?.("[data-participant-search-bar]");
+  if (!(bar instanceof HTMLElement)) return;
+  stampArenaPredictionListMeta(bar, getGroupPredListOpts(grp, currentParticipantId));
 }
 
 function clampGoalInput(v) {
@@ -1895,7 +2206,121 @@ function updateSyncLiveBadge() {
 
 let participantSearchReady = false;
 let participantSearchDebounceId = 0;
-let arenaSearchPredictionsDebounceId = 0;
+
+const ARENA_SEARCH_REFRESH_MS = 480;
+const ARENA_REMOTE_SEARCH_MIN_LEN = 2;
+
+function captureParticipantSearchFocus() {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLInputElement) || !active.classList.contains("participant-search-input")) {
+    return null;
+  }
+  const card = active.closest("article.quiniela-match");
+  const predsHost = active.closest(".group-preds-host");
+  return {
+    matchId: card?.getAttribute("data-quiniela-mid") ?? null,
+    groupId: predsHost?.dataset?.groupId ?? null,
+    panelId: active.closest("[data-panel]")?.id ?? null,
+    caret: active.selectionStart ?? 0,
+  };
+}
+
+/** @param {ReturnType<typeof captureParticipantSearchFocus>} snap */
+function restoreParticipantSearchFocus(snap) {
+  if (!snap) return;
+  let input = null;
+  if (snap.matchId) {
+    const card = document.querySelector(
+      `article.quiniela-match[data-quiniela-mid="${CSS.escape(snap.matchId)}"]`,
+    );
+    const det = card?.querySelector("details.partidos-acc");
+    if (det instanceof HTMLDetailsElement) det.open = true;
+    input = card?.querySelector(".participant-search-input");
+  } else if (snap.groupId) {
+    const host = document.querySelector(`.group-preds-host[data-group-id="${CSS.escape(snap.groupId)}"]`);
+    input = host?.querySelector(".participant-search-input");
+  } else if (snap.panelId) {
+    input = document.querySelector(`#${CSS.escape(snap.panelId)} .participant-search-input`);
+  }
+  if (!(input instanceof HTMLInputElement)) return;
+  input.focus({ preventScroll: true });
+  const pos = Math.min(snap.caret ?? input.value.length, input.value.length);
+  try {
+    input.setSelectionRange(pos, pos);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * @param {{ participantId: string }} session
+ */
+function refreshArenaPartidosPredictionTables(session) {
+  const wrap = $("#quiniela-wrap");
+  if (!wrap || !session) return;
+  const official = loadOfficialResults();
+  const isAdmin = canEditOfficialResults(session.participantId);
+  wrap.querySelectorAll("article.quiniela-match[data-quiniela-mid]").forEach((card) => {
+    const mid = card.getAttribute("data-quiniela-mid");
+    if (!mid) return;
+    const tb = card.querySelector(".quiniela-preds tbody");
+    if (!tb) return;
+    const gm = GROUP_MATCHES.find((x) => x.id === mid);
+    if (gm) {
+      tb.innerHTML = buildQuinielaPredRowsHtml(gm, session, official, isAdmin);
+      stampQuinielaCardPredictionMeta(card, gm, session, official, false);
+      wireQuinielaPredictionHandlersInScope(card, session);
+      return;
+    }
+    const mKo = getKnockoutMatchesFlat().find((x) => x.id === mid);
+    if (mKo) {
+      tb.innerHTML = buildQuinielaPredRowsHtmlKo(mKo, session, official, isAdmin);
+      stampQuinielaCardPredictionMeta(card, mKo, session, official, true);
+      wireQuinielaPredictionHandlersInScope(card, session);
+    }
+  });
+  syncQuinielaPerfectBonusCanvases(wrap);
+  syncGroupPtsBadgeCanvases(wrap);
+  syncArenaTruncationHints();
+}
+
+/**
+ * @param {{ participantId: string }} session
+ */
+function refreshArenaGruposPredictionTables(session) {
+  const wrap = $("#grupos-wrap");
+  if (!wrap || !session) return;
+  wrap.querySelectorAll(".group-preds-host[data-group-id]").forEach((host) => {
+    const groupId = host.dataset.groupId;
+    const grp = GROUPS.find((g) => g.id === groupId);
+    if (!grp) return;
+    host.innerHTML = buildGroupPredictionsTableHtml(grp, session.participantId);
+    stampGroupPredListMeta(host, grp, session.participantId);
+  });
+  syncGroupPtsBadgeCanvases(wrap);
+  syncArenaTruncationHints();
+}
+
+/**
+ * @param {{ participantId: string }} session
+ */
+function refreshArenaPredictionTablesForActiveTab(session) {
+  const focusSnap = captureParticipantSearchFocus();
+  const tab = getActiveTabId();
+  if (tab === "partidos") {
+    refreshArenaPartidosPredictionTables(session);
+  } else if (tab === "generales") {
+    renderGeneralesComparisonTable(session.participantId);
+    syncArenaTruncationHints();
+  } else if (tab === "grupos") {
+    refreshArenaGruposPredictionTables(session);
+  } else {
+    refreshAll(session, { preserveScroll: true, onlyActivePanel: true });
+    requestAnimationFrame(() => restoreParticipantSearchFocus(focusSnap));
+    return;
+  }
+  requestAnimationFrame(() => restoreParticipantSearchFocus(focusSnap));
+}
 
 function syncParticipantSearchInputs(value = getParticipantSearchQuery()) {
   document.querySelectorAll(".participant-search-input").forEach((el) => {
@@ -1903,45 +2328,72 @@ function syncParticipantSearchInputs(value = getParticipantSearchQuery()) {
   });
 }
 
+function ensureParticipantSortToggle(bar) {
+  if (!(bar instanceof HTMLElement) || !isArenaMode()) return;
+  if (isArenaRankingPanelSearchBar(bar)) return;
+  if (bar.querySelector("[data-participant-sort-toggle]")) return;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn btn-sm btn-ghost participant-sort-toggle";
+  btn.dataset.participantSortToggle = "";
+  const label = participantSortModeLabel();
+  btn.textContent = label;
+  btn.title = label;
+  btn.setAttribute("aria-label", `${label}. Pulsa para cambiar.`);
+  bar.appendChild(btn);
+}
+
 function initParticipantSearch(onSearchChange) {
   if (!isArenaMode()) return;
   if (participantSearchReady) return;
   participantSearchReady = true;
   syncParticipantSearchInputs();
-  const emit = (/** @type {string} */ value) => {
+  document.querySelectorAll("[data-participant-search-bar]").forEach((bar) => {
+    if (bar instanceof HTMLElement) ensureParticipantSortToggle(bar);
+  });
+  syncParticipantSortButtons();
+
+  const runSearchRefresh = (/** @type {string} */ value) => {
     setParticipantSearchQuery(value);
     syncParticipantSearchInputs(value);
     const q = String(value ?? "").trim();
-    if (isArenaMode() && q.length >= 2) {
-      window.clearTimeout(arenaSearchPredictionsDebounceId);
-      arenaSearchPredictionsDebounceId = window.setTimeout(() => {
-        void arenaSearchPredictions(q)
-          .then((res) => {
-            if (res?.predictions) mergePredictionsFromRemote(res.predictions);
-            syncArenaTruncationHints();
-            onSearchChange();
-          })
-          .catch(() => {
-            syncArenaTruncationHints();
-            onSearchChange();
-          });
-      }, 220);
+    const focusSnap = captureParticipantSearchFocus();
+    const finish = () => {
+      onSearchChange();
+      requestAnimationFrame(() => restoreParticipantSearchFocus(focusSnap));
+    };
+    if (q.length >= ARENA_REMOTE_SEARCH_MIN_LEN) {
+      void arenaSearchPredictions(q)
+        .then((res) => {
+          if (res?.predictions) mergePredictionsFromRemote(res.predictions);
+          finish();
+        })
+        .catch(finish);
       return;
     }
-    syncArenaTruncationHints();
-    onSearchChange();
+    finish();
   };
+
   document.addEventListener("input", (e) => {
     const t = e.target;
     if (!(t instanceof HTMLInputElement) || !t.classList.contains("participant-search-input")) return;
     setParticipantSearchQuery(t.value);
     window.clearTimeout(participantSearchDebounceId);
-    participantSearchDebounceId = window.setTimeout(() => emit(t.value), 180);
+    participantSearchDebounceId = window.setTimeout(() => runSearchRefresh(t.value), ARENA_SEARCH_REFRESH_MS);
   });
   document.addEventListener("search", (e) => {
     const t = e.target;
     if (!(t instanceof HTMLInputElement) || !t.classList.contains("participant-search-input")) return;
-    emit(t.value);
+    window.clearTimeout(participantSearchDebounceId);
+    setParticipantSearchQuery(t.value);
+    runSearchRefresh(t.value);
+  });
+  document.addEventListener("click", (e) => {
+    const btn = e.target instanceof Element ? e.target.closest("[data-participant-sort-toggle]") : null;
+    if (!btn) return;
+    cycleParticipantSortMode();
+    syncParticipantSortButtons();
+    onSearchChange();
   });
 }
 
@@ -3573,6 +4025,22 @@ function buildGeneralesVoteStatsHtml() {
 }
 
 /**
+ * @param {string | null | undefined} currentParticipantId
+ * @param {ReturnType<typeof loadOfficialResults>["generalOfficial"]} officialGen
+ * @param {boolean} hasOfficialData
+ */
+function getGeneralesPredListOpts(currentParticipantId, officialGen, hasOfficialData) {
+  return {
+    currentId: currentParticipantId ?? null,
+    hasSubmission: participantHasGeneralSubmission,
+    scoringActive: hasOfficialData,
+    previewSeed: "generales",
+    getPoints: (p) =>
+      computeGeneralPredictionsScore(loadPredictions(p.id).general ?? {}, officialGen, hasOfficialData).total,
+  };
+}
+
+/**
  * @param {string} currentParticipantId
  */
 function buildGeneralesPredictionsTableHtml(currentParticipantId) {
@@ -3628,7 +4096,13 @@ function buildGeneralesPredictionsTableHtml(currentParticipantId) {
     </tr>`;
   }
 
-  const participantScores = getParticipantsForListDisplay(currentParticipantId).map((p) => {
+  const generalesListOpts = getGeneralesPredListOpts(currentParticipantId, officialGen, hasOfficialData);
+
+  const participantScores = getParticipantsForListDisplay(
+    currentParticipantId,
+    getParticipantSearchQuery(),
+    generalesListOpts,
+  ).map((p) => {
     const gen = loadPredictions(p.id).general ?? {};
     const score = computeGeneralPredictionsScore(gen, officialGen, hasOfficialData);
     return { p, gen, score };
@@ -3775,10 +4249,25 @@ function renderGeneralesComparisonTable(participantId) {
   const host = $("#generales-preds-host");
   if (!host) return;
   host.innerHTML = buildGeneralesPredictionsTableHtml(participantId);
+  const officialStore = loadOfficialResults();
+  const officialGen = officialStore.generalOfficial ?? {};
+  const hasOfficialData =
+    officialStore.generalOfficialConfirmed === true &&
+    Boolean(String(officialGen.first ?? "").trim()) &&
+    Boolean(String(officialGen.second ?? "").trim()) &&
+    Boolean(String(officialGen.third ?? "").trim());
+  const generalesBar = document.querySelector("#panel-generales [data-participant-search-bar]");
+  if (generalesBar instanceof HTMLElement) {
+    stampArenaPredictionListMeta(
+      generalesBar,
+      getGeneralesPredListOpts(participantId, officialGen, hasOfficialData),
+    );
+  }
   requestAnimationFrame(() => {
     syncGeneralesPredsTableMobileColumns(host);
     syncGroupPtsBadgeCanvases(host);
   });
+  syncArenaTruncationHints();
 }
 
 /**
@@ -4617,7 +5106,9 @@ function renderGrupos(participantId, predictions) {
 
     const predsHost = document.createElement("div");
     predsHost.className = "group-preds-host";
+    predsHost.dataset.groupId = grp.id;
     predsHost.innerHTML = buildGroupPredictionsTableHtml(grp, participantId);
+    stampGroupPredListMeta(predsHost, grp, participantId);
     card.appendChild(predsHost);
     wrap.appendChild(card);
 
@@ -6406,9 +6897,11 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
   /** Tras iniciar el partido la última columna muestra Pts; antes solo acciones (confirmar/cambiar). */
   const showPtsColumn = matchStage !== "ready";
 
-  const preliminary = getParticipantsForListDisplay(session.participantId, getParticipantSearchQuery(), {
-    hasSubmission: (p) => participantHasMatchScoreSubmission(p, m.id, false),
-  }).map((p) => {
+  const preliminary = getParticipantsForListDisplay(
+    session.participantId,
+    getParticipantSearchQuery(),
+    getQuinielaMatchListOpts(m, session, official, false),
+  ).map((p) => {
       const pStore = loadPredictions(p.id);
       const pred = pStore.groupScores[m.id] ?? { home: "", away: "" };
       const predCommitted = pStore.groupScoresConfirmed?.[m.id] === true;
@@ -6713,9 +7206,11 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
   const koOfficialSlotsDecided =
     isQuinielaTeamSlotDecided(koOfficialHome) && isQuinielaTeamSlotDecided(koOfficialAway);
   const koSlotsReadyForEdit = koOfficialSlotsDecided || canEditAll;
-  const preliminary = getParticipantsForListDisplay(session.participantId, getParticipantSearchQuery(), {
-    hasSubmission: (p) => participantHasMatchScoreSubmission(p, m.id, true),
-  }).map((p) => {
+  const preliminary = getParticipantsForListDisplay(
+    session.participantId,
+    getParticipantSearchQuery(),
+    getQuinielaMatchListOpts(m, session, official, true),
+  ).map((p) => {
       const pStore = loadPredictions(p.id);
       const pred = pStore.knockoutScores?.[m.id] ?? { home: "", away: "" };
       const predCommitted = pStore.knockoutScoresConfirmed?.[m.id] === true;
@@ -7183,7 +7678,9 @@ function patchQuinielaMatchPredRows(wrap, mid) {
         })()
       : null;
   const isAdmin = canEditOfficialResults(session.participantId);
-  tb.innerHTML = buildQuinielaPredRowsHtml(m, session, loadOfficialResults(), isAdmin);
+  const officialNow = loadOfficialResults();
+  tb.innerHTML = buildQuinielaPredRowsHtml(m, session, officialNow, isAdmin);
+  stampQuinielaCardPredictionMeta(card, m, session, officialNow, false);
   wireQuinielaPredictionHandlersInScope(card, session);
   syncQuinielaPerfectBonusCanvases(wrap);
   syncGroupPtsBadgeCanvases(wrap);
@@ -7213,7 +7710,9 @@ function patchQuinielaKoMatchPredRows(wrap, kid) {
         })()
       : null;
   const isAdmin = canEditOfficialResults(session.participantId);
-  tb.innerHTML = buildQuinielaPredRowsHtmlKo(m, session, loadOfficialResults(), isAdmin);
+  const officialNow = loadOfficialResults();
+  tb.innerHTML = buildQuinielaPredRowsHtmlKo(m, session, officialNow, isAdmin);
+  stampQuinielaCardPredictionMeta(card, m, session, officialNow, true);
   wireQuinielaPredictionHandlersInScope(card, session);
   syncQuinielaPerfectBonusCanvases(wrap);
   syncGroupPtsBadgeCanvases(wrap);
@@ -7265,6 +7764,11 @@ function replaceQuinielaMatchArticleAndRebind(wrap, matchId, session) {
     if (d instanceof HTMLDetailsElement) d.open = true;
   }
   wireQuinielaPredictionHandlersInScope(newArt, session);
+  if (m) stampQuinielaCardPredictionMeta(newArt, m, session, official, false);
+  else {
+    const mKo = getKnockoutMatchesFlat().find((x) => x.id === matchId);
+    if (mKo) stampQuinielaCardPredictionMeta(newArt, mKo, session, official, true);
+  }
   syncQuinielaPerfectBonusCanvases(wrap);
   syncGroupPtsBadgeCanvases(wrap);
   if (canManagePartidosMatchFlow(session.participantId)) bindPartidosAdminHandlers(newArt, session);
@@ -8957,6 +9461,7 @@ function renderQuiniela(session, official) {
         : blocks.join("");
 
   wireQuinielaPredictionHandlersInScope(wrap, session);
+  stampAllQuinielaPredictionMetas(wrap, session, official);
   syncQuinielaPerfectBonusCanvases(wrap);
   syncGroupPtsBadgeCanvases(wrap);
 
@@ -8986,6 +9491,7 @@ function renderQuiniela(session, official) {
   }
 
   if (isArenaMode()) syncParticipantSearchInputs();
+  if (isArenaMode()) syncArenaTruncationHints();
   redrawTeamStats();
 }
 
@@ -10728,7 +11234,9 @@ export function initApp() {
   initNavDrawer();
   initFloatingRanking();
   initParticipantSearch(() => {
-    refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true });
+    const session = loadSession();
+    if (!session) return;
+    refreshArenaPredictionTablesForActiveTab(session);
   });
   ensureFaseGruposFilter();
   tabsController = initTabs((tabId) => {

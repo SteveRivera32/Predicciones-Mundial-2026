@@ -328,9 +328,9 @@ code {
 
 .participant-search-toolbar {
   display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-  gap: 0.5rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.32rem;
   margin: 0.15rem 0 0.55rem;
 }
 
@@ -342,8 +342,9 @@ code {
 
 .participant-search-toolbar--table {
   margin: 0;
-  flex: 0 1 14rem;
-  min-width: min(100%, 12rem);
+  flex: 0 1 auto;
+  width: min(100%, 11.5rem);
+  min-width: 0;
 }
 
 .group-preds-table-head {
@@ -376,7 +377,9 @@ code {
 }
 
 .quiniela-preds-head-row .participant-search-toolbar--table {
-  flex: 0 1 13rem;
+  flex: none;
+  width: min(100%, 11.5rem);
+  align-self: flex-end;
 }
 
 .participant-search-toolbar--compact {
@@ -393,7 +396,8 @@ code {
   flex-direction: column;
   gap: 0.22rem;
   min-width: 0;
-  flex: 0 1 14rem;
+  flex: 1 1 auto;
+  width: 100%;
   max-width: 100%;
 }
 
@@ -412,6 +416,16 @@ code {
   border-radius: 7px;
 }
 
+.participant-sort-toggle {
+  flex: 0 0 auto;
+  width: 100%;
+  justify-content: center;
+  white-space: nowrap;
+  max-width: 100%;
+  font-size: 0.74rem;
+  padding-inline: 0.55rem;
+}
+
 .participant-list-hint {
   margin: 0.35rem 0 0.65rem;
   padding: 0.45rem 0.65rem;
@@ -424,6 +438,32 @@ code {
 
 .participant-list-hint--ranking {
   margin-top: 0.5rem;
+}
+
+.participant-list-hint--missing {
+  margin-top: 0.45rem;
+  margin-bottom: 0.35rem;
+  background: rgba(138, 180, 248, 0.08);
+  border-color: rgba(138, 180, 248, 0.2);
+}
+
+.group-preds-table-head .participant-list-hint:not(.participant-list-hint--missing),
+.quiniela-preds-head-row .participant-list-hint:not(.participant-list-hint--missing) {
+  flex: 1 1 100%;
+  width: 100%;
+  margin-top: 0.15rem;
+  margin-bottom: 0;
+}
+
+.group-preds-host > .participant-list-hint--missing,
+.partidos-acc__body > .participant-list-hint--missing,
+#generales-preds-host + .participant-list-hint--missing,
+#generales-preds-host > .participant-list-hint--missing {
+  margin-top: 0.45rem;
+}
+
+#panel-generales .participant-list-hint:not(.participant-list-hint--missing) {
+  max-width: 42rem;
 }
 
 .participant-search-input::-webkit-search-cancel-button {

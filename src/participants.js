@@ -524,6 +524,9 @@ export function canAdminEditLateMatchPredictions(participantId) {
 }
 
 const PARTICIPANT_SEARCH_KEY = "pm26-participant-search";
+const PARTICIPANT_SORT_KEY = "pm26-participant-sort";
+
+/** @typedef {"default" | "points-desc" | "points-asc"} ParticipantSortMode */
 
 /** Máx. otros jugadores en tablas de predicciones (sin contar «tú»). */
 export const ARENA_PARTICIPANT_PREVIEW_LIMIT = 49;
@@ -545,6 +548,39 @@ export function setParticipantSearchQuery(query) {
   }
 }
 
+/** @returns {ParticipantSortMode} */
+export function getParticipantSortMode() {
+  if (!isArenaMode()) return "default";
+  try {
+    const v = localStorage.getItem(PARTICIPANT_SORT_KEY);
+    if (v === "points-desc" || v === "points-asc") return v;
+  } catch {
+    /* ignore */
+  }
+  return "default";
+}
+
+/** @returns {ParticipantSortMode} */
+export function cycleParticipantSortMode() {
+  /** @type {ParticipantSortMode[]} */
+  const order = ["default", "points-desc", "points-asc"];
+  const cur = getParticipantSortMode();
+  const next = order[(order.indexOf(cur) + 1) % order.length];
+  try {
+    localStorage.setItem(PARTICIPANT_SORT_KEY, next);
+  } catch {
+    /* ignore */
+  }
+  return next;
+}
+
+/** @param {ParticipantSortMode} [mode] */
+export function participantSortModeLabel(mode = getParticipantSortMode()) {
+  if (mode === "points-desc") return "Ordenar por: Más puntos";
+  if (mode === "points-asc") return "Ordenar por: Menos puntos";
+  return "Ordenar por: Predeterminado";
+}
+
 /**
  * @param {{ id?: string, name?: string } | null | undefined} p
  * @param {string} query
@@ -555,11 +591,36 @@ export function participantMatchesSearchQuery(p, query) {
   return searchTextIncludes(p?.name, q) || searchTextIncludes(p?.id, q);
 }
 
+/** @param {string} seed */
+function hashStablePreviewSeed(seed) {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
 /**
- * Listas de predicciones: tú primero; opcionalmente quienes ya mandaron predicción antes que el resto; alfabético dentro de cada bloque.
+ * Orden pseudoaleatorio estable (misma muestra hasta que cambie la lista o el apartado).
+ * @param {Participant[]} list
+ * @param {string} [seedPrefix]
+ */
+function stableRandomParticipantOrder(list, seedPrefix = "pm26-arena-preview") {
+  return [...list].sort((a, b) => {
+    const ha = hashStablePreviewSeed(`${seedPrefix}:${a.id}`);
+    const hb = hashStablePreviewSeed(`${seedPrefix}:${b.id}`);
+    if (ha !== hb) return ha - hb;
+    return a.name.localeCompare(b.name, "es", { sensitivity: "base" });
+  });
+}
+
+/**
+ * Listas de predicciones Arena: tú primero; cupo de otros = top 49 por puntos del apartado (si ya puntúa) o muestra aleatoria estable;
+ * solo quienes mandaron predicción en el apartado; orden de filas según botón (predeterminado = alfabético).
  * @param {string | null | undefined} currentId
  * @param {string} [searchQuery]
- * @param {{ hasSubmission?: (p: Participant) => boolean }} [opts]
+ * @param {{ hasSubmission?: (p: Participant) => boolean, getPoints?: (p: Participant) => number, scoringActive?: boolean, previewSeed?: string }} [opts]
  * @returns {Participant[]}
  */
 export function getParticipantsForListDisplay(
@@ -575,45 +636,80 @@ export function getParticipantsForListDisplay(
   }
   const q = String(searchQuery ?? "").trim();
   let others = base.filter((p) => p.id !== currentId);
-  if (q) {
-    others = others.filter((p) => participantMatchesSearchQuery(p, q));
-  }
   const byName = (/** @type {Participant} */ a, /** @type {Participant} */ b) =>
     a.name.localeCompare(b.name, "es", { sensitivity: "base" });
   const hasSubmission = opts.hasSubmission;
-  if (hasSubmission) {
+  const getPoints = opts.getPoints;
+  const scoringActive = opts.scoringActive === true;
+  const previewSeed = String(opts.previewSeed ?? "pm26-arena-preview");
+  const sortMode = isArenaMode() ? getParticipantSortMode() : "default";
+
+  if (isArenaMode() && hasSubmission) {
+    if (self && !hasSubmission(self)) self = null;
+    others = others.filter((p) => hasSubmission(p));
+  }
+  if (q) {
+    others = others.filter((p) => participantMatchesSearchQuery(p, q));
+    if (self && !participantMatchesSearchQuery(self, q)) self = null;
+  }
+
+  if (isArenaMode() && !q) {
+    if (scoringActive && typeof getPoints === "function") {
+      others = [...others].sort((a, b) => {
+        const diff = getPoints(b) - getPoints(a);
+        if (diff !== 0) return diff;
+        return byName(a, b);
+      });
+    } else {
+      others = stableRandomParticipantOrder(others, previewSeed);
+    }
+    others = others.slice(0, ARENA_PARTICIPANT_PREVIEW_LIMIT);
+  }
+
+  if (sortMode === "points-desc" && typeof getPoints === "function") {
     others.sort((a, b) => {
-      const aSub = hasSubmission(a) ? 1 : 0;
-      const bSub = hasSubmission(b) ? 1 : 0;
-      if (aSub !== bSub) return bSub - aSub;
+      const diff = getPoints(b) - getPoints(a);
+      if (diff !== 0) return diff;
+      return byName(a, b);
+    });
+  } else if (sortMode === "points-asc" && typeof getPoints === "function") {
+    others.sort((a, b) => {
+      const diff = getPoints(a) - getPoints(b);
+      if (diff !== 0) return diff;
       return byName(a, b);
     });
   } else {
     others.sort(byName);
   }
-  if (isArenaMode() && !q) {
-    others = others.slice(0, ARENA_PARTICIPANT_PREVIEW_LIMIT);
-  }
+
   if (self) return [self, ...others];
   return others;
 }
 
 /**
  * @param {string} [searchQuery]
- * @returns {{ total: number, shown: number, truncated: boolean }}
+ * @param {{ hasSubmission?: (p: Participant) => boolean, currentId?: string | null }} [opts]
+ * @returns {{ total: number, shown: number, truncated: boolean, withoutSubmission: number }}
  */
-export function getArenaParticipantsListMeta(searchQuery = getParticipantSearchQuery()) {
-  const total = getParticipantsForDisplay().length;
+export function getArenaParticipantsListMeta(searchQuery = getParticipantSearchQuery(), opts = {}) {
+  const { hasSubmission, currentId } = opts;
+  const base = getParticipantsForDisplay();
   if (!isArenaMode()) {
-    return { total, shown: total, truncated: false };
+    const total = base.length;
+    return { total, shown: total, truncated: false, withoutSubmission: 0 };
   }
   const q = String(searchQuery ?? "").trim();
+  const withoutSubmission = hasSubmission ? base.filter((p) => !hasSubmission(p)).length : 0;
+  const submissionPool = hasSubmission ? base.filter((p) => hasSubmission(p)) : base;
+  const total = submissionPool.length;
   if (q) {
-    const filtered = getParticipantsForDisplay().filter((p) => participantMatchesSearchQuery(p, q));
-    return { total, shown: filtered.length, truncated: false };
+    const filtered = submissionPool.filter((p) => participantMatchesSearchQuery(p, q));
+    return { total, shown: filtered.length, truncated: false, withoutSubmission };
   }
-  const shown = Math.min(total, ARENA_PARTICIPANT_PREVIEW_LIMIT + 1);
-  return { total, shown, truncated: total > shown };
+  const list = getParticipantsForListDisplay(currentId ?? null, searchQuery, opts);
+  const shown = hasSubmission ? list.filter((p) => hasSubmission(p)).length : list.length;
+  const truncated = total > ARENA_PARTICIPANT_PREVIEW_LIMIT;
+  return { total, shown, truncated, withoutSubmission };
 }
 
 /**
