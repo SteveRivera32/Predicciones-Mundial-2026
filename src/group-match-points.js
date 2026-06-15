@@ -1,6 +1,8 @@
 import {
   MATCH_SCORING,
   IMPROBABLE_BONUS,
+  CLOSEST_SCORE_BONUS,
+  CLOSEST_SCORE_MAX_DISTANCE,
   getImprobableMinVoteCap,
 } from "./scoring-rules.js";
 
@@ -94,12 +96,59 @@ export function getImprobableOutcomeSign(votes) {
 }
 
 /**
+ * Diferencia Manhattan |Δ local| + |Δ visitante|. `null` si faltan goles o si es marcador exacto.
+ * @param {{ home: unknown, away: unknown }} official
+ * @param {{ home: unknown, away: unknown }} pred
+ * @returns {number | null}
+ */
+export function matchScoreManhattanDistance(official, pred) {
+  const oh = parseScore(official.home);
+  const oa = parseScore(official.away);
+  const ph = parseScore(pred.home);
+  const pa = parseScore(pred.away);
+  if (oh === null || oa === null || ph === null || pa === null) return null;
+  if (ph === oh && pa === oa) return null;
+  return Math.abs(oh - ph) + Math.abs(oa - pa);
+}
+
+/**
+ * Participantes que reciben el bono «más cerca» en un partido.
+ * Excluye marcadores exactos. La menor diferencia debe ser ≤ {@link CLOSEST_SCORE_MAX_DISTANCE}.
+ * Solo aplica si quienes empatan la menor diferencia son minoría (≤ 25 %).
+ * @param {{ home: unknown, away: unknown }} official
+ * @param {Array<{ id: string, pred: { home: unknown, away: unknown } }>} entries predicciones confirmadas
+ * @returns {Set<string>}
+ */
+export function getClosestScoreBonusParticipantIds(official, entries) {
+  /** @type {{ id: string, dist: number }[]} */
+  const atDistance = [];
+  let totalCommitted = 0;
+  for (const e of entries) {
+    const ph = parseScore(e.pred.home);
+    const pa = parseScore(e.pred.away);
+    if (ph === null || pa === null) continue;
+    totalCommitted += 1;
+    const dist = matchScoreManhattanDistance(official, e.pred);
+    if (dist === null) continue;
+    atDistance.push({ id: e.id, dist });
+  }
+  if (totalCommitted < 2 || atDistance.length === 0) return new Set();
+  const minDist = Math.min(...atDistance.map((x) => x.dist));
+  if (minDist > CLOSEST_SCORE_MAX_DISTANCE) return new Set();
+  const atMin = atDistance.filter((x) => x.dist === minDist);
+  const cap = getImprobableMinVoteCap(totalCommitted);
+  if (atMin.length > cap) return new Set();
+  return new Set(atMin.map((x) => x.id));
+}
+
+/**
  * @param {{ home: unknown, away: unknown }} official
  * @param {{ home: unknown, away: unknown }} pred
  * @param {"h"|"d"|"a"|null|undefined} improbableOutcomeSign
  * @param {MatchScoringSlice} [scoring]
  * @param {boolean} [knockoutPenaltyPhase] si true y el marcador es empate en ambos, puede sumarse bono por penales
- * @returns {{ total: number, outcomePts: number, homeGoalsPts: number, awayGoalsPts: number, exactPts: number, improbablePts: number, penaltyPts: number, exactTier: "bien"|"excelente"|"perfecto"|null } | null}
+ * @param {boolean} [closestBonusEligible]
+ * @returns {{ total: number, outcomePts: number, homeGoalsPts: number, awayGoalsPts: number, exactPts: number, improbablePts: number, penaltyPts: number, closestPts: number, exactTier: "bien"|"excelente"|"perfecto"|null } | null}
  */
 function computeGroupMatchPointsParts(
   official,
@@ -107,6 +156,7 @@ function computeGroupMatchPointsParts(
   improbableOutcomeSign = null,
   scoring = MATCH_SCORING.group,
   knockoutPenaltyPhase = false,
+  closestBonusEligible = false,
 ) {
   const { outcome, goalsEach, exact, maxPerMatch } = scoring;
   const oh = parseScore(official.home);
@@ -175,8 +225,22 @@ function computeGroupMatchPointsParts(
   if (exactTier == null && penaltyPts > 0 && knockoutPenaltyPhase) {
     exactTier = "bien";
   }
-  const total = Math.min(raw, maxPerMatch) + improbablePts + penaltyPts;
-  return { total, outcomePts, homeGoalsPts, awayGoalsPts, exactPts, improbablePts, penaltyPts, exactTier };
+  let closestPts = 0;
+  if (closestBonusEligible) {
+    closestPts = CLOSEST_SCORE_BONUS;
+  }
+  const total = Math.min(raw, maxPerMatch) + improbablePts + penaltyPts + closestPts;
+  return {
+    total,
+    outcomePts,
+    homeGoalsPts,
+    awayGoalsPts,
+    exactPts,
+    improbablePts,
+    penaltyPts,
+    closestPts,
+    exactTier,
+  };
 }
 
 /**
@@ -185,6 +249,7 @@ function computeGroupMatchPointsParts(
  * @param {"h"|"d"|"a"|null|undefined} [improbableOutcomeSign]
  * @param {MatchScoringSlice} [scoring]
  * @param {boolean} [knockoutPenaltyPhase]
+ * @param {boolean} [closestBonusEligible]
  * @returns {number|null}
  */
 export function computeGroupMatchPoints(
@@ -193,8 +258,16 @@ export function computeGroupMatchPoints(
   improbableOutcomeSign = null,
   scoring = MATCH_SCORING.group,
   knockoutPenaltyPhase = false,
+  closestBonusEligible = false,
 ) {
-  const p = computeGroupMatchPointsParts(official, pred, improbableOutcomeSign, scoring, knockoutPenaltyPhase);
+  const p = computeGroupMatchPointsParts(
+    official,
+    pred,
+    improbableOutcomeSign,
+    scoring,
+    knockoutPenaltyPhase,
+    closestBonusEligible,
+  );
   return p ? p.total : null;
 }
 
@@ -204,6 +277,7 @@ export function computeGroupMatchPoints(
  * @param {"h"|"d"|"a"|null|undefined} [improbableOutcomeSign]
  * @param {MatchScoringSlice} [scoring]
  * @param {boolean} [knockoutPenaltyPhase]
+ * @param {boolean} [closestBonusEligible]
  */
 export function computeGroupMatchPointsBreakdown(
   official,
@@ -211,8 +285,16 @@ export function computeGroupMatchPointsBreakdown(
   improbableOutcomeSign = null,
   scoring = MATCH_SCORING.group,
   knockoutPenaltyPhase = false,
+  closestBonusEligible = false,
 ) {
-  return computeGroupMatchPointsParts(official, pred, improbableOutcomeSign, scoring, knockoutPenaltyPhase);
+  return computeGroupMatchPointsParts(
+    official,
+    pred,
+    improbableOutcomeSign,
+    scoring,
+    knockoutPenaltyPhase,
+    closestBonusEligible,
+  );
 }
 
 export function isExactGroupPrediction(official, pred) {

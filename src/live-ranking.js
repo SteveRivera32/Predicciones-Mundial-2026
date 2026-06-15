@@ -9,6 +9,7 @@ import {
   isExactGroupPrediction,
   predictionOutcomeSign,
   getUniqueOfficialOutcomeBonusSign,
+  getClosestScoreBonusParticipantIds,
 } from "./group-match-points.js";
 import {
   computeGeneralPredictionsScore,
@@ -86,6 +87,61 @@ function getImprobableOutcomeSignForKoMatch(matchId, officialScore, predictionsM
     collectKnockoutOutcomeVotesForMatch(matchId, predictionsMap, participants),
     officialScore,
   );
+}
+
+/**
+ * @param {string} matchId
+ * @param {boolean} isKo
+ * @param {Record<string, unknown>} predictionsMap
+ * @param {Array<{ id: string }>} participants
+ */
+function collectCommittedMatchScoreEntries(matchId, isKo, predictionsMap, participants) {
+  /** @type {Array<{ id: string, pred: { home: unknown, away: unknown } }>} */
+  const entries = [];
+  for (const part of participants) {
+    const store = normalizePredictionsData(predictionsMap[part.id]);
+    const confirmed = isKo
+      ? store.knockoutScoresConfirmed?.[matchId] === true
+      : store.groupScoresConfirmed?.[matchId] === true;
+    if (!confirmed) continue;
+    const pred = isKo
+      ? store.knockoutScores?.[matchId] ?? { home: "", away: "" }
+      : store.groupScores[matchId] ?? { home: "", away: "" };
+    entries.push({ id: part.id, pred });
+  }
+  return entries;
+}
+
+/**
+ * @param {import("./official-results-store.js").OfficialResults} official
+ * @param {Record<string, unknown>} predictionsMap
+ * @param {Array<{ id: string }>} participants
+ * @param {{ arenaScoring?: boolean }} [opts]
+ */
+export function computeClosestScoreBonusMaps(official, predictionsMap, participants, opts = {}) {
+  /** @type {Record<string, Set<string>>} */
+  const groupClosest = {};
+  /** @type {Record<string, Set<string>>} */
+  const knockoutClosest = {};
+  const offScores = getOfficialGroupScoresForLiveQuinielaPointsFromOfficial(official);
+
+  for (const m of GROUP_MATCHES) {
+    if (isArenaPrelaunchExcludedGroupMatch(m.id, opts)) continue;
+    const off = offScores[m.id];
+    if (!off) continue;
+    const entries = collectCommittedMatchScoreEntries(m.id, false, predictionsMap, participants);
+    groupClosest[m.id] = getClosestScoreBonusParticipantIds(off, entries);
+  }
+
+  for (const m of getKnockoutMatchesFlat()) {
+    if (official.knockoutScoresConfirmed?.[m.id] !== true) continue;
+    const off = official.knockoutScores[m.id];
+    if (!off || off.home === "" || off.away === "") continue;
+    const entries = collectCommittedMatchScoreEntries(m.id, true, predictionsMap, participants);
+    knockoutClosest[m.id] = getClosestScoreBonusParticipantIds(off, entries);
+  }
+
+  return { groupClosest, knockoutClosest };
 }
 
 /**
@@ -264,6 +320,12 @@ export function computePerParticipantMatchColumnStatsFromData(
   opts = {},
 ) {
   const offScores = getOfficialGroupScoresForLiveQuinielaPointsFromOfficial(official);
+  const { groupClosest, knockoutClosest } = computeClosestScoreBonusMaps(
+    official,
+    predictionsMap,
+    participants,
+    opts,
+  );
   /** @type {Record<string, { topTie: number, soleTop: number, noPred: number }>} */
   const byId = {};
   for (const p of participants) {
@@ -294,8 +356,18 @@ export function computePerParticipantMatchColumnStatsFromData(
       const improb = isKo
         ? getImprobableOutcomeSignForKoMatch(m.id, off, predictionsMap, participants)
         : getImprobableOutcomeSignForMatch(m.id, off, predictionsMap, participants);
+      const closestEligible = isKo
+        ? (knockoutClosest[m.id]?.has(p.id) ?? false)
+        : (groupClosest[m.id]?.has(p.id) ?? false);
       const matchScoring = getMatchScoringForQuiniela(m);
-      const pts = computeGroupMatchPoints(off, pred, improb, matchScoring, koPenPh);
+      const pts = computeGroupMatchPoints(
+        off,
+        pred,
+        improb,
+        matchScoring,
+        koPenPh,
+        closestEligible,
+      );
       if (pts === null) continue;
       scored.push({ id: p.id, pts });
     }
@@ -345,6 +417,12 @@ export function computeLiveParticipantRowsFromData(
     participants,
     predictionsMap,
     official,
+    opts,
+  );
+  const { groupClosest, knockoutClosest } = computeClosestScoreBonusMaps(
+    official,
+    predictionsMap,
+    participants,
     opts,
   );
   const liveOfficial = getLiveOfficialGroupSnapshotFromOfficial(official);
@@ -436,19 +514,28 @@ export function computeLiveParticipantRowsFromData(
       if (pStore.groupScoresConfirmed?.[m.id] !== true) continue;
       const pred = pStore.groupScores[m.id] ?? { home: "", away: "" };
       const improb = getImprobableOutcomeSignForMatch(m.id, off, predictionsMap, participants);
+      const closestEligible = groupClosest[m.id]?.has(p.id) ?? false;
       const matchScoring = getMatchScoringForQuiniela(m);
-      const pts = computeGroupMatchPoints(off, pred, improb, matchScoring);
+      const pts = computeGroupMatchPoints(off, pred, improb, matchScoring, false, closestEligible);
       if (pts === null) continue;
       total += pts;
       matchPointsTotal += pts;
       countedMatches += 1;
       if (pts === 0) zeroPointMatches += 1;
       if (isExactGroupPrediction(off, pred)) exact += 1;
-      const breakdown = computeGroupMatchPointsBreakdown(off, pred, improb, matchScoring);
+      const breakdown = computeGroupMatchPointsBreakdown(
+        off,
+        pred,
+        improb,
+        matchScoring,
+        false,
+        closestEligible,
+      );
       if (breakdown?.exactTier === "perfecto") matchPerfectCount += 1;
       else if (breakdown?.exactTier === "excelente") matchExcelenteCount += 1;
       else if (breakdown?.exactTier === "bien") matchBienCount += 1;
       if ((breakdown?.improbablePts ?? 0) > 0) matchBonusCount += 1;
+      if ((breakdown?.closestPts ?? 0) > 0) matchBonusCount += 1;
       const oh = parseInt(String(off.home), 10);
       const oa = parseInt(String(off.away), 10);
       const ph = parseInt(String(pred.home), 10);
@@ -467,20 +554,29 @@ export function computeLiveParticipantRowsFromData(
       if (pStore.knockoutScoresConfirmed?.[m.id] !== true) continue;
       const pred = pStore.knockoutScores?.[m.id] ?? { home: "", away: "" };
       const improb = getImprobableOutcomeSignForKoMatch(m.id, off, predictionsMap, participants);
+      const closestEligible = knockoutClosest[m.id]?.has(p.id) ?? false;
       const matchScoring = getMatchScoringForQuiniela(m);
       const koPenPh = knockoutRoundRequiresPenaltyPickOnDraw(m.roundId);
-      const pts = computeGroupMatchPoints(off, pred, improb, matchScoring, koPenPh);
+      const pts = computeGroupMatchPoints(off, pred, improb, matchScoring, koPenPh, closestEligible);
       if (pts === null) continue;
       total += pts;
       matchPointsTotal += pts;
       countedMatches += 1;
       if (pts === 0) zeroPointMatches += 1;
       if (isExactGroupPrediction(off, pred)) exact += 1;
-      const breakdown = computeGroupMatchPointsBreakdown(off, pred, improb, matchScoring, koPenPh);
+      const breakdown = computeGroupMatchPointsBreakdown(
+        off,
+        pred,
+        improb,
+        matchScoring,
+        koPenPh,
+        closestEligible,
+      );
       if (breakdown?.exactTier === "perfecto") matchPerfectCount += 1;
       else if (breakdown?.exactTier === "excelente") matchExcelenteCount += 1;
       else if (breakdown?.exactTier === "bien") matchBienCount += 1;
       if ((breakdown?.improbablePts ?? 0) > 0) matchBonusCount += 1;
+      if ((breakdown?.closestPts ?? 0) > 0) matchBonusCount += 1;
       const oh = parseInt(String(off.home), 10);
       const oa = parseInt(String(off.away), 10);
       const ph = parseInt(String(pred.home), 10);
@@ -664,10 +760,14 @@ export function computeArenaMatchVoteData(official, predictionsMap, participants
   const groupVotes = {};
   /** @type {Record<string, "h"|"d"|"a"|null>} */
   const groupImprobable = {};
+  /** @type {Record<string, string[]>} */
+  const groupClosest = {};
   /** @type {Record<string, { h: number, d: number, a: number }>} */
   const knockoutVotes = {};
   /** @type {Record<string, "h"|"d"|"a"|null>} */
   const knockoutImprobable = {};
+  /** @type {Record<string, string[]>} */
+  const knockoutClosest = {};
   /** @type {Record<string, { home: number, away: number }>} */
   const knockoutPenalties = {};
   /** @type {Record<string, Array<Record<string, number>>>} */
@@ -688,6 +788,12 @@ export function computeArenaMatchVoteData(official, predictionsMap, participants
       officialComplete && off
         ? getUniqueOfficialOutcomeBonusSign(votes, off)
         : null;
+    if (officialComplete && off) {
+      const entries = collectCommittedMatchScoreEntries(m.id, false, predictionsMap, participants);
+      groupClosest[m.id] = [...getClosestScoreBonusParticipantIds(off, entries)];
+    } else {
+      groupClosest[m.id] = [];
+    }
   }
 
   for (const m of getKnockoutMatchesFlat()) {
@@ -701,6 +807,12 @@ export function computeArenaMatchVoteData(official, predictionsMap, participants
       officialComplete && off
         ? getUniqueOfficialOutcomeBonusSign(votes, off)
         : null;
+    if (officialComplete && off) {
+      const entries = collectCommittedMatchScoreEntries(m.id, true, predictionsMap, participants);
+      knockoutClosest[m.id] = [...getClosestScoreBonusParticipantIds(off, entries)];
+    } else {
+      knockoutClosest[m.id] = [];
+    }
     if (knockoutRoundRequiresPenaltyPickOnDraw(m.roundId)) {
       knockoutPenalties[m.id] = collectKnockoutPenaltyVotesForMatch(m.id, predictionsMap, participants);
     }
@@ -717,8 +829,10 @@ export function computeArenaMatchVoteData(official, predictionsMap, participants
   return {
     groupVotes,
     groupImprobable,
+    groupClosest,
     knockoutVotes,
     knockoutImprobable,
+    knockoutClosest,
     knockoutPenalties,
     groupOrder,
     groupThirdAdvance,

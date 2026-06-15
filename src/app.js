@@ -67,6 +67,7 @@ import {
   hasArenaMatchVoteData,
   getArenaMatchOutcomeCounts,
   getArenaImprobableOutcomeSign,
+  getArenaClosestScoreBonusIds,
   getArenaKnockoutPenaltyCounts,
   getArenaGroupOrderVoteCountsByPosition,
   getArenaGroupThirdAdvanceVoteCounts,
@@ -86,6 +87,7 @@ import {
   isExactGroupPrediction,
   predictionOutcomeSign,
   getUniqueOfficialOutcomeBonusSign,
+  getClosestScoreBonusParticipantIds,
 } from "./group-match-points.js";
 import {
   computeGeneralPredictionsScore,
@@ -481,6 +483,32 @@ function getImprobableOutcomeSignForKoMatch(matchId, officialScore) {
     return getArenaImprobableOutcomeSign(matchId, true);
   }
   return getUniqueOfficialOutcomeBonusSign(collectKnockoutOutcomeVotesForMatch(matchId), officialScore);
+}
+
+/** Predicciones confirmadas con marcador completo en un partido. */
+function collectCommittedMatchScoreEntries(matchId, isKo) {
+  /** @type {Array<{ id: string, pred: { home: unknown, away: unknown } }>} */
+  const entries = [];
+  for (const part of getParticipantsForDisplay()) {
+    const store = loadPredictions(part.id);
+    const confirmed = isKo
+      ? store.knockoutScoresConfirmed?.[matchId] === true
+      : store.groupScoresConfirmed?.[matchId] === true;
+    if (!confirmed) continue;
+    const pred = isKo
+      ? store.knockoutScores?.[matchId] ?? { home: "", away: "" }
+      : store.groupScores[matchId] ?? { home: "", away: "" };
+    entries.push({ id: part.id, pred });
+  }
+  return entries;
+}
+
+/** @param {string} matchId @param {{ home: unknown, away: unknown }} officialScore @param {boolean} isKo */
+function getClosestScoreBonusIdsForMatch(matchId, officialScore, isKo) {
+  if (isArenaMode() && hasArenaMatchVoteData()) {
+    return getArenaClosestScoreBonusIds(matchId, isKo);
+  }
+  return getClosestScoreBonusParticipantIds(officialScore, collectCommittedMatchScoreEntries(matchId, isKo));
 }
 
 function $(sel, root = document) {
@@ -1034,7 +1062,10 @@ function computeQuinielaMatchListPoints(p, m, official, isKo) {
     ? getImprobableOutcomeSignForKoMatch(m.id, off)
     : getImprobableOutcomeSignForMatch(m.id, off);
   const koPenaltyPhase = isKo ? knockoutRoundRequiresPenaltyPickOnDraw(m.roundId) : false;
-  return computeGroupMatchPoints(off, pred, improbableSign, matchScoring, koPenaltyPhase) ?? 0;
+  const closestEligible = getClosestScoreBonusIdsForMatch(m.id, off, isKo).has(p.id);
+  return (
+    computeGroupMatchPoints(off, pred, improbableSign, matchScoring, koPenaltyPhase, closestEligible) ?? 0
+  );
 }
 
 /**
@@ -1725,7 +1756,7 @@ function scoreStepperHtml(matchId, side, value, opts = {}) {
 /**
  * @param {HTMLElement} wrap
  * @param {"knockout"|"grupos"} mode
- * @param {(scores: Record<string, { home: string|number|"", away: string|number|"" }>) => void} onCommit
+ * @param {(scores: Record<string, { home: string|number|"", away: string|number|"" }>, triggerEl?: HTMLElement | null) => void} onCommit
  * @param {{ collectOnInput?: boolean }} [wireOpts] si true, también en `input` (marcador oficial en vivo al teclear)
  */
 function wireScoreSteppers(wrap, mode, onCommit, wireOpts = {}) {
@@ -1733,7 +1764,8 @@ function wireScoreSteppers(wrap, mode, onCommit, wireOpts = {}) {
   const isKo = mode === "knockout";
   const inputSel = isKo ? ".score-stepper__input[data-kid]" : ".score-stepper__input[data-mid]";
 
-  function collect() {
+  /** @param {HTMLElement | null | undefined} triggerEl */
+  function collect(triggerEl) {
     /** @type {Record<string, { home: string|number|"", away: string|number|"" }>} */
     const next = {};
     wrap.querySelectorAll(inputSel).forEach((el) => {
@@ -1745,7 +1777,7 @@ function wireScoreSteppers(wrap, mode, onCommit, wireOpts = {}) {
         el.value === "" ? "" : Math.max(0, Math.min(20, parseInt(el.value, 10) || 0));
       next[id][side] = raw;
     });
-    onCommit(next);
+    onCommit(next, triggerEl instanceof HTMLElement ? triggerEl : null);
   }
 
   wrap.querySelectorAll(".score-stepper").forEach((stepper) => {
@@ -1758,16 +1790,16 @@ function wireScoreSteppers(wrap, mode, onCommit, wireOpts = {}) {
         let n = inp.value === "" ? 0 : parseInt(inp.value, 10) || 0;
         n = Math.max(0, Math.min(20, n + d));
         inp.value = String(n);
-        collect();
+        collect(inp);
       });
     });
     inp.addEventListener("change", () => {
       const n = clampGoalInput(inp.value);
       inp.value = n === "" ? "" : String(n);
-      collect();
+      collect(inp);
     });
     if (collectOnInput) {
-      inp.addEventListener("input", () => collect());
+      inp.addEventListener("input", () => collect(inp));
     }
   });
 }
@@ -4459,6 +4491,15 @@ function bindPartidosPointsHelpOverlay() {
       }, 80);
       return;
     }
+    if (t instanceof Element && t.closest("[data-partidos-goto-rules-cercania]")) {
+      e.preventDefault();
+      close();
+      tabsController?.setTab("reglas");
+      window.setTimeout(() => {
+        document.getElementById("reglas-cercania")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 80);
+      return;
+    }
     if (e.target === overlay) close();
   });
   document.addEventListener("keydown", (e) => {
@@ -5390,8 +5431,9 @@ function computePerParticipantMatchColumnStats() {
         ? pStore.knockoutScores?.[m.id] ?? { home: "", away: "" }
         : pStore.groupScores[m.id] ?? { home: "", away: "" };
       const improb = isKo ? getImprobableOutcomeSignForKoMatch(m.id, off) : getImprobableOutcomeSignForMatch(m.id, off);
+      const closestEligible = getClosestScoreBonusIdsForMatch(m.id, off, isKo).has(p.id);
       const matchScoring = getMatchScoringForQuiniela(m);
-      const pts = computeGroupMatchPoints(off, pred, improb, matchScoring, koPenPh);
+      const pts = computeGroupMatchPoints(off, pred, improb, matchScoring, koPenPh, closestEligible);
       if (pts === null) continue;
       scored.push({ id: p.id, pts });
     }
@@ -6735,13 +6777,23 @@ function teamLabelHtml(teamName) {
 }
 
 function pointsBadgeHtml(points, options = {}) {
-  const { bonus = false, title = "" } = options;
+  const { bonus = false, closest = false, gold = false, title = "" } = options;
   if (!points || points <= 0) return "";
-  const cls = bonus
-    ? "group-preds-pt-badge group-preds-pt-badge--bonus"
-    : "group-preds-pt-badge";
+  /** @type {"green"|"bonus"|"silver"|"gold"} */
+  let variant = "green";
+  let modifier = "";
+  if (bonus) {
+    variant = "bonus";
+    modifier = " group-preds-pt-badge--bonus";
+  } else if (closest) {
+    variant = "silver";
+    modifier = " group-preds-pt-badge--silver";
+  } else if (gold) {
+    variant = "gold";
+    modifier = " group-preds-pt-badge--gold";
+  }
+  const cls = `group-preds-pt-badge${modifier}`;
   const safeTitle = title ? ` title="${escapeHtml(title)}"` : "";
-  const variant = bonus ? "bonus" : "green";
   return `<span class="${cls}"${safeTitle}><canvas class="group-preds-pt-badge__canvas" aria-hidden="true" data-variant="${variant}"></canvas><span class="group-preds-pt-badge__txt">+${points}</span></span>`;
 }
 
@@ -6811,8 +6863,18 @@ function quinielaKoGanadorCellHtml(vm, pred, roundId, opts = {}) {
   return `${main}<div class="ko-pen-pick-inline">Penales: <span class="quiniela-ganador-name">${escapeHtml(nm)}</span></div>`;
 }
 
+/** HTML del bono «más cerca» bajo el nombre del participante. */
+function quinielaClosestBonusInlineHtml(breakdown) {
+  const cp = breakdown?.closestPts ?? 0;
+  if (cp <= 0) return "";
+  return `<div class="quiniela-perfect-inline quiniela-closest-inline" role="status" aria-label="Más cerca del marcador"><span class="quiniela-closest-label">Más cerca</span>${pointsBadgeHtml(cp, {
+    closest: true,
+    title:
+      "Bono más cerca del marcador (menor diferencia |Δ local|+|Δ visitante| entre quienes no acertaron perfecto; la mínima debe ser 1 o 2; solo si ese grupo es minoría, máx. 25 % de predicciones confirmadas)",
+  })}</div>`;
+}
+
 /**
- * Badges sin puntaje extra (BIEN / EXCELENTE) por acierto de resultado y goles parciales.
  * Reglas: en **FASE DE GRUPOS** siempre; en **ELIMINATORIAS** solo si el resultado oficial NO es empate.
  * Prioridad respecto a PERFECTO por marcador: esta función solo aplica cuando no hay marcador exacto (el llamador comprueba).
  * @param {{ outcomePts?: number, homeGoalsPts?: number, awayGoalsPts?: number } | null | undefined} breakdown
@@ -6909,16 +6971,20 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
     });
 
   const improbableSign = officialCompleteForScoring ? getImprobableOutcomeSignForMatch(m.id, off) : null;
+  const closestBonusIds = officialCompleteForScoring
+    ? getClosestScoreBonusIdsForMatch(m.id, off, false)
+    : new Set();
 
   const rows = sortQuinielaPredictionRows(
     preliminary.map((r) => {
+      const closestEligible = closestBonusIds.has(r.p.id);
       const pts =
         officialCompleteForScoring && r.predCommitted
-          ? computeGroupMatchPoints(off, r.pred, improbableSign, matchScoring)
+          ? computeGroupMatchPoints(off, r.pred, improbableSign, matchScoring, false, closestEligible)
           : null;
       const breakdown =
         officialCompleteForScoring && r.predCommitted
-          ? computeGroupMatchPointsBreakdown(off, r.pred, improbableSign, matchScoring)
+          ? computeGroupMatchPointsBreakdown(off, r.pred, improbableSign, matchScoring, false, closestEligible)
           : null;
       const exactTier = breakdown?.exactTier ?? null;
       const exact =
@@ -7036,6 +7102,7 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
         const combo = quinielaComboBadgeNoPointsTier(d.breakdown, { apply: true });
         tierExtra = quinielaNoPointsTierExtraHtml(combo);
       }
+      tierExtra += quinielaClosestBonusInlineHtml(d.breakdown);
       const phCell = quinielaCellWithBadges(ph, homeBadge);
       const paCell = quinielaCellWithBadges(pa, awayBadge);
       const pcCell = quinielaPtsCellContentHtml(pcRaw, d, officialCompleteForScoring);
@@ -7223,16 +7290,27 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
   const improbableSign = officialCompleteForScoring
     ? getImprobableOutcomeSignForKoMatch(m.id, off)
     : null;
+  const closestBonusIds = officialCompleteForScoring
+    ? getClosestScoreBonusIdsForMatch(m.id, off, true)
+    : new Set();
 
   const rows = sortQuinielaPredictionRows(
     preliminary.map((r) => {
+      const closestEligible = closestBonusIds.has(r.p.id);
       const pts =
         officialCompleteForScoring && r.predCommitted
-          ? computeGroupMatchPoints(off, r.pred, improbableSign, matchScoring, koPenaltyPhase)
+          ? computeGroupMatchPoints(off, r.pred, improbableSign, matchScoring, koPenaltyPhase, closestEligible)
           : null;
       const breakdown =
         officialCompleteForScoring && r.predCommitted
-          ? computeGroupMatchPointsBreakdown(off, r.pred, improbableSign, matchScoring, koPenaltyPhase)
+          ? computeGroupMatchPointsBreakdown(
+              off,
+              r.pred,
+              improbableSign,
+              matchScoring,
+              koPenaltyPhase,
+              closestEligible,
+            )
           : null;
       const exactTier = breakdown?.exactTier ?? null;
       const exact =
@@ -7380,6 +7458,7 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
         const combo = quinielaComboBadgeNoPointsTier(d.breakdown, { apply: !koOfficialDraw });
         tierExtra = quinielaNoPointsTierExtraHtml(combo);
       }
+      tierExtra += quinielaClosestBonusInlineHtml(d.breakdown);
       const phCell = quinielaCellWithBadges(ph, homeBadge);
       const paCell = quinielaCellWithBadges(pa, awayBadge);
       const pcCell = quinielaPtsCellContentHtml(pcRaw, d, officialCompleteForScoring);
@@ -7659,8 +7738,9 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
  * Actualiza solo la tabla de predicciones de un partido (sin reemplazar el bloque oficial → no pierde foco en steppers).
  * @param {HTMLElement | null} wrap
  * @param {string} mid
+ * @param {HTMLElement | null} [focusEl] input/stepper que disparó el guardado (el foco puede haberse movido ya)
  */
-function patchQuinielaMatchPredRows(wrap, mid) {
+function patchQuinielaMatchPredRows(wrap, mid, focusEl) {
   const session = loadSession();
   if (!wrap || !session) return;
   const m = GROUP_MATCHES.find((x) => x.id === mid);
@@ -7669,7 +7749,8 @@ function patchQuinielaMatchPredRows(wrap, mid) {
   if (!card) return;
   const tb = card.querySelector(".quiniela-preds tbody");
   if (!tb) return;
-  const anchor = capturePartidosInteractionAnchor(wrap);
+  const anchor =
+    capturePartidosInteractionAnchorFromElement(focusEl, wrap) ?? capturePartidosInteractionAnchor(wrap);
   const viewportLock =
     anchor?.articleMid === mid
       ? (() => {
@@ -7691,8 +7772,9 @@ function patchQuinielaMatchPredRows(wrap, mid) {
  * Igual que patchQuinielaMatchPredRows pero para cruces KO (`GROUP_MATCHES` no los incluye).
  * @param {HTMLElement | null} wrap
  * @param {string} kid
+ * @param {HTMLElement | null} [focusEl]
  */
-function patchQuinielaKoMatchPredRows(wrap, kid) {
+function patchQuinielaKoMatchPredRows(wrap, kid, focusEl) {
   const session = loadSession();
   if (!wrap || !session) return;
   const m = getKnockoutMatchesFlat().find((x) => x.id === kid);
@@ -7701,7 +7783,8 @@ function patchQuinielaKoMatchPredRows(wrap, kid) {
   if (!card) return;
   const tb = card.querySelector(".quiniela-preds tbody");
   if (!tb) return;
-  const anchor = capturePartidosInteractionAnchor(wrap);
+  const anchor =
+    capturePartidosInteractionAnchorFromElement(focusEl, wrap) ?? capturePartidosInteractionAnchor(wrap);
   const viewportLock =
     anchor?.articleMid === kid
       ? (() => {
@@ -7723,15 +7806,16 @@ function patchQuinielaKoMatchPredRows(wrap, kid) {
  * Solo tbody + resto de la app: no reemplaza #quiniela-wrap (evita scroll al 1.er partido con varios abiertos).
  * @param {{ participantId: string }} session
  * @param {string} matchId id de partido de grupos o KO
+ * @param {HTMLElement | null} [focusEl]
  */
-function refreshAfterParticipantPredictionScores(session, matchId) {
+function refreshAfterParticipantPredictionScores(session, matchId, focusEl) {
   const wrap = $("#quiniela-wrap");
   if (wrap && GROUP_MATCHES.some((x) => x.id === matchId)) {
-    patchQuinielaMatchPredRows(wrap, matchId);
+    patchQuinielaMatchPredRows(wrap, matchId, focusEl);
   } else if (wrap) {
-    patchQuinielaKoMatchPredRows(wrap, matchId);
+    patchQuinielaKoMatchPredRows(wrap, matchId, focusEl);
   }
-  refreshAll(session, { skipPartidosRender: true, onlyActivePanel: isArenaMode() });
+  refreshAll(session, { skipPartidosRender: true, preserveScroll: true, onlyActivePanel: true });
 }
 
 /**
@@ -7806,7 +7890,7 @@ function bindPartidosAdminHandlers(scope, session) {
     wireScoreSteppers(
       ed,
       "grupos",
-      (partial) => {
+      (partial, triggerEl) => {
         const mid = ed.dataset.quinielaMid;
         if (!mid || !partial[mid]) return;
         const offNow = loadOfficialResults();
@@ -7819,7 +7903,7 @@ function bindPartidosAdminHandlers(scope, session) {
         if (termBtn) {
           termBtn.disabled = partial[mid].home === "" || partial[mid].away === "";
         }
-        patchQuinielaMatchPredRows(partidosWrap, mid);
+        patchQuinielaMatchPredRows(partidosWrap, mid, triggerEl);
         const sess = loadSession();
         renderFloatingRanking(sess);
         redrawMatchRanking();
@@ -8019,7 +8103,7 @@ function bindPartidosAdminHandlers(scope, session) {
  */
 function wireQuinielaPredictionHandlersInScope(scope, session) {
   scope.querySelectorAll(".quiniela-pred-edit-row").forEach((row) => {
-    wireScoreSteppers(row, "grupos", (partial) => {
+    wireScoreSteppers(row, "grupos", (partial, triggerEl) => {
       const mid = row.dataset.quinielaSelfMid;
       const targetParticipantId = row.dataset.predPid || session.participantId;
       if (!mid || !partial[mid] || !targetParticipantId) return;
@@ -8028,7 +8112,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       savePredictions(targetParticipantId, {
         groupScores: { [mid]: { home: partial[mid].home, away: partial[mid].away } },
       });
-      refreshAfterParticipantPredictionScores(loadSession(), mid);
+      refreshAfterParticipantPredictionScores(loadSession(), mid, triggerEl);
     });
   });
 
@@ -8081,7 +8165,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
   });
 
   scope.querySelectorAll(".partidos-ko-pred-edit-row").forEach((row) => {
-    wireScoreSteppers(row, "knockout", (partial) => {
+    wireScoreSteppers(row, "knockout", (partial, triggerEl) => {
       const kid = row.dataset.partidosKoSelfKid;
       const targetParticipantId = row.dataset.predPid || session.participantId;
       if (!kid || !partial[kid] || !targetParticipantId) return;
@@ -8106,7 +8190,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
           [kid]: merged,
         },
       });
-      refreshAfterParticipantPredictionScores(loadSession(), kid);
+      refreshAfterParticipantPredictionScores(loadSession(), kid, triggerEl);
     });
   });
 
@@ -8355,6 +8439,31 @@ function computeMatchRankingRows(scope, groupId, sessionParticipantId) {
       : null;
   }
 
+  /** @type {Record<string, Set<string>>} */
+  const groupClosestByMatch = {};
+  for (const m of selectedGroupMatches) {
+    const off = official.groupScores[m.id] ?? { home: "", away: "" };
+    const stage = official.groupMatchState?.[m.id] ?? "ready";
+    const officialConfirmed = stage === "finished" && official.groupScoresConfirmed?.[m.id] === true;
+    const bothFilled = off.home !== "" && off.away !== "";
+    const officialCompleteForScoring = bothFilled && (stage === "started" || officialConfirmed);
+    groupClosestByMatch[m.id] = officialCompleteForScoring
+      ? getClosestScoreBonusIdsForMatch(m.id, off, false)
+      : new Set();
+  }
+
+  /** @type {Record<string, Set<string>>} */
+  const koClosestByMatch = {};
+  for (const m of selectedKoMatches) {
+    const off = official.knockoutScores?.[m.id] ?? { home: "", away: "" };
+    const officialConfirmed = official.knockoutScoresConfirmed?.[m.id] === true;
+    const bothFilled = off.home !== "" && off.away !== "";
+    const officialCompleteForScoring = bothFilled && officialConfirmed;
+    koClosestByMatch[m.id] = officialCompleteForScoring
+      ? getClosestScoreBonusIdsForMatch(m.id, off, true)
+      : new Set();
+  }
+
   const participantsForRanking = isArenaMode()
     ? getParticipantsForListDisplay(sessionParticipantId)
     : getParticipantsForDisplay();
@@ -8377,13 +8486,22 @@ function computeMatchRankingRows(scope, groupId, sessionParticipantId) {
       const pred = pStore.groupScores[m.id] ?? { home: "", away: "" };
       const scoring = getMatchScoringForQuiniela(m);
       const improbableSign = groupImprobableByMatch[m.id] ?? null;
-      const pts = computeGroupMatchPoints(off, pred, improbableSign, scoring);
-      const breakdown = computeGroupMatchPointsBreakdown(off, pred, improbableSign, scoring);
+      const closestEligible = groupClosestByMatch[m.id]?.has(p.id) ?? false;
+      const pts = computeGroupMatchPoints(off, pred, improbableSign, scoring, false, closestEligible);
+      const breakdown = computeGroupMatchPointsBreakdown(
+        off,
+        pred,
+        improbableSign,
+        scoring,
+        false,
+        closestEligible,
+      );
       if (pts != null) totalPoints += pts;
       if (breakdown?.exactTier === "perfecto") perfectCount += 1;
       else if (breakdown?.exactTier === "excelente") excelenteCount += 1;
       else if (breakdown?.exactTier === "bien") bienCount += 1;
       if (breakdown?.improbablePts && breakdown.improbablePts > 0) bonusCount += 1;
+      if (breakdown?.closestPts && breakdown.closestPts > 0) bonusCount += 1;
     }
 
     for (const m of selectedKoMatches) {
@@ -8395,15 +8513,24 @@ function computeMatchRankingRows(scope, groupId, sessionParticipantId) {
       if (pStore.knockoutScoresConfirmed?.[m.id] !== true) continue;
       const pred = pStore.knockoutScores?.[m.id] ?? { home: "", away: "" };
       const scoring = getMatchScoringForQuiniela(m);
-      const improbableSign = koImprobableByMatch[m.id] ?? null;
       const koPenPh = knockoutRoundRequiresPenaltyPickOnDraw(m.roundId);
-      const pts = computeGroupMatchPoints(off, pred, improbableSign, scoring, koPenPh);
-      const breakdown = computeGroupMatchPointsBreakdown(off, pred, improbableSign, scoring, koPenPh);
+      const improbableSign = koImprobableByMatch[m.id] ?? null;
+      const closestEligible = koClosestByMatch[m.id]?.has(p.id) ?? false;
+      const pts = computeGroupMatchPoints(off, pred, improbableSign, scoring, koPenPh, closestEligible);
+      const breakdown = computeGroupMatchPointsBreakdown(
+        off,
+        pred,
+        improbableSign,
+        scoring,
+        koPenPh,
+        closestEligible,
+      );
       if (pts != null) totalPoints += pts;
       if (breakdown?.exactTier === "perfecto") perfectCount += 1;
       else if (breakdown?.exactTier === "excelente") excelenteCount += 1;
       else if (breakdown?.exactTier === "bien") bienCount += 1;
       if (breakdown?.improbablePts && breakdown.improbablePts > 0) bonusCount += 1;
+      if (breakdown?.closestPts && breakdown.closestPts > 0) bonusCount += 1;
     }
 
     return { participant: p, bienCount, excelenteCount, perfectCount, bonusCount, totalPoints };
@@ -8589,12 +8716,20 @@ function maxGroupMatchPtsAmongParticipants(m, official) {
   if (!officialComplete) return 0;
   const improbableSign = getImprobableOutcomeSignForMatch(m.id, off);
   const scoring = getMatchScoringForQuiniela(m);
+  const closestIds = getClosestScoreBonusIdsForMatch(m.id, off, false);
   let max = 0;
   for (const p of getParticipantsForDisplay()) {
     const store = loadPredictions(p.id);
     if (store.groupScoresConfirmed?.[m.id] !== true) continue;
     const pred = store.groupScores[m.id] ?? { home: "", away: "" };
-    const pts = computeGroupMatchPoints(off, pred, improbableSign, scoring);
+    const pts = computeGroupMatchPoints(
+      off,
+      pred,
+      improbableSign,
+      scoring,
+      false,
+      closestIds.has(p.id),
+    );
     if (pts != null && pts > max) max = pts;
   }
   return max;
@@ -8609,12 +8744,20 @@ function maxKoMatchPtsAmongParticipants(m, official) {
   const improbableSign = getImprobableOutcomeSignForKoMatch(m.id, off);
   const scoring = getMatchScoringForQuiniela(m);
   const koPenPh = knockoutRoundRequiresPenaltyPickOnDraw(m.roundId);
+  const closestIds = getClosestScoreBonusIdsForMatch(m.id, off, true);
   let max = 0;
   for (const p of getParticipantsForDisplay()) {
     const store = loadPredictions(p.id);
     if (store.knockoutScoresConfirmed?.[m.id] !== true) continue;
     const pred = store.knockoutScores?.[m.id] ?? { home: "", away: "" };
-    const pts = computeGroupMatchPoints(off, pred, improbableSign, scoring, koPenPh);
+    const pts = computeGroupMatchPoints(
+      off,
+      pred,
+      improbableSign,
+      scoring,
+      koPenPh,
+      closestIds.has(p.id),
+    );
     if (pts != null && pts > max) max = pts;
   }
   return max;
@@ -8678,13 +8821,16 @@ function buildMatchHistory(participantId) {
       const officialComplete = bothFilled && (stage === "started" || officialConfirmed);
       const improbableSign = officialComplete ? getImprobableOutcomeSignForMatch(m.id, off) : null;
       const scoring = getMatchScoringForQuiniela(m);
+      const closestEligible = officialComplete
+        ? getClosestScoreBonusIdsForMatch(m.id, off, false).has(participantId)
+        : false;
       const pts =
         officialComplete && predConfirmed
-          ? computeGroupMatchPoints(off, pred, improbableSign, scoring)
+          ? computeGroupMatchPoints(off, pred, improbableSign, scoring, false, closestEligible)
           : null;
       const breakdown =
         officialComplete && predConfirmed
-          ? computeGroupMatchPointsBreakdown(off, pred, improbableSign, scoring)
+          ? computeGroupMatchPointsBreakdown(off, pred, improbableSign, scoring, false, closestEligible)
           : null;
       if (pts != null) total += pts;
       if (officialComplete && predConfirmed) totalPossible += scoring.maxPerMatch;
@@ -8716,13 +8862,23 @@ function buildMatchHistory(participantId) {
         : null;
       const scoring = getMatchScoringForQuiniela(m);
       const koPenPh = knockoutRoundRequiresPenaltyPickOnDraw(m.roundId);
+      const closestEligible = officialComplete
+        ? getClosestScoreBonusIdsForMatch(m.id, off, true).has(participantId)
+        : false;
       const pts =
         officialComplete && predConfirmed
-          ? computeGroupMatchPoints(off, pred, improbableSign, scoring, koPenPh)
+          ? computeGroupMatchPoints(off, pred, improbableSign, scoring, koPenPh, closestEligible)
           : null;
       const breakdown =
         officialComplete && predConfirmed
-          ? computeGroupMatchPointsBreakdown(off, pred, improbableSign, scoring, koPenPh)
+          ? computeGroupMatchPointsBreakdown(
+              off,
+              pred,
+              improbableSign,
+              scoring,
+              koPenPh,
+              closestEligible,
+            )
           : null;
       if (pts != null) total += pts;
       if (officialComplete && predConfirmed) {
@@ -9251,13 +9407,12 @@ function restoreOpenPartidosAccordions(wrap, ids) {
  * Si el foco está en Partidos (p. ej. stepper del 2.º partido abierto), tras `innerHTML` el navegador
  * suele enfocar el primer acordeón y subir el scroll. Guardamos tarjeta + selector para restaurar.
  * Los botones ± dejan el foco en `.score-stepper__btn`, no en el input: resolvemos al input del mismo stepper.
+ * @param {HTMLElement | null | undefined} el
  * @param {HTMLElement | null} wrap
  * @returns {{ articleMid: string, focusSelector: string | null } | null}
  */
-function capturePartidosInteractionAnchor(wrap) {
-  if (!wrap) return null;
-  let el = document.activeElement;
-  if (!(el instanceof HTMLElement) || !wrap.contains(el)) return null;
+function capturePartidosInteractionAnchorFromElement(el, wrap) {
+  if (!wrap || !(el instanceof HTMLElement) || !wrap.contains(el)) return null;
   if (el.matches(".score-stepper__btn")) {
     const stepper = el.closest(".score-stepper");
     const inp = stepper?.querySelector(".score-stepper__input");
@@ -9331,6 +9486,13 @@ function capturePartidosInteractionAnchor(wrap) {
   return { articleMid, focusSelector: `${scope}.score-stepper__input${tail}` };
 }
 
+/** @param {HTMLElement | null} wrap */
+function capturePartidosInteractionAnchor(wrap) {
+  const el = document.activeElement;
+  if (!(el instanceof HTMLElement)) return null;
+  return capturePartidosInteractionAnchorFromElement(el, wrap);
+}
+
 /**
  * @param {HTMLElement | null} wrap
  * @param {{ articleMid: string, focusSelector: string | null } | null} anchor
@@ -9357,13 +9519,6 @@ function restorePartidosInteractionAnchor(wrap, anchor, viewportLock) {
         focusTarget.focus({ preventScroll: true });
       } catch {
         focusTarget.focus();
-      }
-      if (focusTarget instanceof HTMLInputElement && typeof focusTarget.select === "function") {
-        try {
-          focusTarget.select();
-        } catch {
-          /* */
-        }
       }
     }
     alignViewport();

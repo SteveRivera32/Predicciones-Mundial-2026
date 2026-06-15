@@ -464,6 +464,15 @@
                 Para entender los resultados improbables referirse a las reglas
               </button>
             </p>
+            <p class="generales-points-hint">
+              Por estar más cerca del marcador (sin contar perfectos)
+              <span class="group-preds-pt-badge group-preds-pt-badge--silver">+1</span>
+            </p>
+            <p class="generales-points-hint muted grupos-order-rules-wrap">
+              <button type="button" class="grupos-order-rules-link" data-partidos-goto-rules-cercania>
+                Para entender el bono «más cerca» referirse a las reglas
+              </button>
+            </p>
           </section>
         </div>
         <button type="button" id="partidos-points-help-close" class="btn btn-sm btn-primary">Cerrar</button>
@@ -831,6 +840,7 @@
               <a href="#reglas-grupos">Orden de grupos</a>
               <a href="#reglas-marcadores">Partidos</a>
               <a href="#reglas-improbable">Bono improbable</a>
+              <a href="#reglas-cercania">Bono más cerca</a>
             </div>
           </nav>
 
@@ -1288,6 +1298,107 @@
                 En Arena, con <strong>1&nbsp;000</strong> local, <strong>750</strong> visitante y <strong>200</strong>
                 empate (1&nbsp;950 votos), el tope es 25&nbsp;% = <strong>488</strong>: si el oficial es empate, quien
                 acertó empate puede llevarse el bono
+              </li>
+            </ul>
+          </section>
+
+          <section id="reglas-cercania" class="rule-block rule-block--tone-silver">
+            <header class="rule-block__header">
+              <h2 class="rule-block__title rule-block__title--silver">Bono «más cerca del marcador»</h2>
+              <span class="rule-badge rule-badge--soft"
+                ><span class="group-preds-pt-badge group-preds-pt-badge--silver">+1</span> por partido</span
+              >
+            </header>
+            <p class="rule-lead">
+              Solo en <strong>partidos</strong>. Si no acertaste el marcador exacto pero tu predicción fue la
+              <strong>más cercana</strong> al resultado oficial, sumas
+              <span class="group-preds-pt-badge group-preds-pt-badge--silver">+1</span>.
+            </p>
+            <p class="rule-foot muted">
+              La cercanía es <strong>|Δ goles local| + |Δ goles visitante|</strong> (diferencia absoluta en cada columna).
+              Quien acertó el marcador perfecto <span class="rules-bono-no">NO</span> entra en este bono. La menor
+              diferencia del partido debe ser <strong>1 o 2</strong>; si nadie está tan cerca,
+              <span class="rules-bono-no">NO</span> hay bono.
+            </p>
+
+            <p class="rules-bono-sec-head">
+              <span class="rules-bono-sec-head__en">EN</span>
+              <button
+                type="button"
+                class="rules-uso-label rules-uso-label--generales rules-uso-label--nav"
+                data-pm26-tab="generales"
+                aria-label="Ir a Predicciones generales"
+              >
+                PREDICCIONES GENERALES
+              </button>
+            </p>
+            <ul class="rule-list rule-list--bonus">
+              <li><span class="rules-bono-no">NO</span> aplica</li>
+            </ul>
+
+            <p class="rules-bono-sec-head">
+              <span class="rules-bono-sec-head__en">EN</span>
+              <button
+                type="button"
+                class="rules-uso-label rules-uso-label--grupos rules-uso-label--nav"
+                data-pm26-tab="grupos"
+                aria-label="Ir a Orden de grupos"
+              >
+                ORDEN DE GRUPOS
+              </button>
+            </p>
+            <ul class="rule-list rule-list--bonus">
+              <li><span class="rules-bono-no">NO</span> aplica</li>
+            </ul>
+
+            <p class="rules-bono-sec-head">
+              <span class="rules-bono-sec-head__en">EN</span>
+              <button
+                type="button"
+                class="rules-uso-label rules-uso-label--partidos rules-uso-label--nav"
+                data-pm26-tab="partidos"
+                aria-label="Ir a Partidos"
+              >
+                PARTIDOS
+              </button>
+            </p>
+            <ul class="rule-list rule-list--bonus">
+              <li>Aplica en fase de grupos y eliminatorias (solo goles del 90′, sin penales en la fórmula)</li>
+              <li>
+                Si varias personas empatan la <strong>menor</strong> diferencia,
+                <span class="rules-bono-todos">TODAS</span> pueden llevar el bono
+              </li>
+            </ul>
+
+            <h3 class="rules-inline-sec-title rules-bono-adicionales-title">REGLAS ADICIONALES</h3>
+            <ul class="rule-list rule-list--bonus">
+              <li>
+                La <strong>menor</strong> diferencia del partido (entre quienes no fueron perfectos) debe ser
+                <strong>1 o 2</strong>. Si la mínima es 3 o más,
+                <span class="rules-bono-no">NO</span> hay bono para nadie
+              </li>
+              <li>
+                Como el bono improbable: solo aplica si quienes empatan la menor diferencia son
+                <strong>minoría</strong> en ese partido (como máximo el <strong>25&nbsp;%</strong> de las predicciones
+                confirmadas; en 8 personas, ≤&nbsp;2)
+              </li>
+              <li class="rules-subline">
+                Con 8 personas: si solo hay 2 con diferencia <strong>3</strong>, nadie aplica. Si hay 2 con diferencia
+                <strong>2</strong>, ambos aplican. Si hay 1 con diferencia <strong>2</strong> y 3 con diferencia
+                <strong>3</strong>, solo quien tiene diferencia <strong>2</strong> aplica
+              </li>
+              <li class="rules-subline">
+                Resultado <strong>7–0</strong>: predicciones <strong>7–0</strong> son perfectas y quedan fuera; entre el
+                resto gana quien tenga menor |Δ local|+|Δ visitante| (p. ej. <strong>6–0</strong> con diferencia 1 frente a
+                <strong>2–0</strong> con diferencia 5)
+              </li>
+              <li class="rules-subline">
+                Si muchos empatan la menor diferencia y superan el tope del 25&nbsp;%,
+                <span class="rules-bono-no">NO</span> hay bono para nadie en ese partido
+              </li>
+              <li class="rules-subline">
+                En Arena, con <strong>1&nbsp;000</strong> predicciones confirmadas el tope es 25&nbsp;% =
+                <strong>250</strong>: solo si ≤&nbsp;250 personas comparten la menor diferencia puede haber bono
               </li>
             </ul>
           </section>

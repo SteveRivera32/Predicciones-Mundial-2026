@@ -109,9 +109,16 @@ export const MATCH_SCORING = {
 
 export const IMPROBABLE_BONUS = 1;
 
+/** +1 por estar más cerca del marcador (solo partidos; excluye perfectos; minoría en la menor diferencia). */
+export const CLOSEST_SCORE_BONUS = 1;
+
+/** La menor diferencia |Δ local|+|Δ visitante| debe ser ≤ este valor para que pueda haber bono. */
+export const CLOSEST_SCORE_MAX_DISTANCE = 2;
+
 /**
  * Tope de votos en la opción menos votada para que pueda haber bono improbable.
  * En 8 personas el tope era 2 → 2/8 = 25%. Misma proporción con cualquier tamaño.
+ * También aplica al bono «más cerca del marcador» (recuento en la menor diferencia).
  */
 export const IMPROBABLE_MINORITY_MAX_SHARE = 0.25;
 

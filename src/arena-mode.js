@@ -351,6 +351,14 @@ export function getArenaImprobableOutcomeSign(matchId, isKo = false) {
   return sign === "h" || sign === "d" || sign === "a" ? sign : null;
 }
 
+/** @param {string} matchId @param {boolean} [isKo] */
+export function getArenaClosestScoreBonusIds(matchId, isKo = false) {
+  const map = isKo ? arenaMatchVoteData?.knockoutClosest : arenaMatchVoteData?.groupClosest;
+  const ids = map?.[matchId];
+  if (!Array.isArray(ids)) return new Set();
+  return new Set(ids.filter((id) => typeof id === "string" && id));
+}
+
 /** @param {string} matchId */
 export function getArenaKnockoutPenaltyCounts(matchId) {
   return arenaMatchVoteData?.knockoutPenalties?.[matchId] ?? { home: 0, away: 0 };

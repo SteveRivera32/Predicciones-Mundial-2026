@@ -2490,6 +2490,12 @@ code {
   box-shadow: inset 4px 0 0 0 rgba(245, 158, 11, 0.75);
 }
 
+.rule-block--tone-silver {
+  border-color: rgba(186, 192, 210, 0.38);
+  background: linear-gradient(145deg, rgba(55, 60, 72, 0.28) 0%, var(--surface) 50%);
+  box-shadow: inset 4px 0 0 0 rgba(154, 158, 174, 0.82);
+}
+
 .rule-block--tone-amber {
   border-color: rgba(252, 211, 77, 0.28);
   background: linear-gradient(145deg, rgba(113, 63, 18, 0.22) 0%, var(--surface) 50%);
@@ -2578,6 +2584,20 @@ code {
     animation: none;
     --pm26-rainbow-h: 48deg;
   }
+}
+
+.prose-rules h2.rule-block__title--gold {
+  color: #eecf4a;
+  text-shadow:
+    0 0 10px rgba(251, 188, 4, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.65);
+}
+
+.prose-rules h2.rule-block__title--silver {
+  color: #c8cdd8;
+  text-shadow:
+    0 0 10px rgba(186, 192, 210, 0.38),
+    0 1px 2px rgba(0, 0, 0, 0.65);
 }
 
 .rules-inline-sec-title {
@@ -4759,6 +4779,20 @@ span.td-muted {
   box-shadow:
     0 1px 4px rgba(0, 0, 0, 0.32),
     inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.group-preds-pt-badge--silver {
+  border-color: rgba(40, 44, 58, 0.62);
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.38);
+}
+
+.group-preds-pt-badge--gold {
+  border-color: rgba(80, 55, 0, 0.55);
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
 /* Patrón duplicado en el gradiente + 400%: un paso 0→33.333% cierra el bucle diagonal. */
@@ -8186,6 +8220,18 @@ select.partidos-scope-filter.partidos-scope-filter--siguientes {
     0 0 3px rgba(0, 0, 0, 0.88),
     0 0 12px rgba(199, 146, 234, 0.35),
     0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+.quiniela-perfect-inline .quiniela-closest-label {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #c8cdd8;
+  text-shadow:
+    0 0 8px rgba(186, 192, 210, 0.42),
+    0 0 2px rgba(0, 0, 0, 0.88),
+    0 1px 2px rgba(0, 0, 0, 0.65);
 }
 
 /*

@@ -39,7 +39,7 @@ function prefersReducedMotion() {
  * @param {number} cw
  * @param {number} ch
  * @param {number} phase01
- * @param {"green"|"bonus"} variant
+ * @param {"green"|"bonus"|"silver"|"gold"} variant
  */
 function fillBadgeGradient(ctx, cw, ch, phase01, variant) {
   const { x0, y0, x1, y1 } = cssAngle120GradientEndpoints(cw, ch);
@@ -51,6 +51,20 @@ function fillBadgeGradient(ctx, cw, ch, phase01, variant) {
       const p = i / STOPS;
       const hDeg = (p * 360 + hueShift) % 360;
       grd.addColorStop(p, chroma.hsl(hDeg, 0.88, 0.56).css());
+    }
+  } else if (variant === "silver") {
+    for (let i = 0; i <= STOPS; i++) {
+      const p = i / STOPS;
+      const ang = 2 * Math.PI * phase01 + p * 2 * Math.PI;
+      const l = 0.58 + 0.14 * Math.sin(ang);
+      grd.addColorStop(p, chroma.hsl(220, 0.14, l).css());
+    }
+  } else if (variant === "gold") {
+    for (let i = 0; i <= STOPS; i++) {
+      const p = i / STOPS;
+      const ang = 2 * Math.PI * phase01 + p * 2 * Math.PI;
+      const l = 0.48 + 0.16 * Math.sin(ang);
+      grd.addColorStop(p, chroma.hsl(43, 0.78, l).css());
     }
   } else {
     for (let i = 0; i <= STOPS; i++) {
@@ -75,7 +89,9 @@ function drawBadgeFrame(canvas, phase01) {
   const host = canvas.closest(".group-preds-pt-badge");
   if (!host) return;
 
-  const variant = canvas.dataset.variant === "bonus" ? "bonus" : "green";
+  const raw = canvas.dataset.variant;
+  const variant =
+    raw === "bonus" ? "bonus" : raw === "silver" ? "silver" : raw === "gold" ? "gold" : "green";
   const dpr = window.devicePixelRatio || 1;
   const br = canvas.getBoundingClientRect();
   const w = Math.max(1, br.width);
@@ -123,13 +139,17 @@ export function hydrateGroupPtsBadges(root) {
     if (el.querySelector(".group-preds-pt-badge__canvas")) return;
 
     const title = el.getAttribute("title");
-    const bonus = el.classList.contains("group-preds-pt-badge--bonus");
     const txt = el.textContent.trim();
+    /** @type {"green"|"bonus"|"silver"|"gold"} */
+    let variant = "green";
+    if (el.classList.contains("group-preds-pt-badge--bonus")) variant = "bonus";
+    else if (el.classList.contains("group-preds-pt-badge--silver")) variant = "silver";
+    else if (el.classList.contains("group-preds-pt-badge--gold")) variant = "gold";
 
     el.replaceChildren();
     const cv = document.createElement("canvas");
     cv.className = "group-preds-pt-badge__canvas";
-    cv.dataset.variant = bonus ? "bonus" : "green";
+    cv.dataset.variant = variant;
     cv.setAttribute("aria-hidden", "true");
 
     const sp = document.createElement("span");
