@@ -52,13 +52,13 @@ function allFilledOfficialKnockoutScores(official) {
  * @returns {{ home: string|number, away: string|number } | null}
  */
 function draftToConfirmedGroupScore(draft, opts = {}) {
+  if (!opts.allowPartialDraft) return null;
   const home = draft?.home;
   const away = draft?.away;
   const homeFilled = home !== "" && home != null;
   const awayFilled = away !== "" && away != null;
   if (!homeFilled && !awayFilled) return null;
   if (homeFilled && awayFilled) return { home, away };
-  if (!opts.allowPartialDraft) return null;
   return {
     home: homeFilled ? home : 0,
     away: awayFilled ? away : 0,
@@ -141,9 +141,8 @@ export function applyKickoffAutoStarts() {
       groupMatchState[m.id] = "started";
       groupScores[m.id] = { home: 0, away: 0 };
       changed = true;
+      if (confirmPendingPredictionsForGroupMatch(m.id, { allowPartialDraft: true })) changed = true;
     }
-
-    if (confirmPendingPredictionsForGroupMatch(m.id, { allowPartialDraft: justStartedGroup })) changed = true;
   }
 
   const labelO = allFilledOfficialKnockoutScores(official);
@@ -160,9 +159,8 @@ export function applyKickoffAutoStarts() {
       knockoutMatchState[m.id] = "started";
       knockoutScores[m.id] = { home: 0, away: 0, penaltyWinner: "" };
       changed = true;
+      if (confirmPendingPredictionsForKoMatch(m.id, { allowPartialDraft: true })) changed = true;
     }
-
-    if (confirmPendingPredictionsForKoMatch(m.id, { allowPartialDraft: justStartedKo })) changed = true;
   }
 
   if (Object.keys(groupMatchState).length || Object.keys(knockoutMatchState).length) {

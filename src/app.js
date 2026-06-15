@@ -74,7 +74,7 @@ import {
   ARENA_PRELAUNCH_EXCLUDED_GROUP_MATCH_IDS,
 } from "./live-ranking.js";
 import { applyRemoteState } from "./sync.js";
-import { pushResetQuiniela, fetchBackupsList, restoreServerBackup } from "./sync-push.js";
+import { pushResetQuiniela, fetchBackupsList, restoreServerBackup, pushPredictions } from "./sync-push.js";
 import { downloadBackupFile, restoreFromBackupFile } from "./backup.js";
 import { normalizeForSearch } from "./search-normalize.js";
 import {
@@ -754,27 +754,25 @@ function isAdminDeleteMatchPrediction(session, predictionsLocked, predCommitted,
  * @param {string} matchId
  * @param {boolean} isKo
  */
-function clearParticipantMatchPrediction(participantId, matchId, isKo) {
+async function clearParticipantMatchPrediction(participantId, matchId, isKo) {
   const latest = loadPredictions(participantId);
   if (isKo) {
-    const nextScores = { ...latest.knockoutScores };
-    delete nextScores[matchId];
     const { [matchId]: _r, ...restConfirmed } = latest.knockoutScoresConfirmed ?? {};
-    savePredictions(participantId, {
-      knockoutScores: nextScores,
+    const next = savePredictions(participantId, {
+      knockoutScores: { [matchId]: { home: "", away: "", penaltyWinner: "" } },
       knockoutScoresConfirmed: restConfirmed,
       replaceKnockoutScoresConfirmed: true,
     });
+    if (isRemoteSyncActive()) await pushPredictions(participantId, next);
     return;
   }
-  const nextScores = { ...latest.groupScores };
-  delete nextScores[matchId];
   const { [matchId]: _r, ...restConfirmed } = latest.groupScoresConfirmed ?? {};
-  savePredictions(participantId, {
-    groupScores: nextScores,
+  const next = savePredictions(participantId, {
+    groupScores: { [matchId]: { home: "", away: "" } },
     groupScoresConfirmed: restConfirmed,
     replaceGroupScoresConfirmed: true,
   });
+  if (isRemoteSyncActive()) await pushPredictions(participantId, next);
 }
 
 /**
@@ -7694,7 +7692,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
   });
 
   scope.querySelectorAll(".quiniela-pred-delete-user").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const mid = btn.dataset.mid;
       const targetParticipantId = btn.dataset.pid;
       const pname = btn.dataset.pname || targetParticipantId;
@@ -7708,7 +7706,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const predCommitted = pStore.groupScoresConfirmed?.[mid] === true;
       if (!isAdminDeleteMatchPrediction(session, predictionsLocked, predCommitted, matchStage)) return;
       if (!confirm(`¿Borrar la predicción de ${pname} en este partido?`)) return;
-      clearParticipantMatchPrediction(targetParticipantId, mid, false);
+      await clearParticipantMatchPrediction(targetParticipantId, mid, false);
       const sess = loadSession();
       const wrap = $("#quiniela-wrap");
       if (wrap) replaceQuinielaMatchArticleAndRebind(wrap, mid, sess);
@@ -7717,7 +7715,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
   });
 
   scope.querySelectorAll(".partidos-ko-pred-delete-user").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const kid = btn.dataset.kid;
       const targetParticipantId = btn.dataset.pid;
       const pname = btn.dataset.pname || targetParticipantId;
@@ -7731,7 +7729,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const predCommitted = pStore.knockoutScoresConfirmed?.[kid] === true;
       if (!isAdminDeleteMatchPrediction(session, predictionsLocked, predCommitted, matchStage)) return;
       if (!confirm(`¿Borrar la predicción de ${pname} en este partido?`)) return;
-      clearParticipantMatchPrediction(targetParticipantId, kid, true);
+      await clearParticipantMatchPrediction(targetParticipantId, kid, true);
       const sess = loadSession();
       const wrap = $("#quiniela-wrap");
       if (wrap) replaceQuinielaMatchArticleAndRebind(wrap, kid, sess);
