@@ -1,4 +1,3 @@
-import "./styles/login.css";
 import { login, register, getDeviceBinding, deleteDeviceAccount } from "./api.js";
 import { redirectIfAuthenticated } from "./auth-client.js";
 import { getArenaDeviceId } from "./device-id.js";

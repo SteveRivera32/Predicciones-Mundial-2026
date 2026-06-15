@@ -1,4 +1,3 @@
-import "@shared/style.css";
 import { requireAuthOrRedirect, LOGIN_URL } from "./auth-client.js";
 import {
   logout,
