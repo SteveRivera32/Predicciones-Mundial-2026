@@ -48,24 +48,26 @@ function allFilledOfficialKnockoutScores(official) {
  * Convierte borrador en marcador confirmable. Sin borrador → null (no cuenta).
  * Borrador parcial: conserva lo escrito y completa el otro lado con 0.
  * @param {{ home?: string|number|"", away?: string|number|"" } | undefined} draft
+ * @param {{ allowPartialDraft?: boolean }} [opts]
  * @returns {{ home: string|number, away: string|number } | null}
  */
-function draftToConfirmedGroupScore(draft) {
+function draftToConfirmedGroupScore(draft, opts = {}) {
   const home = draft?.home;
   const away = draft?.away;
   const homeFilled = home !== "" && home != null;
   const awayFilled = away !== "" && away != null;
   if (!homeFilled && !awayFilled) return null;
   if (homeFilled && awayFilled) return { home, away };
+  if (!opts.allowPartialDraft) return null;
   return {
     home: homeFilled ? home : 0,
     away: awayFilled ? away : 0,
   };
 }
 
-/** @param {{ home?: string|number|"", away?: string|number|"", penaltyWinner?: string } | undefined} draft */
-function draftToConfirmedKoScore(draft) {
-  const base = draftToConfirmedGroupScore(draft);
+/** @param {{ home?: string|number|"", away?: string|number|"", penaltyWinner?: string } | undefined} draft @param {{ allowPartialDraft?: boolean }} [opts] */
+function draftToConfirmedKoScore(draft, opts = {}) {
+  const base = draftToConfirmedGroupScore(draft, opts);
   if (!base) return null;
   const pw = draft?.penaltyWinner;
   return {
@@ -74,13 +76,13 @@ function draftToConfirmedKoScore(draft) {
   };
 }
 
-/** @param {string} matchId @returns {boolean} */
-export function confirmPendingPredictionsForGroupMatch(matchId) {
+/** @param {string} matchId @param {{ allowPartialDraft?: boolean }} [opts] @returns {boolean} */
+export function confirmPendingPredictionsForGroupMatch(matchId, opts = {}) {
   let changed = false;
   for (const p of getParticipantsForDisplay()) {
     const store = loadPredictions(p.id);
     if (store.groupScoresConfirmed?.[matchId] === true) continue;
-    const confirmed = draftToConfirmedGroupScore(store.groupScores?.[matchId]);
+    const confirmed = draftToConfirmedGroupScore(store.groupScores?.[matchId], opts);
     if (!confirmed) continue;
     savePredictions(p.id, {
       groupScores: { [matchId]: confirmed },
@@ -91,13 +93,13 @@ export function confirmPendingPredictionsForGroupMatch(matchId) {
   return changed;
 }
 
-/** @param {string} matchId @returns {boolean} */
-export function confirmPendingPredictionsForKoMatch(matchId) {
+/** @param {string} matchId @param {{ allowPartialDraft?: boolean }} [opts] @returns {boolean} */
+export function confirmPendingPredictionsForKoMatch(matchId, opts = {}) {
   let changed = false;
   for (const p of getParticipantsForDisplay()) {
     const store = loadPredictions(p.id);
     if (store.knockoutScoresConfirmed?.[matchId] === true) continue;
-    const confirmed = draftToConfirmedKoScore(store.knockoutScores?.[matchId]);
+    const confirmed = draftToConfirmedKoScore(store.knockoutScores?.[matchId], opts);
     if (!confirmed) continue;
     savePredictions(p.id, {
       knockoutScores: {
@@ -134,13 +136,14 @@ export function applyKickoffAutoStarts() {
     if (!isLockedAtKickoff(m.kickoff)) continue;
     if (!isQuinielaTeamSlotDecided(m.home) || !isQuinielaTeamSlotDecided(m.away)) continue;
 
-    if ((official.groupMatchState?.[m.id] ?? "ready") === "ready") {
+    const justStartedGroup = (official.groupMatchState?.[m.id] ?? "ready") === "ready";
+    if (justStartedGroup) {
       groupMatchState[m.id] = "started";
       groupScores[m.id] = { home: 0, away: 0 };
       changed = true;
     }
 
-    if (confirmPendingPredictionsForGroupMatch(m.id)) changed = true;
+    if (confirmPendingPredictionsForGroupMatch(m.id, { allowPartialDraft: justStartedGroup })) changed = true;
   }
 
   const labelO = allFilledOfficialKnockoutScores(official);
@@ -152,13 +155,14 @@ export function applyKickoffAutoStarts() {
     const oa = resolveKnockoutSlotLabel(ri, mi, "away", labelO);
     if (!isQuinielaTeamSlotDecided(oh) || !isQuinielaTeamSlotDecided(oa)) continue;
 
-    if ((official.knockoutMatchState?.[m.id] ?? "ready") === "ready") {
+    const justStartedKo = (official.knockoutMatchState?.[m.id] ?? "ready") === "ready";
+    if (justStartedKo) {
       knockoutMatchState[m.id] = "started";
       knockoutScores[m.id] = { home: 0, away: 0, penaltyWinner: "" };
       changed = true;
     }
 
-    if (confirmPendingPredictionsForKoMatch(m.id)) changed = true;
+    if (confirmPendingPredictionsForKoMatch(m.id, { allowPartialDraft: justStartedKo })) changed = true;
   }
 
   if (Object.keys(groupMatchState).length || Object.keys(knockoutMatchState).length) {

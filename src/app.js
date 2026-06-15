@@ -734,6 +734,50 @@ function isAdminLateMatchPredictionEdit(session, predictionsLocked, predCommitte
 }
 
 /**
+ * Super-admin: borrar predicción confirmada con el partido en juego o terminado.
+ * @param {{ participantId: string }} session
+ * @param {boolean} predictionsLocked
+ * @param {boolean} predCommitted
+ * @param {string} matchStage
+ */
+function isAdminDeleteMatchPrediction(session, predictionsLocked, predCommitted, matchStage) {
+  return (
+    canAdminEditLateMatchPredictions(session.participantId) &&
+    predictionsLocked &&
+    predCommitted &&
+    matchStage !== "ready"
+  );
+}
+
+/**
+ * @param {string} participantId
+ * @param {string} matchId
+ * @param {boolean} isKo
+ */
+function clearParticipantMatchPrediction(participantId, matchId, isKo) {
+  const latest = loadPredictions(participantId);
+  if (isKo) {
+    const nextScores = { ...latest.knockoutScores };
+    delete nextScores[matchId];
+    const { [matchId]: _r, ...restConfirmed } = latest.knockoutScoresConfirmed ?? {};
+    savePredictions(participantId, {
+      knockoutScores: nextScores,
+      knockoutScoresConfirmed: restConfirmed,
+      replaceKnockoutScoresConfirmed: true,
+    });
+    return;
+  }
+  const nextScores = { ...latest.groupScores };
+  delete nextScores[matchId];
+  const { [matchId]: _r, ...restConfirmed } = latest.groupScoresConfirmed ?? {};
+  savePredictions(participantId, {
+    groupScores: nextScores,
+    groupScoresConfirmed: restConfirmed,
+    replaceGroupScoresConfirmed: true,
+  });
+}
+
+/**
  * @param {{ participantId: string }} session
  * @param {ReturnType<typeof loadOfficialResults>} official
  * @param {{ id: string }} m
@@ -6418,6 +6462,7 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
 
       const isSelf = d.p.id === session.participantId;
       const adminLateEdit = isAdminLateMatchPredictionEdit(session, predictionsLocked, d.predCommitted);
+      const adminDeletePred = isAdminDeleteMatchPrediction(session, predictionsLocked, d.predCommitted, matchStage);
       const rowEditableByActor =
         (isSelf || canEditAll) &&
         !isArenaPrivadasMirrorUser() &&
@@ -6513,11 +6558,17 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
           const confirmBtn = `<button type="button" class="btn btn-primary btn-sm quiniela-pred-confirm-user" data-mid="${escapeHtml(m.id)}" data-pid="${escapeHtml(d.p.id)}" ${bothPred ? "" : "disabled"}>Confirmar</button>`;
           lastColTd = `<td class="quiniela-num quiniela-last-col quiniela-pred-actions">${confirmBtn}</td>`;
         } else {
-        const ptsTdCls = quinielaPtsTdClassList(d, {
-          officialCompleteForScoring,
-          maxPtsThisMatch,
-        });
-        lastColTd = `<td class="${ptsTdCls} quiniela-last-col">${pcCell}</td>`;
+          const ptsTdCls = quinielaPtsTdClassList(d, {
+            officialCompleteForScoring,
+            maxPtsThisMatch,
+          });
+          const deleteBtn = adminDeletePred
+            ? `<button type="button" class="btn btn-sm quiniela-pred-delete-user" data-mid="${escapeHtml(m.id)}" data-pid="${escapeHtml(d.p.id)}" data-pname="${escapeHtml(d.p.name)}">Borrar</button>`
+            : "";
+          const actionsWrap = deleteBtn
+            ? `<div class="quiniela-pred-admin-actions">${deleteBtn}</div>`
+            : "";
+          lastColTd = `<td class="${ptsTdCls} quiniela-last-col"><div class="quiniela-last-col-stack">${pcCell}${actionsWrap}</div></td>`;
         }
       } else {
         let preplayInner = "";
@@ -6727,6 +6778,7 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
       const vm = d.virtualM;
       const isSelf = d.p.id === session.participantId;
       const adminLateEdit = isAdminLateMatchPredictionEdit(session, predictionsLocked, d.predCommitted);
+      const adminDeletePred = isAdminDeleteMatchPrediction(session, predictionsLocked, d.predCommitted, koStage);
       const rowEditableByActor =
         (isSelf || canEditAll) &&
         !isArenaPrivadasMirrorUser() &&
@@ -6852,11 +6904,17 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
           const confirmBtn = `<button type="button" class="btn btn-primary btn-sm partidos-ko-pred-confirm-user" data-kid="${escapeHtml(m.id)}" data-pid="${escapeHtml(d.p.id)}" ${bothPred ? "" : "disabled"}>Confirmar</button>`;
           lastColTd = `<td class="quiniela-num quiniela-last-col quiniela-pred-actions">${confirmBtn}</td>`;
         } else {
-        const ptsTdCls = quinielaPtsTdClassList(d, {
-          officialCompleteForScoring,
-          maxPtsThisMatch: maxPtsThisMatchKo,
-        });
-        lastColTd = `<td class="${ptsTdCls} quiniela-last-col">${pcCell}</td>`;
+          const ptsTdCls = quinielaPtsTdClassList(d, {
+            officialCompleteForScoring,
+            maxPtsThisMatch: maxPtsThisMatchKo,
+          });
+          const deleteBtn = adminDeletePred
+            ? `<button type="button" class="btn btn-sm partidos-ko-pred-delete-user" data-kid="${escapeHtml(m.id)}" data-pid="${escapeHtml(d.p.id)}" data-pname="${escapeHtml(d.p.name)}">Borrar</button>`
+            : "";
+          const actionsWrap = deleteBtn
+            ? `<div class="quiniela-pred-admin-actions">${deleteBtn}</div>`
+            : "";
+          lastColTd = `<td class="${ptsTdCls} quiniela-last-col"><div class="quiniela-last-col-stack">${pcCell}${actionsWrap}</div></td>`;
         }
       } else {
         let preplayInner = "";
@@ -7237,7 +7295,7 @@ function bindPartidosAdminHandlers(scope, session) {
         groupMatchState: { [mid]: "started" },
         groupScores: { [mid]: { home: 0, away: 0 } },
       });
-      confirmPendingPredictionsForGroupMatch(mid);
+      confirmPendingPredictionsForGroupMatch(mid, { allowPartialDraft: true });
       refreshAll(loadSession());
     });
   });
@@ -7422,7 +7480,7 @@ function bindPartidosAdminHandlers(scope, session) {
         knockoutMatchState: { [kid]: "started" },
         knockoutScores: { [kid]: { home: 0, away: 0, penaltyWinner: "" } },
       });
-      confirmPendingPredictionsForKoMatch(kid);
+      confirmPendingPredictionsForKoMatch(kid, { allowPartialDraft: true });
       refreshAll(loadSession());
     });
   });
@@ -7628,6 +7686,52 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
         knockoutScoresConfirmed: rest,
         replaceKnockoutScoresConfirmed: true,
       });
+      const sess = loadSession();
+      const wrap = $("#quiniela-wrap");
+      if (wrap) replaceQuinielaMatchArticleAndRebind(wrap, kid, sess);
+      refreshAll(sess, { skipPartidosRender: true });
+    });
+  });
+
+  scope.querySelectorAll(".quiniela-pred-delete-user").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mid = btn.dataset.mid;
+      const targetParticipantId = btn.dataset.pid;
+      const pname = btn.dataset.pname || targetParticipantId;
+      if (!mid || !targetParticipantId) return;
+      const gm = GROUP_MATCHES.find((x) => x.id === mid);
+      if (!gm) return;
+      const offNow = loadOfficialResults();
+      const matchStage = offNow.groupMatchState?.[mid] ?? "ready";
+      const predictionsLocked = isGroupMatchPredictionsLocked(offNow, gm);
+      const pStore = loadPredictions(targetParticipantId);
+      const predCommitted = pStore.groupScoresConfirmed?.[mid] === true;
+      if (!isAdminDeleteMatchPrediction(session, predictionsLocked, predCommitted, matchStage)) return;
+      if (!confirm(`¿Borrar la predicción de ${pname} en este partido?`)) return;
+      clearParticipantMatchPrediction(targetParticipantId, mid, false);
+      const sess = loadSession();
+      const wrap = $("#quiniela-wrap");
+      if (wrap) replaceQuinielaMatchArticleAndRebind(wrap, mid, sess);
+      refreshAll(sess, { skipPartidosRender: true });
+    });
+  });
+
+  scope.querySelectorAll(".partidos-ko-pred-delete-user").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const kid = btn.dataset.kid;
+      const targetParticipantId = btn.dataset.pid;
+      const pname = btn.dataset.pname || targetParticipantId;
+      if (!kid || !targetParticipantId) return;
+      const mKo = getKnockoutMatchesFlat().find((x) => x.id === kid);
+      if (!mKo) return;
+      const offNow = loadOfficialResults();
+      const matchStage = offNow.knockoutMatchState?.[kid] ?? "ready";
+      const predictionsLocked = isKoMatchPredictionsLocked(offNow, mKo);
+      const pStore = loadPredictions(targetParticipantId);
+      const predCommitted = pStore.knockoutScoresConfirmed?.[kid] === true;
+      if (!isAdminDeleteMatchPrediction(session, predictionsLocked, predCommitted, matchStage)) return;
+      if (!confirm(`¿Borrar la predicción de ${pname} en este partido?`)) return;
+      clearParticipantMatchPrediction(targetParticipantId, kid, true);
       const sess = loadSession();
       const wrap = $("#quiniela-wrap");
       if (wrap) replaceQuinielaMatchArticleAndRebind(wrap, kid, sess);
