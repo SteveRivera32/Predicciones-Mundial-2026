@@ -24,6 +24,7 @@ import {
   knockoutRoundRequiresPenaltyPickOnDraw,
 } from "./tournament.js";
 import { normalizePredictionsData } from "./predictions-store.js";
+import { sortByRankingTiebreak } from "./ranking-tiebreak.js";
 
 const MAX_BEST_THIRD_TEAMS = 8;
 
@@ -440,6 +441,7 @@ export function computeLiveParticipantRowsFromData(
     let outcome = 0;
     let zeroPointMatches = 0;
     let matchBonusCount = 0;
+    let matchClosestCount = 0;
     let countedMatches = 0;
     let groupOrderBienCount = 0;
     let groupOrderExcelenteCount = 0;
@@ -535,7 +537,7 @@ export function computeLiveParticipantRowsFromData(
       else if (breakdown?.exactTier === "excelente") matchExcelenteCount += 1;
       else if (breakdown?.exactTier === "bien") matchBienCount += 1;
       if ((breakdown?.improbablePts ?? 0) > 0) matchBonusCount += 1;
-      if ((breakdown?.closestPts ?? 0) > 0) matchBonusCount += 1;
+      if ((breakdown?.closestPts ?? 0) > 0) matchClosestCount += 1;
       const oh = parseInt(String(off.home), 10);
       const oa = parseInt(String(off.away), 10);
       const ph = parseInt(String(pred.home), 10);
@@ -576,7 +578,7 @@ export function computeLiveParticipantRowsFromData(
       else if (breakdown?.exactTier === "excelente") matchExcelenteCount += 1;
       else if (breakdown?.exactTier === "bien") matchBienCount += 1;
       if ((breakdown?.improbablePts ?? 0) > 0) matchBonusCount += 1;
-      if ((breakdown?.closestPts ?? 0) > 0) matchBonusCount += 1;
+      if ((breakdown?.closestPts ?? 0) > 0) matchClosestCount += 1;
       const oh = parseInt(String(off.home), 10);
       const oa = parseInt(String(off.away), 10);
       const ph = parseInt(String(pred.home), 10);
@@ -589,6 +591,7 @@ export function computeLiveParticipantRowsFromData(
     }
 
     const totalBonus = matchBonusCount + groupOrderBonusCount;
+    const totalClosest = matchClosestCount;
     const totalPerfect = matchPerfectCount + groupOrderPerfectCount + generalPerfectCount;
     const totalBien = matchBienCount + groupOrderBienCount + generalBienCount;
     const totalExcelente = matchExcelenteCount + groupOrderExcelenteCount + generalExcelenteCount;
@@ -602,12 +605,14 @@ export function computeLiveParticipantRowsFromData(
       self: p.id === currentParticipantId,
       zeroPointMatches,
       matchBonusCount,
+      matchClosestCount,
       countedMatches,
       avgPtsPerMatch,
       matchTopTieCount: mc.topTie,
       matchSoleTopCount: mc.soleTop,
       matchNoPredCount: mc.noPred,
       totalBonus,
+      totalClosest,
       totalPerfect,
       totalBien,
       totalExcelente,
@@ -632,13 +637,8 @@ export function computeArenaRankingsDisplay(
   viewerId,
   limit = DEFAULT_RANKINGS_LIMIT,
 ) {
-  const sorted = computeLiveParticipantRowsFromData(participants, predictionsMap, official, viewerId).sort(
-    (a, b) => {
-      if (b.pts !== a.pts) return b.pts - a.pts;
-      if (b.totalPerfect !== a.totalPerfect) return b.totalPerfect - a.totalPerfect;
-      if (b.totalBonus !== a.totalBonus) return b.totalBonus - a.totalBonus;
-      return a.p.name.localeCompare(b.p.name, "es", { sensitivity: "base" });
-    },
+  const sorted = sortByRankingTiebreak(
+    computeLiveParticipantRowsFromData(participants, predictionsMap, official, viewerId),
   );
 
   const lim = Math.max(1, limit);
@@ -663,6 +663,7 @@ export function computeArenaRankingsDisplay(
         totalExcelente: r.totalExcelente,
         totalPerfect: r.totalPerfect,
         totalBonus: r.totalBonus,
+        totalClosest: r.totalClosest,
         self: r.p.id === viewerId,
       };
     }),

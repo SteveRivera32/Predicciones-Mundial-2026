@@ -10,6 +10,7 @@ import {
   computeLiveParticipantRowsFromData,
   ARENA_RANKINGS_DISPLAY_LIMIT,
 } from "../../src/live-ranking.js";
+import { sortByRankingTiebreak } from "../../src/ranking-tiebreak.js";
 
 const RANKINGS_LIMIT = Number(process.env.ARENA_RANKINGS_LIMIT || ARENA_RANKINGS_DISPLAY_LIMIT);
 
@@ -30,19 +31,14 @@ function getFullSortedRankings() {
   }
   const { data: official } = getOfficialResults();
   const normalizedOfficial = normalizeOfficialResultsData(official);
-  return computeLiveParticipantRowsFromData(
-    participants,
-    predictionsMap,
-    normalizedOfficial,
-    "",
-    { arenaScoring: true },
-  ).sort(
-    (a, b) => {
-      if (b.pts !== a.pts) return b.pts - a.pts;
-      if (b.totalPerfect !== a.totalPerfect) return b.totalPerfect - a.totalPerfect;
-      if (b.totalBonus !== a.totalBonus) return b.totalBonus - a.totalBonus;
-      return a.p.name.localeCompare(b.p.name, "es", { sensitivity: "base" });
-    },
+  return sortByRankingTiebreak(
+    computeLiveParticipantRowsFromData(
+      participants,
+      predictionsMap,
+      normalizedOfficial,
+      "",
+      { arenaScoring: true },
+    ),
   );
 }
 
@@ -95,6 +91,7 @@ export function getCachedArenaRankings(viewerUsername, cacheMs) {
           totalExcelente: r.totalExcelente,
           totalPerfect: r.totalPerfect,
           totalBonus: r.totalBonus,
+          totalClosest: r.totalClosest,
           self: r.p.id === viewer,
         };
       }),

@@ -77,6 +77,7 @@ import {
   computeLiveParticipantRowsFromData,
   ARENA_PRELAUNCH_EXCLUDED_GROUP_MATCH_IDS,
 } from "./live-ranking.js";
+import { sortByRankingTiebreak, compareRankingRows } from "./ranking-tiebreak.js";
 import { applyRemoteState } from "./sync.js";
 import { pushResetQuiniela, fetchBackupsList, restoreServerBackup, pushPredictions } from "./sync-push.js";
 import { downloadBackupFile, restoreFromBackupFile } from "./backup.js";
@@ -788,6 +789,7 @@ function mapArenaServerRankingRows(currentParticipantId) {
     totalExcelente: Number(r.totalExcelente) || 0,
     totalPerfect: Number(r.totalPerfect) || 0,
     totalBonus: Number(r.totalBonus) || 0,
+    totalClosest: Number(r.totalClosest) || 0,
     self: Boolean(r.self) || String(r.username) === currentParticipantId,
     displayRank: Number(r.rank) || 0,
     exact: 0,
@@ -803,12 +805,7 @@ function mapArenaServerRankingRows(currentParticipantId) {
 }
 
 function sortRankingRows(rows) {
-  return [...rows].sort((a, b) => {
-    if (b.pts !== a.pts) return b.pts - a.pts;
-    if (b.totalPerfect !== a.totalPerfect) return b.totalPerfect - a.totalPerfect;
-    if (b.totalBonus !== a.totalBonus) return b.totalBonus - a.totalBonus;
-    return a.p.name.localeCompare(b.p.name, "es", { sensitivity: "base" });
-  });
+  return sortByRankingTiebreak(rows);
 }
 
 /** @param {string | null | undefined} currentParticipantId */
@@ -5489,6 +5486,7 @@ function renderFloatingRanking(session) {
     <thead><tr>
       <th scope="col" class="floating-ranking-th-num">#</th>
       <th scope="col" class="floating-ranking-th-player">Jugador</th>
+      <th scope="col" class="floating-ranking-th-stat" title="Bono más cerca del marcador en partidos">Cerc.</th>
       <th scope="col" class="floating-ranking-th-pts">Pts</th>
     </tr></thead>
     <tbody>
@@ -5504,7 +5502,8 @@ function renderFloatingRanking(session) {
                   : "";
           const rowClass = [podium, r.self ? "floating-ranking-row-self" : ""].filter(Boolean).join(" ");
           const you = r.self ? " (tu)" : "";
-          return `<tr class="${rowClass}"><td>${r.displayRank}</td><th scope="row">${escapeHtml(r.p.name)}${you}</th><td><strong>${r.pts}</strong></td></tr>`;
+          const cerc = r.totalClosest ?? 0;
+          return `<tr class="${rowClass}"><td>${r.displayRank}</td><th scope="row">${escapeHtml(r.p.name)}${you}</th><td class="floating-ranking-th-stat">${cerc}</td><td><strong>${r.pts}</strong></td></tr>`;
         })
         .join("")}
     </tbody>
@@ -5790,6 +5789,7 @@ function renderFinalRanking(session) {
   const sortedRows = sortRankingRows(getLiveRankingRows(session.participantId));
   const rows = orderRankingRowsForDisplay(sortedRows, session.participantId);
   const maxBonus = Math.max(0, ...sortedRows.map((r) => r.totalBonus));
+  const maxClosest = Math.max(0, ...sortedRows.map((r) => r.totalClosest ?? 0));
   const maxPerfect = Math.max(0, ...sortedRows.map((r) => r.totalPerfect));
   const maxBien = Math.max(0, ...sortedRows.map((r) => r.totalBien));
   const maxExcelente = Math.max(0, ...sortedRows.map((r) => r.totalExcelente));
@@ -5829,9 +5829,15 @@ function renderFinalRanking(session) {
         )}
         ${groupOrderRankingStatCell(
           r.totalBonus,
-          "BONUS totales.",
+          "BONUS totales (improbable en partidos y minoría en orden de grupos).",
           maxBonus > 0 && r.totalBonus === maxBonus,
           "bonus",
+        )}
+        ${groupOrderRankingStatCell(
+          r.totalClosest ?? 0,
+          "CERCANÍA: bono «más cerca del marcador» en partidos (+1 c/u).",
+          maxClosest > 0 && (r.totalClosest ?? 0) === maxClosest,
+          "cercania",
         )}
         <td class="group-ranking-num group-ranking-total ${maxPts > 0 && r.pts === maxPts ? "group-ranking-total--top" : ""}"><strong>${r.pts}</strong></td>
       </tr>`;
@@ -8473,6 +8479,7 @@ function computeMatchRankingRows(scope, groupId, sessionParticipantId) {
     let excelenteCount = 0;
     let perfectCount = 0;
     let bonusCount = 0;
+    let closestCount = 0;
     let totalPoints = 0;
 
     for (const m of selectedGroupMatches) {
@@ -8501,7 +8508,7 @@ function computeMatchRankingRows(scope, groupId, sessionParticipantId) {
       else if (breakdown?.exactTier === "excelente") excelenteCount += 1;
       else if (breakdown?.exactTier === "bien") bienCount += 1;
       if (breakdown?.improbablePts && breakdown.improbablePts > 0) bonusCount += 1;
-      if (breakdown?.closestPts && breakdown.closestPts > 0) bonusCount += 1;
+      if (breakdown?.closestPts && breakdown.closestPts > 0) closestCount += 1;
     }
 
     for (const m of selectedKoMatches) {
@@ -8530,25 +8537,19 @@ function computeMatchRankingRows(scope, groupId, sessionParticipantId) {
       else if (breakdown?.exactTier === "excelente") excelenteCount += 1;
       else if (breakdown?.exactTier === "bien") bienCount += 1;
       if (breakdown?.improbablePts && breakdown.improbablePts > 0) bonusCount += 1;
-      if (breakdown?.closestPts && breakdown.closestPts > 0) bonusCount += 1;
+      if (breakdown?.closestPts && breakdown.closestPts > 0) closestCount += 1;
     }
 
-    return { participant: p, bienCount, excelenteCount, perfectCount, bonusCount, totalPoints };
+    return { participant: p, bienCount, excelenteCount, perfectCount, bonusCount, closestCount, totalPoints };
   });
 
-  rows.sort((a, b) => {
-    if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
-    if (b.perfectCount !== a.perfectCount) return b.perfectCount - a.perfectCount;
-    if (b.excelenteCount !== a.excelenteCount) return b.excelenteCount - a.excelenteCount;
-    if (b.bienCount !== a.bienCount) return b.bienCount - a.bienCount;
-    if (b.bonusCount !== a.bonusCount) return b.bonusCount - a.bonusCount;
-    return a.participant.name.localeCompare(b.participant.name);
-  });
+  rows.sort(compareRankingRows);
 
   const maxBien = Math.max(0, ...rows.map((r) => r.bienCount));
   const maxExcelente = Math.max(0, ...rows.map((r) => r.excelenteCount));
   const maxPerfect = Math.max(0, ...rows.map((r) => r.perfectCount));
   const maxBonus = Math.max(0, ...rows.map((r) => r.bonusCount));
+  const maxClosest = Math.max(0, ...rows.map((r) => r.closestCount));
   const maxTotal = Math.max(0, ...rows.map((r) => r.totalPoints));
   const displayRows = orderRankingRowsForDisplay(rows, sessionParticipantId);
 
@@ -8588,9 +8589,15 @@ function computeMatchRankingRows(scope, groupId, sessionParticipantId) {
         )}
         ${groupOrderRankingStatCell(
           r.bonusCount,
-          "BONUS en partidos.",
+          "BONUS improbable en partidos.",
           maxBonus > 0 && r.bonusCount === maxBonus,
           "bonus",
+        )}
+        ${groupOrderRankingStatCell(
+          r.closestCount,
+          "CERCANÍA: bono «más cerca del marcador» en partidos (+1 c/u).",
+          maxClosest > 0 && r.closestCount === maxClosest,
+          "cercania",
         )}
         <td class="group-ranking-num group-ranking-total ${maxTotal > 0 && r.totalPoints === maxTotal ? "group-ranking-total--top" : ""}"><strong>${r.totalPoints}</strong></td>
       </tr>`;
@@ -11049,7 +11056,7 @@ function redrawTeamOrder() {
  * @param {number} count
  * @param {string} title
  * @param {boolean} isTopInColumn
- * @param {"bien"|"excelente"|"perfecto"|"bonus"} kind
+ * @param {"bien"|"excelente"|"perfecto"|"bonus"|"cercania"} kind
  */
 function groupOrderRankingStatCell(count, title, isTopInColumn, kind) {
   const topCls = isTopInColumn ? `group-ranking-stat--top group-ranking-stat--top-${kind}` : "";
@@ -11067,6 +11074,7 @@ function buildGroupOrderRankingRows(sessionParticipantId) {
     let excelenteCount = 0;
     let perfectoBonusCount = 0;
     let bonusCount = 0;
+    let closestCount = 0;
     let totalPoints = 0;
 
     for (const grp of GROUPS) {
@@ -11122,22 +11130,16 @@ function buildGroupOrderRankingRows(sessionParticipantId) {
     }
 
     totalPoints += bonusCount;
-    return { participant: p, bienCount, excelenteCount, perfectoBonusCount, bonusCount, totalPoints };
+    return { participant: p, bienCount, excelenteCount, perfectoBonusCount, bonusCount, closestCount, totalPoints };
   });
 
-  rows.sort((a, b) => {
-    if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
-    if (b.excelenteCount !== a.excelenteCount) return b.excelenteCount - a.excelenteCount;
-    if (b.perfectoBonusCount !== a.perfectoBonusCount) return b.perfectoBonusCount - a.perfectoBonusCount;
-    if (b.bonusCount !== a.bonusCount) return b.bonusCount - a.bonusCount;
-    if (b.bienCount !== a.bienCount) return b.bienCount - a.bienCount;
-    return a.participant.name.localeCompare(b.participant.name);
-  });
+  rows.sort(compareRankingRows);
 
   const maxBien = Math.max(0, ...rows.map((r) => r.bienCount));
   const maxExcelente = Math.max(0, ...rows.map((r) => r.excelenteCount));
   const maxPerfecto = Math.max(0, ...rows.map((r) => r.perfectoBonusCount));
   const maxBonus = Math.max(0, ...rows.map((r) => r.bonusCount));
+  const maxClosest = Math.max(0, ...rows.map((r) => r.closestCount));
   const maxPts = Math.max(0, ...rows.map((r) => r.totalPoints));
   const displayRows = orderRankingRowsForDisplay(rows, sessionParticipantId);
 
@@ -11180,6 +11182,12 @@ function buildGroupOrderRankingRows(sessionParticipantId) {
           "BONO: aciertos en posición con pick minoritario (+1 c/u).",
           maxBonus > 0 && r.bonusCount === maxBonus,
           "bonus",
+        )}
+        ${groupOrderRankingStatCell(
+          r.closestCount,
+          "CERCANÍA: solo aplica en partidos (no en orden de grupos).",
+          maxClosest > 0 && r.closestCount === maxClosest,
+          "cercania",
         )}
         <td class="group-ranking-num group-ranking-total ${maxPts > 0 && r.totalPoints === maxPts ? "group-ranking-total--top" : ""}"><strong>${r.totalPoints}</strong></td>
       </tr>`;
