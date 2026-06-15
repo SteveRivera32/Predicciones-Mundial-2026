@@ -45,6 +45,16 @@ export function isKoMatchPredictionsLocked(official, m) {
   return koStage !== "ready" || isLockedAtKickoff(m.kickoff);
 }
 
+/**
+ * El admin puede editar predicciones ajenas no confirmadas aunque el partido esté bloqueado.
+ * @param {boolean} adminCanEditLate
+ * @param {boolean} predictionCommitted
+ */
+export function isMatchPredictionLockedForActor(adminCanEditLate, predictionCommitted, locked) {
+  if (adminCanEditLate && !predictionCommitted) return false;
+  return locked;
+}
+
 /** @returns {number | null} ms desde epoch del próximo kickoff futuro, o null si no hay ninguno. */
 export function nextTournamentKickoffTimestamp() {
   const now = Date.now();

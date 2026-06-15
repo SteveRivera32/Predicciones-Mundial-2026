@@ -518,6 +518,11 @@ export function canEditAllParticipantsPredictions(participantId) {
   return SUPER_ADMIN_PARTICIPANT_IDS.has(participantId);
 }
 
+/** Super-admin: asignar o corregir predicciones no confirmadas tras el cierre del partido. */
+export function canAdminEditLateMatchPredictions(participantId) {
+  return canEditAllParticipantsPredictions(participantId);
+}
+
 const PARTICIPANT_SEARCH_KEY = "pm26-participant-search";
 
 /** Máx. otros jugadores en tablas de predicciones (sin contar «tú»). */

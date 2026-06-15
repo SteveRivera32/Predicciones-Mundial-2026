@@ -15,6 +15,7 @@ import {
   canEditOfficialResults,
   canManagePartidosMatchFlow,
   canEditAllParticipantsPredictions,
+  canAdminEditLateMatchPredictions,
   setParticipantsList,
   isAdminParticipantId,
   ADMIN_PARTICIPANT_ID,
@@ -113,6 +114,7 @@ import {
   isLockedAtKickoff,
   isGroupMatchPredictionsLocked,
   isKoMatchPredictionsLocked,
+  isMatchPredictionLockedForActor,
   isAnyTournamentMatchKickoffLocked,
   scheduleKickoffLockRefresh,
 } from "./locks.js";
@@ -715,6 +717,40 @@ function matchPredictionSubmissionRank(pred, predCommitted) {
   if (predCommitted) return 2;
   if (matchScoreBothFilled(pred)) return 1;
   return 0;
+}
+
+/**
+ * Super-admin: editar predicción no confirmada de otro jugador con el partido ya cerrado.
+ * @param {{ participantId: string }} session
+ * @param {boolean} predictionsLocked
+ * @param {boolean} predCommitted
+ */
+function isAdminLateMatchPredictionEdit(session, predictionsLocked, predCommitted) {
+  return (
+    canAdminEditLateMatchPredictions(session.participantId) &&
+    predictionsLocked &&
+    !predCommitted
+  );
+}
+
+/**
+ * @param {{ participantId: string }} session
+ * @param {ReturnType<typeof loadOfficialResults>} official
+ * @param {{ id: string }} m
+ * @param {string} targetParticipantId
+ * @param {boolean} isKo
+ */
+function isMatchPredictionSaveBlocked(session, official, m, targetParticipantId, isKo) {
+  const locked = isKo ? isKoMatchPredictionsLocked(official, m) : isGroupMatchPredictionsLocked(official, m);
+  const pStore = loadPredictions(targetParticipantId);
+  const predCommitted = isKo
+    ? pStore.knockoutScoresConfirmed?.[m.id] === true
+    : pStore.groupScoresConfirmed?.[m.id] === true;
+  return isMatchPredictionLockedForActor(
+    canAdminEditLateMatchPredictions(session.participantId),
+    predCommitted,
+    locked,
+  );
 }
 
 /** @param {import("./participants.js").Participant} p @param {string} matchId @param {boolean} [isKo] */
@@ -6381,10 +6417,11 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
       }
 
       const isSelf = d.p.id === session.participantId;
+      const adminLateEdit = isAdminLateMatchPredictionEdit(session, predictionsLocked, d.predCommitted);
       const rowEditableByActor =
         (isSelf || canEditAll) &&
         !isArenaPrivadasMirrorUser() &&
-        !predictionsLocked &&
+        isMatchPredictionLockedForActor(adminLateEdit, d.predCommitted, predictionsLocked) === false &&
         !d.predCommitted &&
         teamsDecided;
       /** Borrador no confirmado: otros no ven marcador ni ganador hasta «Confirmar». */
@@ -6397,7 +6434,7 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
       let ph;
       let pa;
       if (isSelf || canEditAll) {
-        if (d.predCommitted || predictionsLocked) {
+        if ((d.predCommitted || predictionsLocked) && !adminLateEdit) {
           ph = scoreCellPlain("home");
           pa = scoreCellPlain("away");
         } else if (!teamsDecided) {
@@ -6471,16 +6508,22 @@ function buildQuinielaPredRowsHtml(m, session, official, isAdmin) {
 
       let lastColTd;
       if (showPtsColumn) {
+        if (adminLateEdit) {
+          const bothPred = d.pred.home !== "" && d.pred.away !== "";
+          const confirmBtn = `<button type="button" class="btn btn-primary btn-sm quiniela-pred-confirm-user" data-mid="${escapeHtml(m.id)}" data-pid="${escapeHtml(d.p.id)}" ${bothPred ? "" : "disabled"}>Confirmar</button>`;
+          lastColTd = `<td class="quiniela-num quiniela-last-col quiniela-pred-actions">${confirmBtn}</td>`;
+        } else {
         const ptsTdCls = quinielaPtsTdClassList(d, {
           officialCompleteForScoring,
           maxPtsThisMatch,
         });
         lastColTd = `<td class="${ptsTdCls} quiniela-last-col">${pcCell}</td>`;
+        }
       } else {
         let preplayInner = "";
         if (isSelf || canEditAll) {
           const bothPred = d.pred.home !== "" && d.pred.away !== "";
-          if (predictionsLocked) {
+          if (predictionsLocked && !adminLateEdit) {
             const gameUnderway = matchStage !== "ready";
             const kickoffClosed = isLockedAtKickoff(m.kickoff);
             if (kickoffClosed && !gameUnderway) {
@@ -6683,10 +6726,11 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
 
       const vm = d.virtualM;
       const isSelf = d.p.id === session.participantId;
+      const adminLateEdit = isAdminLateMatchPredictionEdit(session, predictionsLocked, d.predCommitted);
       const rowEditableByActor =
         (isSelf || canEditAll) &&
         !isArenaPrivadasMirrorUser() &&
-        !predictionsLocked &&
+        isMatchPredictionLockedForActor(adminLateEdit, d.predCommitted, predictionsLocked) === false &&
         !d.predCommitted &&
         koSlotsReadyForEdit;
       const hideDraftScoresFromOthers = !isSelf && !canEditAll && !d.predCommitted;
@@ -6698,7 +6742,7 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
       let ph;
       let pa;
       if (isSelf || canEditAll) {
-        if (d.predCommitted || predictionsLocked) {
+        if ((d.predCommitted || predictionsLocked) && !adminLateEdit) {
           ph = scoreCellPlain("home");
           pa = scoreCellPlain("away");
         } else if (!koSlotsReadyForEdit) {
@@ -6799,11 +6843,21 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
 
       let lastColTd;
       if (showPtsColumn) {
+        if (adminLateEdit) {
+          const scoresOk = d.pred.home !== "" && d.pred.away !== "";
+          const drawPred = predictionOutcomeSign(d.pred) === "d";
+          const penOk =
+            !koPenaltyPhase || !drawPred || d.pred.penaltyWinner === "home" || d.pred.penaltyWinner === "away";
+          const bothPred = scoresOk && penOk;
+          const confirmBtn = `<button type="button" class="btn btn-primary btn-sm partidos-ko-pred-confirm-user" data-kid="${escapeHtml(m.id)}" data-pid="${escapeHtml(d.p.id)}" ${bothPred ? "" : "disabled"}>Confirmar</button>`;
+          lastColTd = `<td class="quiniela-num quiniela-last-col quiniela-pred-actions">${confirmBtn}</td>`;
+        } else {
         const ptsTdCls = quinielaPtsTdClassList(d, {
           officialCompleteForScoring,
           maxPtsThisMatch: maxPtsThisMatchKo,
         });
         lastColTd = `<td class="${ptsTdCls} quiniela-last-col">${pcCell}</td>`;
+        }
       } else {
         let preplayInner = "";
         if (isSelf || canEditAll) {
@@ -6812,7 +6866,7 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
           const penOk =
             !koPenaltyPhase || !drawPred || d.pred.penaltyWinner === "home" || d.pred.penaltyWinner === "away";
           const bothPred = scoresOk && penOk;
-          if (predictionsLocked) {
+          if (predictionsLocked && !adminLateEdit) {
             const gameUnderway = koStage !== "ready";
             const kickoffClosed = isLockedAtKickoff(m.kickoff);
             if (kickoffClosed && !gameUnderway) {
@@ -7410,7 +7464,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const targetParticipantId = row.dataset.predPid || session.participantId;
       if (!mid || !partial[mid] || !targetParticipantId) return;
       const gm = GROUP_MATCHES.find((x) => x.id === mid);
-      if (!gm || isGroupMatchPredictionsLocked(loadOfficialResults(), gm)) return;
+      if (!gm || isMatchPredictionSaveBlocked(session, loadOfficialResults(), gm, targetParticipantId, false)) return;
       savePredictions(targetParticipantId, {
         groupScores: { [mid]: { home: partial[mid].home, away: partial[mid].away } },
       });
@@ -7432,7 +7486,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
         return;
       }
       const offNow = loadOfficialResults();
-      if (isGroupMatchPredictionsLocked(offNow, gm)) return;
+      if (isMatchPredictionSaveBlocked(session, offNow, gm, targetParticipantId, false)) return;
       const latest = loadPredictions(targetParticipantId);
       const sc = latest.groupScores[mid] ?? { home: "", away: "" };
       if (sc.home === "" || sc.away === "") return;
@@ -7452,7 +7506,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const gm = GROUP_MATCHES.find((x) => x.id === mid);
       if (!gm) return;
       const offNow = loadOfficialResults();
-      if (isGroupMatchPredictionsLocked(offNow, gm)) return;
+      if (isMatchPredictionSaveBlocked(session, offNow, gm, targetParticipantId, false)) return;
       const latest = loadPredictions(targetParticipantId);
       const { [mid]: _r, ...rest } = latest.groupScoresConfirmed ?? {};
       savePredictions(targetParticipantId, {
@@ -7472,7 +7526,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const targetParticipantId = row.dataset.predPid || session.participantId;
       if (!kid || !partial[kid] || !targetParticipantId) return;
       const mKo = getKnockoutMatchesFlat().find((x) => x.id === kid);
-      if (!mKo || isKoMatchPredictionsLocked(loadOfficialResults(), mKo)) return;
+      if (!mKo || isMatchPredictionSaveBlocked(session, loadOfficialResults(), mKo, targetParticipantId, true)) return;
       const latest = loadPredictions(targetParticipantId);
       const prevSc = latest.knockoutScores?.[kid] ?? {};
       const penPh = knockoutRoundRequiresPenaltyPickOnDraw(mKo.roundId);
@@ -7503,7 +7557,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const pick = btn.dataset.penPick;
       if (!kid || !targetParticipantId || (pick !== "home" && pick !== "away")) return;
       const mKo = getKnockoutMatchesFlat().find((x) => x.id === kid);
-      if (!mKo || isKoMatchPredictionsLocked(loadOfficialResults(), mKo)) return;
+      if (!mKo || isMatchPredictionSaveBlocked(session, loadOfficialResults(), mKo, targetParticipantId, true)) return;
       const latest = loadPredictions(targetParticipantId);
       const prev = latest.knockoutScores?.[kid] ?? { home: "", away: "" };
       savePredictions(targetParticipantId, {
@@ -7525,7 +7579,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       if (!mKo) return;
       const offPred = loadOfficialResults();
       if (offPred.knockoutScoresConfirmed?.[kid] === true) return;
-      if (isKoMatchPredictionsLocked(offPred, mKo)) return;
+      if (isMatchPredictionSaveBlocked(session, offPred, mKo, targetParticipantId, true)) return;
       const { ri, mi } = getKoRoundMatchIndex(kid);
       const labelPred = allFilledOfficialKnockoutScores(offPred);
       const kh = resolveKnockoutSlotLabel(ri, mi, "home", labelPred);
@@ -7567,7 +7621,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       if (!mKo) return;
       const offNow = loadOfficialResults();
       if (offNow.knockoutScoresConfirmed?.[kid] === true) return;
-      if (isKoMatchPredictionsLocked(offNow, mKo)) return;
+      if (isMatchPredictionSaveBlocked(session, offNow, mKo, targetParticipantId, true)) return;
       const latest = loadPredictions(targetParticipantId);
       const { [kid]: _r, ...rest } = latest.knockoutScoresConfirmed ?? {};
       savePredictions(targetParticipantId, {
