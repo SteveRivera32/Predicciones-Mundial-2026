@@ -6,6 +6,7 @@
 import { isRemoteSyncActive } from "./remote-sync-flags.js";
 import { isArenaMode, isArenaAdmin, pushArenaOfficial } from "./arena-mode.js";
 import { migrateStoredTeamNames } from "./tournament.js";
+import { mergeScoreMapCloned, cloneScoreMap } from "./match-score-clone.js";
 import { pushOfficial } from "./sync-push.js";
 import { mergeOfficialPreferAdvancedNormalized } from "./official-sync-merge.js";
 
@@ -144,8 +145,8 @@ export function normalizeOfficialResultsData(data) {
     ...base.knockoutScoresConfirmed,
     ...(data.knockoutScoresConfirmed ?? {}),
   };
-  const gs = { ...base.groupScores, ...(data.groupScores ?? {}) };
-  const kos = { ...base.knockoutScores, ...(data.knockoutScores ?? {}) };
+  const gs = mergeScoreMapCloned(base.groupScores, data.groupScores ?? {});
+  const kos = mergeScoreMapCloned(base.knockoutScores, data.knockoutScores ?? {});
   if (data.groupScores && data.groupScoresConfirmed == null) {
     for (const [id, sc] of Object.entries(gs)) {
       if (sc?.home !== "" && sc?.away !== "") groupScoresConfirmed[id] = true;
@@ -306,7 +307,7 @@ export function saveOfficialResults(patch) {
   const next = {
     ...prev,
     ...rest,
-    groupScores: { ...prev.groupScores, ...(patch.groupScores ?? {}) },
+    groupScores: mergeScoreMapCloned(prev.groupScores, patch.groupScores),
     groupScoresConfirmed:
       patch.groupScoresConfirmed === undefined
         ? prev.groupScoresConfirmed
@@ -355,8 +356,8 @@ export function saveOfficialResults(patch) {
         : { ...prev.knockoutMatchState, ...patch.knockoutMatchState },
     knockoutScores:
       patch.knockoutScores === undefined
-        ? prev.knockoutScores
-        : { ...prev.knockoutScores, ...patch.knockoutScores },
+        ? cloneScoreMap(prev.knockoutScores)
+        : mergeScoreMapCloned(prev.knockoutScores, patch.knockoutScores),
     knockoutScoresConfirmed:
       patch.knockoutScoresConfirmed === undefined
         ? prev.knockoutScoresConfirmed

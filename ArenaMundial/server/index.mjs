@@ -116,6 +116,21 @@ function rejectBannedDevice(res, deviceId) {
   return true;
 }
 
+const PRIVADAS_ARENA_BLOCK_MSG =
+  "esta cuenta es de la quiniela privada; entra en PrediccionesMundial con tu PIN";
+
+/** Cierra sesión de cuentas espejo de PrediccionesMundial (no deben usar Arena). */
+function rejectPrivadasArenaAccount(req, res, next) {
+  if (!isPrivadasUser(req.userId)) {
+    next();
+    return;
+  }
+  clearAuthCookie(res);
+  res.status(403).json({ error: PRIVADAS_ARENA_BLOCK_MSG });
+}
+
+const requireArenaAuth = [requireAuth, rejectPrivadasArenaAccount];
+
 // ── Auth ────────────────────────────────────────────────────────────────────
 
 app.get("/api/arena/auth/device-binding", authTrafficGuard, (req, res) => {
@@ -195,7 +210,7 @@ app.post("/api/arena/auth/register", authTrafficGuard, async (req, res) => {
     }
     if (isPrivadasArenaMirrorId(username)) {
       res.status(409).json({
-        error: "ese usuario pertenece a la quiniela privada; entra con tu PIN de privadas",
+        error: "ese usuario pertenece a la quiniela privada; usa PrediccionesMundial",
       });
       return;
     }
@@ -256,6 +271,10 @@ app.post("/api/arena/auth/login", authTrafficGuard, async (req, res) => {
     res.status(401).json({ error: "usuario o contraseña incorrectos" });
     return;
   }
+  if (isPrivadasUser(user.id) || isPrivadasArenaMirrorId(username)) {
+    res.status(403).json({ error: PRIVADAS_ARENA_BLOCK_MSG });
+    return;
+  }
   const deviceId = resolveDeviceId(req, res);
   if (rejectBannedDevice(res, deviceId)) return;
   const deviceBinding = getCountableDeviceBindingByDeviceId(deviceId);
@@ -278,7 +297,7 @@ app.post("/api/arena/auth/logout", (_req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/arena/auth/me", requireAuth, (req, res) => {
+app.get("/api/arena/auth/me", requireArenaAuth, (req, res) => {
   const user = findUserById(req.userId);
   if (!user) {
     res.status(401).json({ error: "usuario no encontrado" });
@@ -289,12 +308,12 @@ app.get("/api/arena/auth/me", requireAuth, (req, res) => {
 
 // ── Predicciones propias (solo el usuario autenticado) ──────────────────────
 
-app.get("/api/arena/me/predictions", requireAuth, (req, res) => {
+app.get("/api/arena/me/predictions", requireArenaAuth, (req, res) => {
   const { data, updatedAt } = getUserPredictions(req.userId);
   res.json({ predictions: data, updatedAt });
 });
 
-app.delete("/api/arena/me", requireAuth, (req, res) => {
+app.delete("/api/arena/me", requireArenaAuth, (req, res) => {
   if (isPrivadasUser(req.userId)) {
     res.status(403).json({
       error: "cuenta espejo de la quiniela privada; no se puede eliminar desde Arena",
@@ -317,11 +336,11 @@ app.delete("/api/arena/me", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/arena/admin/users", requireAuth, requireAdmin, (_req, res) => {
+app.get("/api/arena/admin/users", requireArenaAuth, requireAdmin, (_req, res) => {
   res.json({ users: listArenaUsersForAdmin() });
 });
 
-app.get("/api/arena/admin/users/search", requireAuth, requireAdmin, (req, res) => {
+app.get("/api/arena/admin/users/search", requireArenaAuth, requireAdmin, (req, res) => {
   const q = String(req.query.q ?? "").trim();
   const norm = q.toLowerCase();
   let users = listArenaUsersForAdmin();
@@ -337,7 +356,7 @@ app.get("/api/arena/admin/users/search", requireAuth, requireAdmin, (req, res) =
   res.json({ users: users.slice(0, 80) });
 });
 
-app.post("/api/arena/admin/users/:username/ban", requireAuth, requireAdmin, (req, res) => {
+app.post("/api/arena/admin/users/:username/ban", requireArenaAuth, requireAdmin, (req, res) => {
   const username = String(req.params.username ?? "")
     .trim()
     .toLowerCase();
@@ -367,7 +386,7 @@ app.post("/api/arena/admin/users/:username/ban", requireAuth, requireAdmin, (req
   });
 });
 
-app.get("/api/arena/admin/backups", requireAuth, requireAdmin, async (_req, res) => {
+app.get("/api/arena/admin/backups", requireArenaAuth, requireAdmin, async (_req, res) => {
   try {
     const backups = await listArenaBackupFiles();
     res.json({ ok: true, maxBackups: getArenaMaxBackups(), backups });
@@ -377,7 +396,7 @@ app.get("/api/arena/admin/backups", requireAuth, requireAdmin, async (_req, res)
   }
 });
 
-app.get("/api/arena/admin/backups/export", requireAuth, requireAdmin, (_req, res) => {
+app.get("/api/arena/admin/backups/export", requireArenaAuth, requireAdmin, (_req, res) => {
   try {
     res.setHeader("Cache-Control", "no-store");
     res.json(createArenaBackupEnvelopeNow());
@@ -387,7 +406,7 @@ app.get("/api/arena/admin/backups/export", requireAuth, requireAdmin, (_req, res
   }
 });
 
-app.get("/api/arena/admin/backups/:filename", requireAuth, requireAdmin, async (req, res) => {
+app.get("/api/arena/admin/backups/:filename", requireArenaAuth, requireAdmin, async (req, res) => {
   const raw = await readArenaBackupFile(req.params.filename);
   if (!raw) {
     res.status(404).json({ error: "backup no encontrado" });
@@ -397,7 +416,7 @@ app.get("/api/arena/admin/backups/:filename", requireAuth, requireAdmin, async (
   res.type("application/json").send(JSON.stringify(raw));
 });
 
-app.post("/api/arena/admin/backups/restore/:filename", requireAuth, requireAdmin, async (req, res) => {
+app.post("/api/arena/admin/backups/restore/:filename", requireArenaAuth, requireAdmin, async (req, res) => {
   const filename = String(req.params.filename ?? "");
   const raw = await readArenaBackupFile(filename);
   if (!raw) {
@@ -413,7 +432,7 @@ app.post("/api/arena/admin/backups/restore/:filename", requireAuth, requireAdmin
   res.json({ ok: true, restoredFrom: result.restoredFrom, preRestoreBackup: result.preRestoreBackup });
 });
 
-app.post("/api/arena/admin/backups/restore", requireAuth, requireAdmin, async (req, res) => {
+app.post("/api/arena/admin/backups/restore", requireArenaAuth, requireAdmin, async (req, res) => {
   const result = await restoreArenaFromBackupPayload(req.body, "upload");
   if (!result.ok) {
     res.status(400).json({ error: result.error });
@@ -423,7 +442,7 @@ app.post("/api/arena/admin/backups/restore", requireAuth, requireAdmin, async (r
   res.json({ ok: true, restoredFrom: result.restoredFrom, preRestoreBackup: result.preRestoreBackup });
 });
 
-app.delete("/api/arena/admin/users/:username", requireAuth, requireAdmin, (req, res) => {
+app.delete("/api/arena/admin/users/:username", requireArenaAuth, requireAdmin, (req, res) => {
   const username = String(req.params.username ?? "")
     .trim()
     .toLowerCase();
@@ -445,7 +464,7 @@ app.delete("/api/arena/admin/users/:username", requireAuth, requireAdmin, (req, 
   res.json({ ok: true, username: result.username });
 });
 
-app.put("/api/arena/me/predictions", requireAuth, (req, res) => {
+app.put("/api/arena/me/predictions", requireArenaAuth, (req, res) => {
   if (isPrivadasUser(req.userId)) {
     res.status(403).json({
       error: "predicciones de la quiniela privada: edítalas en Predicciones Amigos, no en Arena",
@@ -476,7 +495,7 @@ app.get("/api/arena/official", (_req, res) => {
   res.json({ ...sharedCache.official.data, matchVoteData });
 });
 
-app.get("/api/arena/rankings", requireAuth, (req, res) => {
+app.get("/api/arena/rankings", requireArenaAuth, (req, res) => {
   const me = findUserById(req.userId);
   const viewerUsername = me?.username ?? "";
   const { data, etag } = getCachedArenaRankings(viewerUsername, SHARED_CACHE_MS);
@@ -485,7 +504,7 @@ app.get("/api/arena/rankings", requireAuth, (req, res) => {
   res.json(data);
 });
 
-app.get("/api/arena/predictions/search", requireAuth, (req, res) => {
+app.get("/api/arena/predictions/search", requireArenaAuth, (req, res) => {
   const q = String(req.query.q ?? "").trim();
   if (q.length < 2) {
     res.status(400).json({ error: "escribe al menos 2 caracteres para buscar" });
@@ -500,7 +519,7 @@ app.get("/api/arena/predictions/search", requireAuth, (req, res) => {
   res.json({ users, predictions, query: q });
 });
 
-app.put("/api/arena/admin/official", requireAuth, requireAdmin, (req, res) => {
+app.put("/api/arena/admin/official", requireArenaAuth, requireAdmin, (req, res) => {
   if (!req.body || typeof req.body !== "object") {
     res.status(400).json({ error: "body inválido" });
     return;
@@ -533,7 +552,7 @@ app.post("/api/arena/internal/sync-official", (req, res) => {
   res.json({ ok: true, changed: false, ignored: true });
 });
 
-app.get("/api/arena/chat/messages", requireAuth, (req, res) => {
+app.get("/api/arena/chat/messages", requireArenaAuth, (req, res) => {
   const sinceId = Number(req.query.sinceId ?? 0);
   const messages = getChatMessagesSince(sinceId);
   res.json({
@@ -542,7 +561,7 @@ app.get("/api/arena/chat/messages", requireAuth, (req, res) => {
   });
 });
 
-app.post("/api/arena/chat/messages", requireAuth, (req, res) => {
+app.post("/api/arena/chat/messages", requireArenaAuth, (req, res) => {
   const body = sanitizeChatBody(req.body?.body ?? req.body?.text ?? "");
   if (!body) {
     res.status(400).json({ error: "escribe un mensaje" });
@@ -564,7 +583,7 @@ app.post("/api/arena/chat/messages", requireAuth, (req, res) => {
   res.status(201).json({ ok: true, message });
 });
 
-app.get("/api/arena/chat/limits", requireAuth, (_req, res) => {
+app.get("/api/arena/chat/limits", requireArenaAuth, (_req, res) => {
   res.json({
     cooldownSec: Number(process.env.ARENA_CHAT_COOLDOWN_MS || 5000) / 1000,
     duplicateCooldownSec: Number(process.env.ARENA_CHAT_DUP_COOLDOWN_MS || 60_000) / 1000,
@@ -572,7 +591,7 @@ app.get("/api/arena/chat/limits", requireAuth, (_req, res) => {
   });
 });
 
-app.get("/api/arena/sync", requireAuth, (req, res) => {
+app.get("/api/arena/sync", requireArenaAuth, (req, res) => {
   const { data: official, updatedAt } = getOfficialResults();
   const me = findUserById(req.userId);
   const myUsername = me?.username ?? "";

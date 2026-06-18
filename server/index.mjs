@@ -23,6 +23,7 @@ import {
   normalizeOfficialPayload,
   officialPayloadEqual,
 } from "./official-sync-shared.mjs";
+import { normalizePredictionsData } from "../src/predictions-store.js";
 import { mergeOfficialPreferAdvancedNormalized } from "../src/official-sync-merge.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -339,7 +340,7 @@ app.put("/api/predictions/:participantId", (req, res) => {
     res.status(400).json({ error: "body inválido" });
     return;
   }
-  state.predictions[id] = req.body;
+  state.predictions[id] = normalizePredictionsData(req.body);
   persistAndBroadcast()
     .then(() => res.json({ ok: true }))
     .catch((e) => {

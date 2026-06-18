@@ -10,6 +10,7 @@ import {
   isArenaPrivadasMirrorUser,
 } from "./arena-mode.js";
 import { migrateStoredTeamNames } from "./tournament.js";
+import { cloneScoreMap, mergeScoreMapCloned } from "./match-score-clone.js";
 import { pushPredictions, deleteRemotePredictions } from "./sync-push.js";
 
 /** @typedef {ReturnType<typeof emptyPredictions>} Predictions */
@@ -54,14 +55,28 @@ export function normalizePredictionsData(data) {
   if (!data || typeof data !== "object") return emptyPredictions();
   const d = /** @type {Record<string, unknown>} */ (migrateStoredTeamNames(data));
   const base = emptyPredictions();
+  const {
+    groupScores: _gs,
+    knockoutScores: _kos,
+    general: _gen,
+    groupOrder: _go,
+    groupOrderConfirmed: _goc,
+    groupThirdAdvances: _gta,
+    groupScoresConfirmed: _gsc,
+    knockoutScoresConfirmed: _kosc,
+    ...dRest
+  } = d;
   return {
     ...base,
-    ...d,
+    ...dRest,
     general: { ...base.general, ...(d.general ?? {}) },
     generalConfirmed: d.generalConfirmed === true,
+    groupOrder: { ...base.groupOrder, ...(d.groupOrder ?? {}) },
     groupOrderConfirmed: { ...base.groupOrderConfirmed, ...(d.groupOrderConfirmed ?? {}) },
     groupThirdAdvances: { ...base.groupThirdAdvances, ...(d.groupThirdAdvances ?? {}) },
+    groupScores: cloneScoreMap(d.groupScores),
     groupScoresConfirmed: { ...base.groupScoresConfirmed, ...(d.groupScoresConfirmed ?? {}) },
+    knockoutScores: cloneScoreMap(d.knockoutScores),
     knockoutScoresConfirmed: {
       ...base.knockoutScoresConfirmed,
       ...(d.knockoutScoresConfirmed ?? {}),
@@ -167,8 +182,8 @@ export function savePredictions(participantId, patch) {
     groupOrder: { ...prev.groupOrder, ...(patch.groupOrder ?? {}) },
     groupOrderConfirmed: { ...prev.groupOrderConfirmed, ...(patch.groupOrderConfirmed ?? {}) },
     groupThirdAdvances: { ...prev.groupThirdAdvances, ...(patch.groupThirdAdvances ?? {}) },
-    groupScores: { ...prev.groupScores, ...(patch.groupScores ?? {}) },
-    knockoutScores: { ...prev.knockoutScores, ...(patch.knockoutScores ?? {}) },
+    groupScores: mergeScoreMapCloned(prev.groupScores, patch.groupScores),
+    knockoutScores: mergeScoreMapCloned(prev.knockoutScores, patch.knockoutScores),
     knockoutScoresConfirmed:
       patch.knockoutScoresConfirmed === undefined
         ? prev.knockoutScoresConfirmed ?? {}

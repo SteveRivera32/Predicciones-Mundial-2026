@@ -1735,14 +1735,20 @@ function clampGoalInput(v) {
  * @param {string} matchId
  * @param {"home"|"away"} side
  * @param {string|number|""} value
- * @param {{ disabled?: boolean, extraClass?: string, idAttr?: "data-mid"|"data-kid"|"data-okid" }} [opts]
+ * @param {{ disabled?: boolean, extraClass?: string, idAttr?: "data-mid"|"data-kid"|"data-okid"|"data-ogid" }} [opts]
  */
 function scoreStepperHtml(matchId, side, value, opts = {}) {
   const { disabled = false, extraClass = "", idAttr = "data-mid" } = opts;
   const v = value === "" || value === undefined ? "" : String(clampGoalInput(value));
   const dis = disabled ? "disabled" : "";
   const idKey =
-    idAttr === "data-kid" ? "data-kid" : idAttr === "data-okid" ? "data-okid" : "data-mid";
+    idAttr === "data-kid"
+      ? "data-kid"
+      : idAttr === "data-okid"
+        ? "data-okid"
+        : idAttr === "data-ogid"
+          ? "data-ogid"
+          : "data-mid";
   return `<div class="score-stepper ${extraClass}">
     <button type="button" class="score-stepper__btn" ${idKey}="${escapeHtml(matchId)}" data-side="${side}" data-delta="-1" ${dis} aria-label="Un gol menos">−</button>
     <input type="number" min="0" max="20" class="score-stepper__input input input-score" ${idKey}="${escapeHtml(matchId)}" data-side="${side}" value="${escapeHtml(v)}" ${dis} step="1" />
@@ -1839,6 +1845,56 @@ function wireOfficialKnockoutSteppers(wrap, onCommit) {
       inp.value = n === "" ? "" : String(n);
       collect();
     });
+  });
+}
+
+/**
+ * Stepper del marcador oficial en fase de grupos (`data-ogid`, distinto de predicciones `data-mid`).
+ * @param {HTMLElement} wrap
+ * @param {(scores: Record<string, { home: string|number|"", away: string|number|"" }>, triggerEl?: HTMLElement | null) => void} onCommit
+ * @param {{ collectOnInput?: boolean }} [wireOpts]
+ */
+function wireOfficialGroupSteppers(wrap, onCommit, wireOpts = {}) {
+  const { collectOnInput = false } = wireOpts;
+  const inputSel = ".score-stepper__input[data-ogid]";
+
+  /** @param {HTMLElement | null | undefined} triggerEl */
+  function collect(triggerEl) {
+    /** @type {Record<string, { home: string|number|"", away: string|number|"" }>} */
+    const next = {};
+    wrap.querySelectorAll(inputSel).forEach((el) => {
+      const id = el.dataset.ogid;
+      const side = el.dataset.side;
+      if (!id || (side !== "home" && side !== "away")) return;
+      if (!next[id]) next[id] = { home: "", away: "" };
+      const raw =
+        el.value === "" ? "" : Math.max(0, Math.min(20, parseInt(el.value, 10) || 0));
+      next[id][side] = raw;
+    });
+    onCommit(next, triggerEl instanceof HTMLElement ? triggerEl : null);
+  }
+
+  wrap.querySelectorAll(".score-stepper").forEach((stepper) => {
+    const inp = stepper.querySelector(inputSel);
+    if (!inp || inp.disabled) return;
+    stepper.querySelectorAll(".score-stepper__btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (btn.disabled) return;
+        const d = parseInt(btn.dataset.delta ?? "0", 10);
+        let n = inp.value === "" ? 0 : parseInt(inp.value, 10) || 0;
+        n = Math.max(0, Math.min(20, n + d));
+        inp.value = String(n);
+        collect(inp);
+      });
+    });
+    inp.addEventListener("change", () => {
+      const n = clampGoalInput(inp.value);
+      inp.value = n === "" ? "" : String(n);
+      collect(inp);
+    });
+    if (collectOnInput) {
+      inp.addEventListener("input", () => collect(inp));
+    }
   });
 }
 
@@ -7893,18 +7949,16 @@ function bindPartidosAdminHandlers(scope, session) {
   });
 
   scope.querySelectorAll(".quiniela-official--editing").forEach((ed) => {
-    wireScoreSteppers(
+    wireOfficialGroupSteppers(
       ed,
-      "grupos",
       (partial, triggerEl) => {
         const mid = ed.dataset.quinielaMid;
         if (!mid || !partial[mid]) return;
         const offNow = loadOfficialResults();
         if ((offNow.groupMatchState?.[mid] ?? "ready") !== "started") return;
-        const cur = loadOfficialResults();
-        const gs = { ...cur.groupScores };
-        gs[mid] = { home: partial[mid].home, away: partial[mid].away };
-        saveOfficialResults({ groupScores: gs });
+        saveOfficialResults({
+          groupScores: { [mid]: { home: partial[mid].home, away: partial[mid].away } },
+        });
         const termBtn = ed.querySelector(".quiniela-btn-terminar-partido");
         if (termBtn) {
           termBtn.disabled = partial[mid].home === "" || partial[mid].away === "";
@@ -9277,8 +9331,8 @@ function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds) 
         <div class="quiniela-official-head">Resultado oficial</div>
         <div class="quiniela-official-grid quiniela-official-grid--edit">
           <div class="quiniela-cell quiniela-cell--team">${teamLabelHtml(m.home)}</div>
-          <div class="quiniela-cell quiniela-cell--score">${scoreStepperHtml(m.id, "home", off.home, { extraClass: "quiniela-official-stepper", disabled: false })}</div>
-          <div class="quiniela-cell quiniela-cell--score">${scoreStepperHtml(m.id, "away", off.away, { extraClass: "quiniela-official-stepper", disabled: false })}</div>
+          <div class="quiniela-cell quiniela-cell--score">${scoreStepperHtml(m.id, "home", off.home, { extraClass: "quiniela-official-stepper", disabled: false, idAttr: "data-ogid" })}</div>
+          <div class="quiniela-cell quiniela-cell--score">${scoreStepperHtml(m.id, "away", off.away, { extraClass: "quiniela-official-stepper", disabled: false, idAttr: "data-ogid" })}</div>
           <div class="quiniela-cell quiniela-cell--team">${teamLabelHtml(m.away)}</div>
         </div>
         <div class="quiniela-official-actions">
@@ -9480,11 +9534,14 @@ function capturePartidosInteractionAnchorFromElement(el, wrap) {
   const kid = el.getAttribute("data-kid");
   const midAttr = el.getAttribute("data-mid");
   const okid = el.getAttribute("data-okid");
+  const ogid = el.getAttribute("data-ogid");
   let tail = "";
   if (kid) {
     tail = `[data-kid="${CSS.escape(kid)}"][data-side="${side}"]`;
   } else if (okid) {
     tail = `[data-okid="${CSS.escape(okid)}"][data-side="${side}"]`;
+  } else if (ogid) {
+    tail = `[data-ogid="${CSS.escape(ogid)}"][data-side="${side}"]`;
   } else if (midAttr) {
     tail = `[data-mid="${CSS.escape(midAttr)}"][data-side="${side}"]`;
   } else {

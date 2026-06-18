@@ -162,7 +162,7 @@ function setMode(mode) {
   if (authHeading) authHeading.textContent = isLogin ? "Entrar" : "Crear cuenta";
   if (authSub) {
     authSub.textContent = isLogin
-      ? "Accede con tu usuario y contraseña de 8 caracteres. Si juegas la quiniela privada, usa el mismo usuario y PIN."
+      ? "Accede con tu usuario y contraseña de 8 caracteres."
       : "Elige un usuario único y una contraseña de exactamente 8 caracteres. Solo una cuenta por dispositivo.";
   }
   showError("");
