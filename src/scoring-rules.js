@@ -20,15 +20,16 @@ export const MAX_PODIUM = 16;
 export const INDIVIDUAL_AWARD_POINTS = 3;
 export const MAX_INDIVIDUAL_AWARDS = 9;
 
-/** +1 por equipo acertado entre los dos clasificados; +2 si acierta el orden 1.º/2.º (BIEN); +2 si el orden 1–4 es exacto (EXCELENTE); +1 si acierta si el 3.º pasa; +1 si orden 1–4 exacto y acierto 3.º (PERFECTO) */
+/** +1 por clasificado directo; +1 por 3.º/4.º en posición exacta; +1 si acierta orden 1.º/2.º (BIEN); +2 si orden 1–4 exacto (EXCELENTE, total badge +3); +1 si acierta si el 3.º pasa; +1 PERFECTO (total badge +4) */
 export const GROUP_PASS_POINTS = 1;
-export const GROUP_QUALIFIERS_ORDER_BONUS = 2;
+export const GROUP_POSITION_POINTS = 1;
+export const GROUP_QUALIFIERS_ORDER_BONUS = 1;
 export const GROUP_PERFECT_ORDER_BONUS = 2;
 export const GROUP_THIRD_ADVANCE_POINTS = 1;
 /** +1 cuando el orden 1–4 es exacto y además acierta si el 3.º pasa (suma con el +1 del acierto 3.º) */
 export const GROUP_PERFECTO_ORDER_AND_THIRD_BONUS = 1;
-export const MAX_PER_GROUP = 8;
-export const MAX_GROUPS_TOTAL = 12 * MAX_PER_GROUP; // 96
+export const MAX_PER_GROUP = 9;
+export const MAX_GROUPS_TOTAL = 12 * MAX_PER_GROUP; // 108
 
 /**
  * Calcula puntos de orden de grupo según reglas actuales.
@@ -56,17 +57,28 @@ export function computeGroupOrderPoints(
     if (team && offTop2Set.has(team)) points += GROUP_PASS_POINTS;
   }
 
+  // +1 por cada posición exacta de 3.º y 4.º.
+  for (let i = 2; i < 4; i++) {
+    if (
+      predictedOrder[i] &&
+      officialOrder[i] &&
+      predictedOrder[i] === officialOrder[i]
+    ) {
+      points += GROUP_POSITION_POINTS;
+    }
+  }
+
   const fullOrderHit =
     predictedOrder.length >= 4 &&
     officialOrder.length >= 4 &&
     [0, 1, 2, 3].every((i) => predictedOrder[i] === officialOrder[i]);
 
-  // +2 (BIEN) si acierta el orden exacto de 1.º y 2.º.
+  // +1 (BIEN) si acierta el orden exacto de 1.º y 2.º.
   if (predTop2[0] === offTop2[0] && predTop2[1] === offTop2[1]) {
     points += GROUP_QUALIFIERS_ORDER_BONUS;
   }
 
-  // +2 (EXCELENTE) por orden completo exacto del grupo.
+  // +2 (EXCELENTE) por orden completo exacto del grupo (total badge +3 con BIEN).
   if (fullOrderHit) {
     points += GROUP_PERFECT_ORDER_BONUS;
   }

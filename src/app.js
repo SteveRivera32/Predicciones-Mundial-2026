@@ -1580,6 +1580,9 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
           if (hasOfficialData && i < 2 && Boolean(t) && officialQualifiers.has(t)) {
             ptsCell += 1;
             badgeTitle = "Clasificado directo acertado (+1)";
+          } else if (hasOfficialData && hitExact && i >= 2) {
+            ptsCell += 1;
+            badgeTitle = "Posición exacta acertada (+1)";
           }
           if (hasOfficialData && hitExact && hasUniquePickBonus(voteCountsByPos[i], t)) {
             bonusPtsCell += 1;
@@ -1626,7 +1629,7 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
             return acc;
           }, 0)
         : 0;
-      /** Solo puntos del bloque «orden del grupo» (máx. 8); la quiniela por partido se ve en su pestaña. */
+      /** Solo puntos del bloque «orden del grupo» (máx. 9); la quiniela por partido se ve en su pestaña. */
       const groupPts = groupOrderPts + minorityBonusPts;
 
       return {
@@ -9879,16 +9882,16 @@ function buildTeamOrderSinglePredGroupCard(grp, orderByGroup, officialSnapshot, 
       const t = predOrder[i] ?? "";
       let ptsCell = "";
       if (withPts) {
+        const hitExact =
+          hasOfficialData && Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
         const rowBasePts =
-          hasOfficialData && i < 2 && Boolean(t) && officialQualifiers.has(t) ? 1 : 0;
-        const rowBonusPts =
-          hasOfficialData &&
-          Boolean(t) &&
-          Boolean(officialOrder[i]) &&
-          t === officialOrder[i] &&
-          hasUniquePickBonus(voteCountsByPos[i], t)
+          hasOfficialData && i < 2 && Boolean(t) && officialQualifiers.has(t)
             ? 1
-            : 0;
+            : hitExact && i >= 2
+              ? 1
+              : 0;
+        const rowBonusPts =
+          hitExact && hasUniquePickBonus(voteCountsByPos[i], t) ? 1 : 0;
         const rowPts = rowBasePts + rowBonusPts;
         ptsCell = `<td class="team-tables-single-pts">${pointsBadgeHtml(rowPts, {
           bonus: rowBonusPts > 0,
@@ -9897,7 +9900,9 @@ function buildTeamOrderSinglePredGroupCard(grp, orderByGroup, officialSnapshot, 
               ? rowBasePts > 0
                 ? "Acierto en posición con bono por minoría (+1 base +1 bono)"
                 : "Acierto en posición con bono por minoría (+1 bono)"
-              : "Clasificado directo acertado (+1)",
+              : rowBasePts > 0 && i >= 2
+                ? "Posición exacta acertada (+1)"
+                : "Clasificado directo acertado (+1)",
         }) || '<span class="muted">—</span>'}</td>`;
       }
       return `
@@ -10670,16 +10675,16 @@ function buildTeamOrderPredTableBody(orderByGroup, officialSnapshot, participant
       const t = predOrder[i] ?? "";
       let ptsCell = "";
       if (withPts) {
+        const hitExact =
+          hasOfficialData && Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
         const rowBasePts =
-          hasOfficialData && i < 2 && Boolean(t) && officialQualifiers.has(t) ? 1 : 0;
-        const rowBonusPts =
-          hasOfficialData &&
-          Boolean(t) &&
-          Boolean(officialOrder[i]) &&
-          t === officialOrder[i] &&
-          hasUniquePickBonus(voteCountsByPos[i], t)
+          hasOfficialData && i < 2 && Boolean(t) && officialQualifiers.has(t)
             ? 1
-            : 0;
+            : hitExact && i >= 2
+              ? 1
+              : 0;
+        const rowBonusPts =
+          hitExact && hasUniquePickBonus(voteCountsByPos[i], t) ? 1 : 0;
         const rowPts = rowBasePts + rowBonusPts;
         ptsCell = `<td class="team-order-points-cell">${pointsBadgeHtml(rowPts, {
           bonus: rowBonusPts > 0,
@@ -10688,7 +10693,9 @@ function buildTeamOrderPredTableBody(orderByGroup, officialSnapshot, participant
               ? rowBasePts > 0
                 ? "Acierto en posición con bono por minoría (+1 base +1 bono)"
                 : "Acierto en posición con bono por minoría (+1 bono)"
-              : "Clasificado directo acertado (+1)",
+              : rowBasePts > 0 && i >= 2
+                ? "Posición exacta acertada (+1)"
+                : "Clasificado directo acertado (+1)",
         }) || '<span class="muted">—</span>'}</td>`;
       }
       rows.push(`
@@ -11218,19 +11225,19 @@ function buildGroupOrderRankingRows(sessionParticipantId) {
         <th scope="row" class="group-ranking-name">${escapeHtml(r.participant.name)}${you}</th>
         ${groupOrderRankingStatCell(
           r.bienCount,
-          "BIEN: grupos con 1.º y 2.º en orden exacto (+2).",
+          "BIEN: grupos con 1.º y 2.º en orden exacto (+1).",
           maxBien > 0 && r.bienCount === maxBien,
           "bien",
         )}
         ${groupOrderRankingStatCell(
           r.excelenteCount,
-          "EXCELENTE: grupos con orden 1.º a 4.º exacto (+2, badge único del grupo).",
+          "EXCELENTE: grupos con orden 1.º a 4.º exacto (+2, total badge +3).",
           maxExcelente > 0 && r.excelenteCount === maxExcelente,
           "excelente",
         )}
         ${groupOrderRankingStatCell(
           r.perfectoBonusCount,
-          "PERFECTO: grupos con orden completo y acierto de si el 3.º pasa (+1).",
+          "PERFECTO: grupos con orden completo y acierto de si el 3.º pasa (+1, total badge +4).",
           maxPerfecto > 0 && r.perfectoBonusCount === maxPerfecto,
           "perfecto",
         )}
