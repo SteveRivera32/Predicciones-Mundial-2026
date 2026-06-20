@@ -1757,18 +1757,29 @@ function clampGoalInput(v) {
  */
 function applyScoreStepperDelta(inp, delta) {
   const isEmpty = inp.value === "";
-  let n = isEmpty ? 0 : parseInt(inp.value, 10) || 0;
+
+  if (delta > 0) {
+    if (isEmpty) {
+      inp.value = "1";
+      return;
+    }
+    const n = Math.max(0, Math.min(20, (parseInt(inp.value, 10) || 0) + delta));
+    inp.value = String(n);
+    return;
+  }
 
   if (delta < 0) {
-    if (isEmpty) return;
+    if (isEmpty) {
+      inp.value = "0";
+      return;
+    }
+    const n = parseInt(inp.value, 10) || 0;
     if (n === 0) {
       inp.value = "";
       return;
     }
+    inp.value = String(Math.max(0, Math.min(20, n + delta)));
   }
-
-  n = Math.max(0, Math.min(20, n + delta));
-  inp.value = String(n);
 }
 
 /**
