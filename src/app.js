@@ -8184,12 +8184,46 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
 }
 
 /**
+ * Pastillas de confirmación en el resumen del acordeón (sin reemplazar el `<article>`).
+ * @param {HTMLElement | null} wrap
+ * @param {string} matchId
+ * @param {{ participantId: string }} session
+ * @param {boolean} [isKo]
+ */
+function patchQuinielaCardUserPredPills(wrap, matchId, session, isKo = false) {
+  if (!wrap || !session) return;
+  const card = wrap.querySelector(`article.quiniela-match[data-quiniela-mid="${CSS.escape(matchId)}"]`);
+  if (!card) return;
+  const m = isKo
+    ? getKnockoutMatchesFlat().find((x) => x.id === matchId)
+    : GROUP_MATCHES.find((x) => x.id === matchId);
+  if (!m) return;
+  const official = loadOfficialResults();
+  const pStore = loadPredictions(session.participantId);
+  const userPredConfirmed = isUserPredictionConfirmedStore(pStore, m);
+  const matchClosed = isMatchOfficiallyClosed(official, m);
+  const cornerPred = card.querySelector(".partidos-match-corner__pred");
+  if (cornerPred) {
+    cornerPred.innerHTML = partidosUserPredPillHtml(userPredConfirmed, "corner", matchClosed);
+  }
+  const inlinePredRow = card.querySelector(".partidos-acc__pred-row");
+  if (inlinePredRow) {
+    inlinePredRow.innerHTML = partidosUserPredPillHtml(userPredConfirmed, "inline", matchClosed);
+  }
+  const mobilePred = card.querySelector(".partidos-acc__mobile-pred");
+  if (mobilePred) {
+    mobilePred.innerHTML = partidosUserPredChipHtml(userPredConfirmed, matchClosed);
+  }
+}
+
+/**
  * Actualiza solo la tabla de predicciones de un partido (sin reemplazar el bloque oficial → no pierde foco en steppers).
  * @param {HTMLElement | null} wrap
  * @param {string} mid
  * @param {HTMLElement | null} [focusEl] input/stepper que disparó el guardado (el foco puede haberse movido ya)
+ * @param {boolean} [skipLightPatch] confirmar/desconfirmar requiere reemplazar la columna de acciones
  */
-function patchQuinielaMatchPredRows(wrap, mid, focusEl) {
+function patchQuinielaMatchPredRows(wrap, mid, focusEl, skipLightPatch = false) {
   const session = loadSession();
   if (!wrap || !session) return;
   const m = GROUP_MATCHES.find((x) => x.id === mid);
@@ -8198,7 +8232,7 @@ function patchQuinielaMatchPredRows(wrap, mid, focusEl) {
   if (!card) return;
   const tb = card.querySelector(".quiniela-preds tbody");
   if (!tb) return;
-  if (tryLightPartidosSelfPredPatch(wrap, mid, false, focusEl)) return;
+  if (!skipLightPatch && tryLightPartidosSelfPredPatch(wrap, mid, false, focusEl)) return;
   if (tb.dataset.pm26PredsLazy === "1") {
     const det = card.querySelector("details.partidos-acc");
     if (!(det instanceof HTMLDetailsElement) || !det.open) {
@@ -8230,8 +8264,9 @@ function patchQuinielaMatchPredRows(wrap, mid, focusEl) {
  * @param {HTMLElement | null} wrap
  * @param {string} kid
  * @param {HTMLElement | null} [focusEl]
+ * @param {boolean} [skipLightPatch]
  */
-function patchQuinielaKoMatchPredRows(wrap, kid, focusEl) {
+function patchQuinielaKoMatchPredRows(wrap, kid, focusEl, skipLightPatch = false) {
   const session = loadSession();
   if (!wrap || !session) return;
   const m = getKnockoutMatchesFlat().find((x) => x.id === kid);
@@ -8240,7 +8275,7 @@ function patchQuinielaKoMatchPredRows(wrap, kid, focusEl) {
   if (!card) return;
   const tb = card.querySelector(".quiniela-preds tbody");
   if (!tb) return;
-  if (tryLightPartidosSelfPredPatch(wrap, kid, true, focusEl)) return;
+  if (!skipLightPatch && tryLightPartidosSelfPredPatch(wrap, kid, true, focusEl)) return;
   if (tb.dataset.pm26PredsLazy === "1") {
     const det = card.querySelector("details.partidos-acc");
     if (!(det instanceof HTMLDetailsElement) || !det.open) {
@@ -8286,7 +8321,25 @@ function refreshAfterParticipantPredictionScores(session, matchId, focusEl) {
 }
 
 /**
- * Sustituye un solo `<article>` (p. ej. tras confirmar predicción: cambia pill del summary) y re-enlaza handlers.
+ * Tras confirmar o desconfirmar: parchea pastillas y filas sin reemplazar el acordeón ni re-renderizar toda la app.
+ * @param {{ participantId: string }} session
+ * @param {string} matchId
+ * @param {HTMLElement | null} [focusEl]
+ */
+function refreshAfterParticipantPredictionConfirmToggle(session, matchId, focusEl) {
+  mutePartidosFullRenderAfterLocalEdit();
+  const wrap = $("#quiniela-wrap");
+  if (!wrap || !session) return;
+  const isKo = !GROUP_MATCHES.some((x) => x.id === matchId);
+  patchQuinielaCardUserPredPills(wrap, matchId, session, isKo);
+  if (isKo) patchQuinielaKoMatchPredRows(wrap, matchId, focusEl, true);
+  else patchQuinielaMatchPredRows(wrap, matchId, focusEl, true);
+  updatePredictionTabsProgress(session, loadPredictions(session.participantId));
+  scheduleDeferredGlobalRankingsRefresh(session);
+}
+
+/**
+ * Sustituye un solo `<article>` (p. ej. tras borrar predicción de admin) y re-enlaza handlers.
  * @param {HTMLElement} wrap
  * @param {string} matchId
  * @param {{ participantId: string }} session
@@ -8615,10 +8668,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const sc = latest.groupScores[mid] ?? { home: "", away: "" };
       if (sc.home === "" || sc.away === "") return;
       savePredictions(targetParticipantId, { groupScoresConfirmed: { [mid]: true } });
-      const sess = loadSession();
-      const wrap = $("#quiniela-wrap");
-      if (wrap) replaceQuinielaMatchArticleAndRebind(wrap, mid, sess);
-      refreshAll(sess, { skipPartidosRender: true });
+      refreshAfterParticipantPredictionConfirmToggle(loadSession(), mid, btn);
     });
   });
 
@@ -8637,10 +8687,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
         groupScoresConfirmed: rest,
         replaceGroupScoresConfirmed: true,
       });
-      const sess = loadSession();
-      const wrap = $("#quiniela-wrap");
-      if (wrap) replaceQuinielaMatchArticleAndRebind(wrap, mid, sess);
-      refreshAll(sess, { skipPartidosRender: true });
+      refreshAfterParticipantPredictionConfirmToggle(loadSession(), mid, btn);
     });
   });
 
@@ -8729,10 +8776,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
         return;
       }
       savePredictions(targetParticipantId, { knockoutScoresConfirmed: { [kid]: true } });
-      const sess = loadSession();
-      const wrap = $("#quiniela-wrap");
-      if (wrap) replaceQuinielaMatchArticleAndRebind(wrap, kid, sess);
-      refreshAll(sess, { skipPartidosRender: true });
+      refreshAfterParticipantPredictionConfirmToggle(loadSession(), kid, btn);
     });
   });
 
@@ -8752,10 +8796,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
         knockoutScoresConfirmed: rest,
         replaceKnockoutScoresConfirmed: true,
       });
-      const sess = loadSession();
-      const wrap = $("#quiniela-wrap");
-      if (wrap) replaceQuinielaMatchArticleAndRebind(wrap, kid, sess);
-      refreshAll(sess, { skipPartidosRender: true });
+      refreshAfterParticipantPredictionConfirmToggle(loadSession(), kid, btn);
     });
   });
 
@@ -9937,6 +9978,30 @@ function capturePartidosInteractionAnchorFromElement(el, wrap) {
       };
     }
     return { articleMid, focusSelector: null };
+  }
+  if (el.matches(".quiniela-pred-confirm-user, .quiniela-pred-unlock-user")) {
+    const mid = el.dataset.mid ?? "";
+    const pid = el.dataset.pid ?? "";
+    const cls = el.matches(".quiniela-pred-unlock-user") ? "quiniela-pred-unlock-user" : "quiniela-pred-confirm-user";
+    return {
+      articleMid,
+      focusSelector: mid
+        ? `button.${cls}[data-mid="${CSS.escape(mid)}"]${pid ? `[data-pid="${CSS.escape(pid)}"]` : ""}`
+        : null,
+    };
+  }
+  if (el.matches(".partidos-ko-pred-confirm-user, .partidos-ko-pred-unlock-user")) {
+    const kid = el.dataset.kid ?? "";
+    const pid = el.dataset.pid ?? "";
+    const cls = el.matches(".partidos-ko-pred-unlock-user")
+      ? "partidos-ko-pred-unlock-user"
+      : "partidos-ko-pred-confirm-user";
+    return {
+      articleMid,
+      focusSelector: kid
+        ? `button.${cls}[data-kid="${CSS.escape(kid)}"]${pid ? `[data-pid="${CSS.escape(pid)}"]` : ""}`
+        : null,
+    };
   }
   if (!el.matches(".score-stepper__input") && !el.matches(".score-stepper__btn")) {
     return { articleMid, focusSelector: null };
