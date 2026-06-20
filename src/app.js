@@ -1837,6 +1837,8 @@ function wireOfficialKnockoutSteppers(wrap, onCommit) {
     onCommit(next, triggerEl instanceof HTMLElement ? triggerEl : null);
   }
   wrap.querySelectorAll(".score-stepper").forEach((stepper) => {
+    if (stepper.dataset.pm26StepperWired === "1") return;
+    stepper.dataset.pm26StepperWired = "1";
     const inp = stepper.querySelector(inputSel);
     if (!inp || inp.disabled) return;
     stepper.querySelectorAll(".score-stepper__btn").forEach((btn) => {
@@ -1884,6 +1886,8 @@ function wireOfficialGroupSteppers(wrap, onCommit, wireOpts = {}) {
   }
 
   wrap.querySelectorAll(".score-stepper").forEach((stepper) => {
+    if (stepper.dataset.pm26StepperWired === "1") return;
+    stepper.dataset.pm26StepperWired = "1";
     const inp = stepper.querySelector(inputSel);
     if (!inp || inp.disabled) return;
     stepper.querySelectorAll(".score-stepper__btn").forEach((btn) => {
@@ -1947,7 +1951,6 @@ function hydratePartidosMatchPredsTable(card, session) {
     delete tb.dataset.pm26PredsLazy;
     stampQuinielaCardPredictionMeta(card, gm, session, official, false);
     wireQuinielaPredictionHandlersInScope(card, session);
-    if (canManagePartidosMatchFlow(session.participantId)) bindPartidosAdminHandlers(card, session);
     deferPartidosCardCanvasSync(card);
     return;
   }
@@ -1957,7 +1960,6 @@ function hydratePartidosMatchPredsTable(card, session) {
   delete tb.dataset.pm26PredsLazy;
   stampQuinielaCardPredictionMeta(card, mKo, session, official, true);
   wireQuinielaPredictionHandlersInScope(card, session);
-  if (canManagePartidosMatchFlow(session.participantId)) bindPartidosAdminHandlers(card, session);
   deferPartidosCardCanvasSync(card);
 }
 
