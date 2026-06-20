@@ -1819,10 +1819,57 @@ function wireScoreStepperButtons(stepper, inp, collect) {
       if (btn.disabled) return;
       const d = parseInt(btn.dataset.delta ?? "0", 10);
       applyScoreStepperDelta(inp, d);
+      btn.blur();
       if (document.activeElement === inp) inp.blur();
       collect(btn);
     });
   });
+}
+
+/** Quita foco del stepper antes de reemplazar filas (evita salto de scroll en móvil). */
+function blurPartidosInteractionFocus(focusEl) {
+  if (focusEl instanceof HTMLElement) {
+    focusEl.blur();
+    return;
+  }
+  const active = document.activeElement;
+  if (
+    active instanceof HTMLElement &&
+    (active.matches(".score-stepper__btn, .score-stepper__input") ||
+      active.closest(".quiniela-preds, .quiniela-official, .partidos-ko-official"))
+  ) {
+    active.blur();
+  }
+}
+
+/** @param {number} y */
+function restorePartidosScrollY(y) {
+  const apply = () => {
+    if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
+  };
+  requestAnimationFrame(() => {
+    apply();
+    requestAnimationFrame(apply);
+  });
+}
+
+/**
+ * @param {HTMLElement | null} wrap
+ * @param {string} matchId
+ * @param {HTMLElement | null | undefined} focusEl
+ */
+function restorePartidosPredRowsInteraction(wrap, matchId, focusEl) {
+  if (!wrap || isMobileLayout()) return;
+  const anchor =
+    capturePartidosInteractionAnchorFromElement(focusEl, wrap) ?? capturePartidosInteractionAnchor(wrap);
+  const viewportLock =
+    anchor?.articleMid === matchId
+      ? (() => {
+          const ae = wrap.querySelector(`article.quiniela-match[data-quiniela-mid="${CSS.escape(matchId)}"]`);
+          return ae ? { mid: matchId, vTop: ae.getBoundingClientRect().top } : null;
+        })()
+      : null;
+  if (anchor?.articleMid === matchId) restorePartidosInteractionAnchor(wrap, anchor, viewportLock);
 }
 
 /** @param {ParentNode} [root] */
@@ -8045,35 +8092,25 @@ function patchQuinielaMatchPredRows(wrap, mid, focusEl) {
       stampQuinielaCardPredictionMeta(card, m, session, loadOfficialResults(), false);
       return;
     }
+    blurPartidosInteractionFocus(focusEl);
+    const scrollY = isMobileLayout() ? window.scrollY : null;
     hydratePartidosMatchPredsTable(card, session);
-    const anchorLazy =
-      capturePartidosInteractionAnchorFromElement(focusEl, wrap) ?? capturePartidosInteractionAnchor(wrap);
-    const viewportLockLazy =
-      anchorLazy?.articleMid === mid
-        ? (() => {
-            const ae = wrap.querySelector(`article.quiniela-match[data-quiniela-mid="${CSS.escape(mid)}"]`);
-            return ae ? { mid, vTop: ae.getBoundingClientRect().top } : null;
-          })()
-        : null;
-    if (anchorLazy?.articleMid === mid) restorePartidosInteractionAnchor(wrap, anchorLazy, viewportLockLazy);
+    scheduleSyncQuinielaTableHorizontalScroll(card);
+    if (scrollY != null) restorePartidosScrollY(scrollY);
+    else restorePartidosPredRowsInteraction(wrap, mid, focusEl);
     return;
   }
-  const anchor =
-    capturePartidosInteractionAnchorFromElement(focusEl, wrap) ?? capturePartidosInteractionAnchor(wrap);
-  const viewportLock =
-    anchor?.articleMid === mid
-      ? (() => {
-          const ae = wrap.querySelector(`article.quiniela-match[data-quiniela-mid="${CSS.escape(mid)}"]`);
-          return ae ? { mid, vTop: ae.getBoundingClientRect().top } : null;
-        })()
-      : null;
+  blurPartidosInteractionFocus(focusEl);
+  const scrollY = isMobileLayout() ? window.scrollY : null;
   const isAdmin = canEditOfficialResults(session.participantId);
   const officialNow = loadOfficialResults();
   tb.innerHTML = buildQuinielaPredRowsHtml(m, session, officialNow, isAdmin);
   stampQuinielaCardPredictionMeta(card, m, session, officialNow, false);
   wireQuinielaPredictionHandlersInScope(card, session);
   deferPartidosCardCanvasSync(card);
-  if (anchor?.articleMid === mid) restorePartidosInteractionAnchor(wrap, anchor, viewportLock);
+  scheduleSyncQuinielaTableHorizontalScroll(card);
+  if (scrollY != null) restorePartidosScrollY(scrollY);
+  else restorePartidosPredRowsInteraction(wrap, mid, focusEl);
 }
 
 /**
@@ -8097,35 +8134,25 @@ function patchQuinielaKoMatchPredRows(wrap, kid, focusEl) {
       stampQuinielaCardPredictionMeta(card, m, session, loadOfficialResults(), true);
       return;
     }
+    blurPartidosInteractionFocus(focusEl);
+    const scrollY = isMobileLayout() ? window.scrollY : null;
     hydratePartidosMatchPredsTable(card, session);
-    const anchorLazy =
-      capturePartidosInteractionAnchorFromElement(focusEl, wrap) ?? capturePartidosInteractionAnchor(wrap);
-    const viewportLockLazy =
-      anchorLazy?.articleMid === kid
-        ? (() => {
-            const ae = wrap.querySelector(`article.quiniela-match[data-quiniela-mid="${CSS.escape(kid)}"]`);
-            return ae ? { mid: kid, vTop: ae.getBoundingClientRect().top } : null;
-          })()
-        : null;
-    if (anchorLazy?.articleMid === kid) restorePartidosInteractionAnchor(wrap, anchorLazy, viewportLockLazy);
+    scheduleSyncQuinielaTableHorizontalScroll(card);
+    if (scrollY != null) restorePartidosScrollY(scrollY);
+    else restorePartidosPredRowsInteraction(wrap, kid, focusEl);
     return;
   }
-  const anchor =
-    capturePartidosInteractionAnchorFromElement(focusEl, wrap) ?? capturePartidosInteractionAnchor(wrap);
-  const viewportLock =
-    anchor?.articleMid === kid
-      ? (() => {
-          const ae = wrap.querySelector(`article.quiniela-match[data-quiniela-mid="${CSS.escape(kid)}"]`);
-          return ae ? { mid: kid, vTop: ae.getBoundingClientRect().top } : null;
-        })()
-      : null;
+  blurPartidosInteractionFocus(focusEl);
+  const scrollY = isMobileLayout() ? window.scrollY : null;
   const isAdmin = canEditOfficialResults(session.participantId);
   const officialNow = loadOfficialResults();
   tb.innerHTML = buildQuinielaPredRowsHtmlKo(m, session, officialNow, isAdmin);
   stampQuinielaCardPredictionMeta(card, m, session, officialNow, true);
   wireQuinielaPredictionHandlersInScope(card, session);
   deferPartidosCardCanvasSync(card);
-  if (anchor?.articleMid === kid) restorePartidosInteractionAnchor(wrap, anchor, viewportLock);
+  scheduleSyncQuinielaTableHorizontalScroll(card);
+  if (scrollY != null) restorePartidosScrollY(scrollY);
+  else restorePartidosPredRowsInteraction(wrap, kid, focusEl);
 }
 
 /**
@@ -9870,15 +9897,11 @@ function restorePartidosInteractionAnchor(wrap, anchor, viewportLock) {
 
   requestAnimationFrame(() => {
     alignViewport();
-    if (focusTarget instanceof HTMLElement) {
-      const skipFocus =
-        isMobileLayout() && focusTarget.matches(".score-stepper__input");
-      if (!skipFocus) {
-        try {
-          focusTarget.focus({ preventScroll: true });
-        } catch {
-          focusTarget.focus();
-        }
+    if (!isMobileLayout() && focusTarget instanceof HTMLElement) {
+      try {
+        focusTarget.focus({ preventScroll: true });
+      } catch {
+        focusTarget.focus();
       }
     }
     alignViewport();
