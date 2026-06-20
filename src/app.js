@@ -2156,6 +2156,28 @@ function getActiveTabId() {
   return "grupos";
 }
 
+/** @param {string} panelId */
+function markPanelContentReady(panelId) {
+  const panel = document.querySelector(`.panel[data-panel="${CSS.escape(panelId)}"]`);
+  if (panel instanceof HTMLElement) panel.dataset.pm26ContentReady = "1";
+}
+
+/** @param {string} panelId */
+function isPanelContentReady(panelId) {
+  return document.querySelector(`.panel[data-panel="${CSS.escape(panelId)}"]`)?.dataset.pm26ContentReady === "1";
+}
+
+function invalidateAllPanelContent() {
+  document.querySelectorAll(".panel[data-panel]").forEach((p) => {
+    delete p.dataset.pm26ContentReady;
+  });
+}
+
+/** @returns {HTMLElement | null} */
+function getActivePanelElement() {
+  return document.querySelector(`.panel[data-panel="${CSS.escape(getActiveTabId())}"]`);
+}
+
 /** @returns {{ x: number, y: number }} */
 function captureWindowScrollAnchor() {
   return { x: window.scrollX, y: window.scrollY };
@@ -2187,7 +2209,12 @@ function initTabs(onTabChange) {
   const panels = document.querySelectorAll(".panel");
   let activeTabId = /** @type {string | null} */ (null);
 
-  function setTab(id) {
+  /**
+   * @param {string} id
+   * @param {{ notifyChange?: boolean }} [opts]
+   */
+  function setTab(id, opts = {}) {
+    const { notifyChange = true } = opts;
     const switched = activeTabId !== id;
     activeTabId = id;
     tabs.forEach((t) => {
@@ -2201,7 +2228,7 @@ function initTabs(onTabChange) {
       p.hidden = !active;
     });
     localStorage.setItem(TAB_KEY, id);
-    onTabChange?.(id);
+    if (notifyChange) onTabChange?.(id);
     if (switched) scrollAppMainToTop();
   }
 
@@ -2212,7 +2239,7 @@ function initTabs(onTabChange) {
   const saved = localStorage.getItem(TAB_KEY);
   let initial = saved && $(`.tab[data-tab="${saved}"]`) ? saved : "grupos";
   if (initial === "quiniela") initial = "partidos";
-  setTab(initial);
+  setTab(initial, { notifyChange: false });
   return { setTab };
 }
 
@@ -11588,38 +11615,53 @@ function refreshAll(session, opts = {}) {
   updatePredictionTabsProgress(session, predictions);
   if (showPanel("generales")) {
     renderGenerales(session.participantId, predictions, false);
+    markPanelContentReady("generales");
   }
   if (showPanel("grupos")) {
     renderGrupos(session.participantId, predictions);
+    markPanelContentReady("grupos");
   }
   if (showPanel("brackets")) {
     renderBrackets(session.participantId, predictions);
+    markPanelContentReady("brackets");
   }
   if (showPanel("team-stats")) {
     redrawTeamStats();
     rebuildTeamStatsSelectOptions();
+    markPanelContentReady("team-stats");
   }
   if (showPanel("team-order")) {
     redrawTeamOrder();
     rebuildTeamOrderSelectOptions();
+    markPanelContentReady("team-order");
   }
   if (showPanel("team-order-ranking")) {
     redrawTeamOrderRanking();
+    markPanelContentReady("team-order-ranking");
   }
   if (showPanel("match-ranking")) {
     redrawMatchRanking();
+    markPanelContentReady("match-ranking");
   }
   if (showPanel("match-history")) {
     redrawMatchHistory();
+    markPanelContentReady("match-history");
   }
   if (showPanel("final-ranking")) {
     renderFinalRanking(session);
+    markPanelContentReady("final-ranking");
   }
   if (showPanel("partidos") && !skipPartidosRender) {
     renderQuiniela(session, loadOfficialResults());
+    markPanelContentReady("partidos");
+  }
+  if (showPanel("stats")) {
+    renderStats(session);
+    markPanelContentReady("stats");
   }
   updateProximosNavShortcutButton(session);
-  syncGroupPtsBadgeCanvases(document.body);
+  const canvasRoot = onlyActivePanel ? (getActivePanelElement() ?? document.body) : document.body;
+  requestAnimationFrame(() => syncGroupPtsBadgeCanvases(canvasRoot));
   if (scrollAnchor) restoreWindowScrollAnchor(scrollAnchor);
   const onTimedLockRefresh = isArenaMode()
     ? () => scheduleArenaDeferredRefresh(refreshArenaPanelsIfIdle)
@@ -11655,23 +11697,8 @@ export function initApp() {
     syncDrawerExpandableSubmenus(tabId);
     const sess = loadSession();
     requestAnimationFrame(() => {
-      if (tabId === "generales" && sess) {
-        renderGenerales(sess.participantId, loadPredictions(sess.participantId), false);
-      }
-      if (tabId === "grupos" && sess) {
-        renderGrupos(sess.participantId, loadPredictions(sess.participantId));
-      }
-      if (tabId === "brackets" && sess) {
-        renderBrackets(sess.participantId, loadPredictions(sess.participantId));
-      }
-      if (tabId === "partidos") redrawQuiniela();
-      if (tabId === "team-stats") redrawTeamStats();
-      if (tabId === "team-order") redrawTeamOrder();
-      if (tabId === "team-order-ranking") redrawTeamOrderRanking();
-      if (tabId === "match-ranking") redrawMatchRanking();
-      if (tabId === "match-history") redrawMatchHistory();
-      if (tabId === "final-ranking") renderFinalRanking(loadSession());
-      if (tabId === "stats" && sess) renderStats(sess);
+      if (!sess || isPanelContentReady(tabId)) return;
+      refreshAll(sess, { onlyActivePanel: true, preserveScroll: true, deferGlobalRankings: true });
     });
   });
   initDrawerExpandableSubmenus(tabsController);
@@ -11697,6 +11724,7 @@ export function initApp() {
     }
     externalSyncRefreshChain = externalSyncRefreshChain
       .then(() => {
+        invalidateAllPanelContent();
         refreshAll(loadSession(), {
           preserveScroll: true,
           onlyActivePanel: true,
@@ -11723,7 +11751,7 @@ export function initApp() {
   });
 
   function afterSessionReady() {
-    refreshAll(loadSession());
+    refreshAll(loadSession(), { onlyActivePanel: true, deferGlobalRankings: true });
   }
 
   window.addEventListener("pm26-pin-stale", () => {
@@ -11759,7 +11787,7 @@ export function initApp() {
     }
   }
 
-  requestAnimationFrame(() => syncGroupPtsBadgeCanvases(document.body));
+  requestAnimationFrame(() => syncGroupPtsBadgeCanvases(getActivePanelElement() ?? document.body));
 
   MOBILE_LAYOUT_MQ?.addEventListener?.("change", () => {
     syncGeneralesPredsTableMobileColumns($("#generales-preds-host"));
