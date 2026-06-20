@@ -1923,6 +1923,55 @@ function deferPartidosCardCanvasSync(card) {
   });
 }
 
+/** Tbody vacío: las filas se generan al abrir el acordeón (mejora INP al cargar Partidos). */
+function partidosPredsLazyTbodyHtml() {
+  return `<tbody data-pm26-preds-lazy="1"></tbody>`;
+}
+
+/**
+ * @param {HTMLElement} card
+ * @param {{ participantId: string }} session
+ */
+function hydratePartidosMatchPredsTable(card, session) {
+  if (!(card instanceof HTMLElement) || !session) return;
+  const tb = card.querySelector(".quiniela-preds tbody");
+  if (!(tb instanceof HTMLElement) || tb.dataset.pm26PredsLazy !== "1") return;
+  const mid = card.dataset.quinielaMid;
+  if (!mid) return;
+
+  const official = loadOfficialResults();
+  const isAdmin = canEditOfficialResults(session.participantId);
+  const gm = GROUP_MATCHES.find((x) => x.id === mid);
+  if (gm) {
+    tb.innerHTML = buildQuinielaPredRowsHtml(gm, session, official, isAdmin);
+    delete tb.dataset.pm26PredsLazy;
+    stampQuinielaCardPredictionMeta(card, gm, session, official, false);
+    wireQuinielaPredictionHandlersInScope(card, session);
+    if (canManagePartidosMatchFlow(session.participantId)) bindPartidosAdminHandlers(card, session);
+    deferPartidosCardCanvasSync(card);
+    return;
+  }
+  const mKo = getKnockoutMatchesFlat().find((x) => x.id === mid);
+  if (!mKo) return;
+  tb.innerHTML = buildQuinielaPredRowsHtmlKo(mKo, session, official, isAdmin);
+  delete tb.dataset.pm26PredsLazy;
+  stampQuinielaCardPredictionMeta(card, mKo, session, official, true);
+  wireQuinielaPredictionHandlersInScope(card, session);
+  if (canManagePartidosMatchFlow(session.participantId)) bindPartidosAdminHandlers(card, session);
+  deferPartidosCardCanvasSync(card);
+}
+
+/**
+ * @param {HTMLElement} card
+ * @param {{ participantId: string } | null} session
+ */
+function scheduleHydratePartidosMatchPredsTable(card, session) {
+  if (!(card instanceof HTMLElement) || !session) return;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => hydratePartidosMatchPredsTable(card, session));
+  });
+}
+
 /**
  * @param {ReturnType<typeof loadOfficialResults>} official
  * @returns {Record<string, { home: number|string|"", away: number|string|"" }>}
@@ -2345,6 +2394,10 @@ function restoreParticipantSearchFocus(snap) {
     );
     const det = card?.querySelector("details.partidos-acc");
     if (det instanceof HTMLDetailsElement) det.open = true;
+    if (card instanceof HTMLElement) {
+      const sess = loadSession();
+      if (sess) hydratePartidosMatchPredsTable(card, sess);
+    }
     input = card?.querySelector(".participant-search-input");
   } else if (snap.groupId) {
     const host = document.querySelector(`.group-preds-host[data-group-id="${CSS.escape(snap.groupId)}"]`);
@@ -2374,7 +2427,7 @@ function refreshArenaPartidosPredictionTables(session) {
     const mid = card.getAttribute("data-quiniela-mid");
     if (!mid) return;
     const tb = card.querySelector(".quiniela-preds tbody");
-    if (!tb) return;
+    if (!tb || tb.dataset.pm26PredsLazy === "1") return;
     const gm = GROUP_MATCHES.find((x) => x.id === mid);
     if (gm) {
       tb.innerHTML = buildQuinielaPredRowsHtml(gm, session, official, isAdmin);
@@ -7682,7 +7735,6 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
   const koOutcomeStyled = offOk && off.home !== "" && off.away !== "";
   const koOffHomeCls = koOutcomeStyled ? officialScoreOutcomeClass(off.home, off.away, "home") : "";
   const koOffAwayCls = koOutcomeStyled ? officialScoreOutcomeClass(off.home, off.away, "away") : "";
-  const body = buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin);
   const pStoreKo = loadPredictions(session.participantId);
   const userPredConfirmedKo = isUserPredictionConfirmedStore(pStoreKo, m);
   const matchClosedKo = isMatchOfficiallyClosed(official, m);
@@ -7847,7 +7899,7 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
                   ${quinielaPredsLastThKo}
                 </tr>
               </thead>
-              <tbody>${body}</tbody>
+              ${partidosPredsLazyTbodyHtml()}
             </table>
           </div>
         </div>
@@ -7870,6 +7922,25 @@ function patchQuinielaMatchPredRows(wrap, mid, focusEl) {
   if (!card) return;
   const tb = card.querySelector(".quiniela-preds tbody");
   if (!tb) return;
+  if (tb.dataset.pm26PredsLazy === "1") {
+    const det = card.querySelector("details.partidos-acc");
+    if (!(det instanceof HTMLDetailsElement) || !det.open) {
+      stampQuinielaCardPredictionMeta(card, m, session, loadOfficialResults(), false);
+      return;
+    }
+    hydratePartidosMatchPredsTable(card, session);
+    const anchorLazy =
+      capturePartidosInteractionAnchorFromElement(focusEl, wrap) ?? capturePartidosInteractionAnchor(wrap);
+    const viewportLockLazy =
+      anchorLazy?.articleMid === mid
+        ? (() => {
+            const ae = wrap.querySelector(`article.quiniela-match[data-quiniela-mid="${CSS.escape(mid)}"]`);
+            return ae ? { mid, vTop: ae.getBoundingClientRect().top } : null;
+          })()
+        : null;
+    if (anchorLazy?.articleMid === mid) restorePartidosInteractionAnchor(wrap, anchorLazy, viewportLockLazy);
+    return;
+  }
   const anchor =
     capturePartidosInteractionAnchorFromElement(focusEl, wrap) ?? capturePartidosInteractionAnchor(wrap);
   const viewportLock =
@@ -7903,6 +7974,25 @@ function patchQuinielaKoMatchPredRows(wrap, kid, focusEl) {
   if (!card) return;
   const tb = card.querySelector(".quiniela-preds tbody");
   if (!tb) return;
+  if (tb.dataset.pm26PredsLazy === "1") {
+    const det = card.querySelector("details.partidos-acc");
+    if (!(det instanceof HTMLDetailsElement) || !det.open) {
+      stampQuinielaCardPredictionMeta(card, m, session, loadOfficialResults(), true);
+      return;
+    }
+    hydratePartidosMatchPredsTable(card, session);
+    const anchorLazy =
+      capturePartidosInteractionAnchorFromElement(focusEl, wrap) ?? capturePartidosInteractionAnchor(wrap);
+    const viewportLockLazy =
+      anchorLazy?.articleMid === kid
+        ? (() => {
+            const ae = wrap.querySelector(`article.quiniela-match[data-quiniela-mid="${CSS.escape(kid)}"]`);
+            return ae ? { mid: kid, vTop: ae.getBoundingClientRect().top } : null;
+          })()
+        : null;
+    if (anchorLazy?.articleMid === kid) restorePartidosInteractionAnchor(wrap, anchorLazy, viewportLockLazy);
+    return;
+  }
   const anchor =
     capturePartidosInteractionAnchorFromElement(focusEl, wrap) ?? capturePartidosInteractionAnchor(wrap);
   const viewportLock =
@@ -7976,6 +8066,7 @@ function replaceQuinielaMatchArticleAndRebind(wrap, matchId, session, focusEl = 
   if (wasOpen) {
     const d = newArt.querySelector("details.partidos-acc");
     if (d instanceof HTMLDetailsElement) d.open = true;
+    scheduleHydratePartidosMatchPredsTable(newArt, session);
   }
   wireQuinielaPredictionHandlersInScope(newArt, session);
   if (m) stampQuinielaCardPredictionMeta(newArt, m, session, official, false);
@@ -9354,7 +9445,6 @@ function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds) 
   const offScoreHomeCls = officialScoresOutcomeStyled ? officialScoreOutcomeClass(off.home, off.away, "home") : "";
   const offScoreAwayCls = officialScoresOutcomeStyled ? officialScoreOutcomeClass(off.home, off.away, "away") : "";
   const adminCanEditOfficial = matchStage === "started";
-  const body = buildQuinielaPredRowsHtml(m, session, official, isAdmin);
   const pStorePrev = loadPredictions(session.participantId);
   const userPredConfirmed = isUserPredictionConfirmedStore(pStorePrev, m);
   const matchClosed = isMatchOfficiallyClosed(official, m);
@@ -9504,7 +9594,7 @@ function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds) 
                   ${quinielaPredsLastTh}
                 </tr>
               </thead>
-              <tbody>${body}</tbody>
+              ${partidosPredsLazyTbodyHtml()}
             </table>
           </div>
         </div>
@@ -9534,10 +9624,14 @@ function collectOpenPartidosAccordionIds(wrap) {
  */
 function restoreOpenPartidosAccordions(wrap, ids) {
   if (!wrap || ids.size === 0) return;
+  const session = loadSession();
   for (const mid of ids) {
     const art = wrap.querySelector(`article.quiniela-match[data-quiniela-mid="${CSS.escape(mid)}"]`);
     const det = art?.querySelector("details.partidos-acc");
-    if (det instanceof HTMLDetailsElement) det.open = true;
+    if (det instanceof HTMLDetailsElement) {
+      det.open = true;
+      if (art instanceof HTMLElement && session) scheduleHydratePartidosMatchPredsTable(art, session);
+    }
   }
 }
 
@@ -9782,7 +9876,12 @@ function renderQuiniela(session, official) {
           return;
         }
         const card = det.closest("article.partidos-match-card");
-        deferPartidosCardCanvasSync(card ?? wrap);
+        const sess = loadSession();
+        if (card instanceof HTMLElement && sess) {
+          scheduleHydratePartidosMatchPredsTable(card, sess);
+        } else {
+          deferPartidosCardCanvasSync(card ?? wrap);
+        }
       },
       true,
     );
