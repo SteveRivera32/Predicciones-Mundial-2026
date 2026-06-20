@@ -6987,9 +6987,51 @@ span.td-muted {
   margin: 0;
 }
 
-select.partidos-scope-filter.partidos-scope-filter--siguientes {
+.partidos-list-mode {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: 999px;
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(138, 180, 248, 0.12);
+}
+
+.partidos-list-mode__btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0.4rem 0.78rem;
+  font-size: 0.84rem;
+  color: var(--muted);
+  border-right: 1px solid var(--border);
+  font-family: inherit;
+  line-height: 1.3;
+}
+
+.partidos-list-mode__btn:last-child {
+  border-right: none;
+}
+
+.partidos-list-mode__btn:hover {
+  color: var(--text);
+}
+
+.partidos-list-mode__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  z-index: 1;
+}
+
+.partidos-list-mode__btn--active,
+.partidos-list-mode__btn[aria-pressed="true"] {
+  color: var(--text);
+  background: linear-gradient(180deg, rgba(138, 180, 248, 0.2), var(--surface-2));
+}
+
+.partidos-list-mode__btn--siguientes.partidos-list-mode__btn--active,
+.partidos-list-mode__btn--siguientes[aria-pressed="true"] {
   background: linear-gradient(180deg, #ffe24a, #f5d000 55%, #e6c200);
-  border-color: #b89400;
   color: #1a1600;
   font-weight: 650;
 }

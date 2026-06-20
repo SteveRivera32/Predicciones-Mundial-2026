@@ -146,11 +146,9 @@ import { animate, stagger } from "animejs";
 const TAB_KEY = "pm26-active-tab";
 const BRACKET_FOCUS_KEY = "pm26-bracket-focus";
 const PARTIDOS_SCOPE_KEY = "pm26-partidos-scope";
-/** sessionStorage: al entrar por el atajo del header, mostrar solo la jornada próxima hasta que cambie «Vista». */
+/** sessionStorage: listado «Siguientes partidos» activo hasta que cambie «Vista» o el listado. */
 const PARTIDOS_NAV_PROXIMOS_SESSION_KEY = "pm26-partidos-nav-proximos";
-/** Valor del &lt;select&gt; Vista cuando está activo el filtro «solo jornada próxima» (amarillo). La fase real sigue en PARTIDOS_SCOPE_KEY. */
-const PARTIDOS_VISTA_SIGUIENTES_VALUE = "proximos-nav";
-/** Vista: solo partidos con resultado oficial confirmado (grupos y eliminatoria). */
+/** Scope guardado en localStorage cuando el listado «Partidos terminados» está activo. */
 const PARTIDOS_VISTA_TERMINADOS_VALUE = "terminados";
 const MATCH_RANK_SCOPE_KEY = "pm26-match-rank-scope";
 const MATCH_RANK_GROUP_KEY = "pm26-match-rank-group";
@@ -6789,18 +6787,44 @@ function shouldShowPartidosGroupToolbar() {
   return getPartidosUnderlyingScope() === "grupos" && !partidosSiguientesVistaActiva();
 }
 
-function syncPartidosScopeSelectUi() {
-  const sel = $("#partidos-scope-filter");
-  if (!sel) return;
-  const underlying = getPartidosUnderlyingScope();
-  if (partidosSiguientesVistaActiva()) {
-    if ([...sel.options].some((o) => o.value === PARTIDOS_VISTA_SIGUIENTES_VALUE)) {
-      sel.value = PARTIDOS_VISTA_SIGUIENTES_VALUE;
-    }
-  } else if ([...sel.options].some((o) => o.value === underlying)) {
-    sel.value = underlying;
+function partidosTerminadosVistaActiva() {
+  return getPartidosUnderlyingScope() === PARTIDOS_VISTA_TERMINADOS_VALUE && !partidosSiguientesVistaActiva();
+}
+
+function syncPartidosToolbarUi() {
+  const sigBtn = /** @type {HTMLButtonElement | null} */ ($("#partidos-mode-siguientes"));
+  const termBtn = /** @type {HTMLButtonElement | null} */ ($("#partidos-mode-terminados"));
+  const sel = /** @type {HTMLSelectElement | null} */ ($("#partidos-scope-filter"));
+  const sigActive = partidosSiguientesVistaActiva();
+  const termActive = partidosTerminadosVistaActiva();
+
+  if (sigBtn) {
+    sigBtn.setAttribute("aria-pressed", sigActive ? "true" : "false");
+    sigBtn.classList.toggle("partidos-list-mode__btn--active", sigActive);
   }
-  sel.classList.toggle("partidos-scope-filter--siguientes", partidosSiguientesVistaActiva());
+  if (termBtn) {
+    termBtn.setAttribute("aria-pressed", termActive ? "true" : "false");
+    termBtn.classList.toggle("partidos-list-mode__btn--active", termActive);
+  }
+
+  if (sel) {
+    const underlying = getPartidosUnderlyingScope();
+    const scopeForSelect =
+      underlying === PARTIDOS_VISTA_TERMINADOS_VALUE ? "grupos" : underlying;
+    if ([...sel.options].some((o) => o.value === scopeForSelect)) {
+      sel.value = scopeForSelect;
+    }
+  }
+}
+
+/** Partidos terminados: fecha de kickoff descendente (los que acaban de cerrar primero). */
+function sortPartidosTerminadosByKickoffDesc(matches) {
+  return [...matches].sort((a, b) => {
+    const ta = a.kickoff ? Date.parse(a.kickoff) : 0;
+    const tb = b.kickoff ? Date.parse(b.kickoff) : 0;
+    if (tb !== ta) return tb - ta;
+    return String(a.id).localeCompare(String(b.id));
+  });
 }
 
 /**
@@ -6809,7 +6833,7 @@ function syncPartidosScopeSelectUi() {
 function updateProximosNavShortcutButton(session) {
   const banner = /** @type {HTMLButtonElement | null} */ (document.getElementById("nav-drawer-pending-banner"));
   const btnTitle =
-    "Abre Partidos mostrando solo la jornada próxima (amarilla). Al cambiar Vista vuelves al listado completo.";
+    "Abre Partidos con el listado Siguientes (jornada próxima en amarillo y fechas posteriores). Al cambiar Vista o el listado vuelves al listado por fase.";
 
   /**
    * @param {string} mainText
@@ -9665,13 +9689,40 @@ function ensureQuinielaFilter() {
   sel.dataset.ready = "1";
 }
 
+function ensurePartidosListModeToggle() {
+  const wrap = $("#partidos-list-mode");
+  if (!wrap || wrap.dataset.ready === "1") return;
+  const sigBtn = /** @type {HTMLButtonElement | null} */ ($("#partidos-mode-siguientes"));
+  const termBtn = /** @type {HTMLButtonElement | null} */ ($("#partidos-mode-terminados"));
+  sigBtn?.addEventListener("click", () => {
+    try {
+      sessionStorage.setItem(PARTIDOS_NAV_PROXIMOS_SESSION_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+    syncPartidosToolbarUi();
+    setPartidosGroupToolbarVisible(shouldShowPartidosGroupToolbar());
+    redrawQuiniela();
+  });
+  termBtn?.addEventListener("click", () => {
+    try {
+      sessionStorage.removeItem(PARTIDOS_NAV_PROXIMOS_SESSION_KEY);
+    } catch {
+      /* ignore */
+    }
+    localStorage.setItem(PARTIDOS_SCOPE_KEY, PARTIDOS_VISTA_TERMINADOS_VALUE);
+    syncPartidosToolbarUi();
+    setPartidosGroupToolbarVisible(shouldShowPartidosGroupToolbar());
+    redrawQuiniela();
+  });
+  wrap.dataset.ready = "1";
+}
+
 function ensurePartidosScopeFilter() {
   const sel = $("#partidos-scope-filter");
   if (!sel || sel.dataset.ready === "1") return;
   sel.classList.add("partidos-scope-filter");
   sel.innerHTML = `
-    <option value="${PARTIDOS_VISTA_SIGUIENTES_VALUE}">SIGUIENTES PARTIDOS</option>
-    <option value="${PARTIDOS_VISTA_TERMINADOS_VALUE}">PARTIDOS TERMINADOS</option>
     <option value="grupos">Fase de grupos</option>
     <option value="all-ko">Eliminatoria (todas)</option>
     <option value="r32">16vos</option>
@@ -9682,28 +9733,22 @@ function ensurePartidosScopeFilter() {
     <option value="final">Final</option>
   `;
   sel.addEventListener("change", () => {
-    if (sel.value === PARTIDOS_VISTA_SIGUIENTES_VALUE) {
-      try {
-        sessionStorage.setItem(PARTIDOS_NAV_PROXIMOS_SESSION_KEY, "1");
-      } catch {
-        /* ignore */
-      }
-    } else {
-      try {
-        sessionStorage.removeItem(PARTIDOS_NAV_PROXIMOS_SESSION_KEY);
-      } catch {
-        /* ignore */
-      }
-      localStorage.setItem(PARTIDOS_SCOPE_KEY, sel.value);
+    try {
+      sessionStorage.removeItem(PARTIDOS_NAV_PROXIMOS_SESSION_KEY);
+    } catch {
+      /* ignore */
     }
-    syncPartidosScopeSelectUi();
+    localStorage.setItem(PARTIDOS_SCOPE_KEY, sel.value);
+    syncPartidosToolbarUi();
     setPartidosGroupToolbarVisible(shouldShowPartidosGroupToolbar());
     redrawQuiniela();
   });
   sel.dataset.ready = "1";
   const saved = getPartidosUnderlyingScope();
-  if (saved && [...sel.options].some((o) => o.value === saved)) sel.value = saved;
-  syncPartidosScopeSelectUi();
+  if (saved && saved !== PARTIDOS_VISTA_TERMINADOS_VALUE && [...sel.options].some((o) => o.value === saved)) {
+    sel.value = saved;
+  }
+  syncPartidosToolbarUi();
   setPartidosGroupToolbarVisible(shouldShowPartidosGroupToolbar());
 }
 
@@ -10110,8 +10155,9 @@ function restorePartidosInteractionAnchor(wrap, anchor, viewportLock) {
  */
 function renderQuiniela(session, official) {
   ensurePartidosScopeFilter();
+  ensurePartidosListModeToggle();
   ensureQuinielaFilter();
-  syncPartidosScopeSelectUi();
+  syncPartidosToolbarUi();
   const wrap = $("#quiniela-wrap");
   const intro = $("#partidos-intro");
   const loginHint = $("#partidos-intro-login");
@@ -10133,14 +10179,14 @@ function renderQuiniela(session, official) {
   const allCal = allMatchesForPartidosCalendar();
   const nextHighlightIds = getNextMatchDayHighlightIds(official, allCal);
   const showOnlyProximosNav = partidosSiguientesVistaActiva();
-  const showTerminados = scope === PARTIDOS_VISTA_TERMINADOS_VALUE;
+  const showTerminados = partidosTerminadosVistaActiva();
   setPartidosGroupToolbarVisible(shouldShowPartidosGroupToolbar());
 
   const openAccordionMatchIds = collectOpenPartidosAccordionIds(wrap);
   const blocks = [];
   if (showOnlyProximosNav) {
-    /** Atajo del menú: la jornada próxima puede mezclar grupos y KO; no limitar por Vista ni por filtro de grupo. */
-    let proximos = allCal.filter((m) => nextHighlightIds.has(m.id));
+    /** Listado Siguientes: todos los pendientes (en juego, jornada próxima y fechas posteriores); mezcla grupos y KO. */
+    let proximos = allCal.filter((m) => !isMatchOfficiallyClosed(official, m));
     proximos = sortPartidosByLiveSiguientesKickoff(proximos, nextHighlightIds, official);
     for (const m of proximos) {
       if (m.groupId != null) {
@@ -10152,12 +10198,7 @@ function renderQuiniela(session, official) {
   } else if (showTerminados) {
     const noNextHighlight = new Set();
     let terminados = allCal.filter((m) => isMatchOfficiallyClosed(official, m));
-    terminados = [...terminados].sort((a, b) => {
-      const ta = a.kickoff ? Date.parse(a.kickoff) : 0;
-      const tb = b.kickoff ? Date.parse(b.kickoff) : 0;
-      if (tb !== ta) return tb - ta;
-      return String(a.id).localeCompare(String(b.id));
-    });
+    terminados = sortPartidosTerminadosByKickoffDesc(terminados);
     for (const m of terminados) {
       if (m.groupId != null) {
         blocks.push(renderQuinielaMatchCard(m, session, official, isAdmin, noNextHighlight, openAccordionMatchIds));
@@ -10197,7 +10238,7 @@ function renderQuiniela(session, official) {
       : null;
   wrap.innerHTML =
     blocks.length === 0 && showOnlyProximosNav
-      ? `<p class="muted partidos-proximos-empty">No hay partidos de la <strong>jornada próxima</strong> en esta vista. Cambia <strong>Vista</strong> o el grupo, o entra desde <strong>Partidos</strong> para ver el listado completo.</p>`
+      ? `<p class="muted partidos-proximos-empty">No quedan <strong>partidos siguientes</strong> pendientes. Cambia el listado a <strong>Partidos terminados</strong> o elige otra <strong>Vista</strong>.</p>`
       : blocks.length === 0 && showTerminados
         ? `<p class="muted partidos-proximos-empty">Aún no hay partidos con <strong>resultado oficial confirmado</strong>. Cuando el admin cierre partidos, aparecerán aquí.</p>`
         : blocks.join("");

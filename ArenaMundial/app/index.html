@@ -2006,6 +2006,27 @@
         </div>
         <div class="quiniela-toolbar partidos-toolbar-row">
           <div class="partidos-toolbar-bar">
+            <div class="field partidos-toolbar-field partidos-list-mode-field">
+              <span class="field-label">Listado</span>
+              <div id="partidos-list-mode" class="partidos-list-mode" role="group" aria-label="Siguientes o terminados">
+                <button
+                  type="button"
+                  id="partidos-mode-siguientes"
+                  class="partidos-list-mode__btn partidos-list-mode__btn--siguientes"
+                  aria-pressed="false"
+                >
+                  Siguientes partidos
+                </button>
+                <button
+                  type="button"
+                  id="partidos-mode-terminados"
+                  class="partidos-list-mode__btn partidos-list-mode__btn--terminados"
+                  aria-pressed="false"
+                >
+                  Partidos terminados
+                </button>
+              </div>
+            </div>
             <div class="field partidos-toolbar-field">
               <label class="field-label" for="partidos-scope-filter">Vista</label>
               <select id="partidos-scope-filter" class="input input-sm" style="max-width: 14rem"></select>
