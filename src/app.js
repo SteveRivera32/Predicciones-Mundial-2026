@@ -1740,6 +1740,53 @@ function clampGoalInput(v) {
 }
 
 /**
+ * Evita que +/− abra el teclado en móvil; solo al tocar el campo central para escribir.
+ * @param {HTMLElement} stepper
+ * @param {HTMLInputElement} inp
+ */
+function wireScoreStepperMobileBehavior(stepper, inp) {
+  if (!(stepper instanceof HTMLElement) || !(inp instanceof HTMLInputElement) || inp.disabled) return;
+  if (stepper.dataset.pm26MobileStepperWired === "1") return;
+  stepper.dataset.pm26MobileStepperWired = "1";
+
+  inp.readOnly = true;
+  inp.setAttribute("inputmode", "numeric");
+  inp.setAttribute("pattern", "[0-9]*");
+
+  inp.addEventListener("focus", () => {
+    inp.readOnly = false;
+    inp.select?.();
+  });
+  inp.addEventListener("blur", () => {
+    inp.readOnly = true;
+  });
+
+  stepper.querySelectorAll(".score-stepper__btn").forEach((btn) => {
+    btn.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+    });
+    btn.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+    });
+  });
+}
+
+/** @param {ParentNode} [root] */
+function syncQuinielaTableHorizontalScroll(root = document) {
+  const scope = root instanceof HTMLElement || root instanceof Document ? root : document;
+  scope.querySelectorAll(".quiniela-table-wrap.table-scroll").forEach((wrap) => {
+    if (!(wrap instanceof HTMLElement)) return;
+    const needsScroll = wrap.scrollWidth > wrap.clientWidth + 1;
+    wrap.classList.toggle("quiniela-table-wrap--needs-scroll-x", needsScroll);
+  });
+}
+
+/** @param {ParentNode} [root] */
+function scheduleSyncQuinielaTableHorizontalScroll(root = document) {
+  requestAnimationFrame(() => syncQuinielaTableHorizontalScroll(root));
+}
+
+/**
  * @param {string} matchId
  * @param {"home"|"away"} side
  * @param {string|number|""} value
@@ -1749,6 +1796,7 @@ function scoreStepperHtml(matchId, side, value, opts = {}) {
   const { disabled = false, extraClass = "", idAttr = "data-mid" } = opts;
   const v = value === "" || value === undefined ? "" : String(clampGoalInput(value));
   const dis = disabled ? "disabled" : "";
+  const readOnly = disabled ? "" : "readonly";
   const idKey =
     idAttr === "data-kid"
       ? "data-kid"
@@ -1759,7 +1807,7 @@ function scoreStepperHtml(matchId, side, value, opts = {}) {
           : "data-mid";
   return `<div class="score-stepper ${extraClass}">
     <button type="button" class="score-stepper__btn" ${idKey}="${escapeHtml(matchId)}" data-side="${side}" data-delta="-1" ${dis} aria-label="Un gol menos">−</button>
-    <input type="number" min="0" max="20" class="score-stepper__input input input-score" ${idKey}="${escapeHtml(matchId)}" data-side="${side}" value="${escapeHtml(v)}" ${dis} step="1" />
+    <input type="number" min="0" max="20" class="score-stepper__input input input-score" ${idKey}="${escapeHtml(matchId)}" data-side="${side}" value="${escapeHtml(v)}" ${dis} ${readOnly} inputmode="numeric" pattern="[0-9]*" step="1" />
     <button type="button" class="score-stepper__btn" ${idKey}="${escapeHtml(matchId)}" data-side="${side}" data-delta="1" ${dis} aria-label="Un gol más">+</button>
   </div>`;
 }
@@ -1794,6 +1842,7 @@ function wireScoreSteppers(wrap, mode, onCommit, wireOpts = {}) {
   wrap.querySelectorAll(".score-stepper").forEach((stepper) => {
     const inp = stepper.querySelector(inputSel);
     if (!inp || inp.disabled) return;
+    wireScoreStepperMobileBehavior(stepper, inp);
     stepper.querySelectorAll(".score-stepper__btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (btn.disabled) return;
@@ -1801,6 +1850,7 @@ function wireScoreSteppers(wrap, mode, onCommit, wireOpts = {}) {
         let n = inp.value === "" ? 0 : parseInt(inp.value, 10) || 0;
         n = Math.max(0, Math.min(20, n + d));
         inp.value = String(n);
+        inp.blur();
         collect(inp);
       });
     });
@@ -1841,6 +1891,7 @@ function wireOfficialKnockoutSteppers(wrap, onCommit) {
     stepper.dataset.pm26StepperWired = "1";
     const inp = stepper.querySelector(inputSel);
     if (!inp || inp.disabled) return;
+    wireScoreStepperMobileBehavior(stepper, inp);
     stepper.querySelectorAll(".score-stepper__btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (btn.disabled) return;
@@ -1848,6 +1899,7 @@ function wireOfficialKnockoutSteppers(wrap, onCommit) {
         let n = inp.value === "" ? 0 : parseInt(inp.value, 10) || 0;
         n = Math.max(0, Math.min(20, n + d));
         inp.value = String(n);
+        inp.blur();
         collect(inp);
       });
     });
@@ -1890,6 +1942,7 @@ function wireOfficialGroupSteppers(wrap, onCommit, wireOpts = {}) {
     stepper.dataset.pm26StepperWired = "1";
     const inp = stepper.querySelector(inputSel);
     if (!inp || inp.disabled) return;
+    wireScoreStepperMobileBehavior(stepper, inp);
     stepper.querySelectorAll(".score-stepper__btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (btn.disabled) return;
@@ -1897,6 +1950,7 @@ function wireOfficialGroupSteppers(wrap, onCommit, wireOpts = {}) {
         let n = inp.value === "" ? 0 : parseInt(inp.value, 10) || 0;
         n = Math.max(0, Math.min(20, n + d));
         inp.value = String(n);
+        inp.blur();
         collect(inp);
       });
     });
@@ -1952,6 +2006,7 @@ function hydratePartidosMatchPredsTable(card, session) {
     stampQuinielaCardPredictionMeta(card, gm, session, official, false);
     wireQuinielaPredictionHandlersInScope(card, session);
     deferPartidosCardCanvasSync(card);
+    scheduleSyncQuinielaTableHorizontalScroll(card);
     return;
   }
   const mKo = getKnockoutMatchesFlat().find((x) => x.id === mid);
@@ -1961,6 +2016,7 @@ function hydratePartidosMatchPredsTable(card, session) {
   stampQuinielaCardPredictionMeta(card, mKo, session, official, true);
   wireQuinielaPredictionHandlersInScope(card, session);
   deferPartidosCardCanvasSync(card);
+  scheduleSyncQuinielaTableHorizontalScroll(card);
 }
 
 /**
@@ -2474,6 +2530,7 @@ function refreshArenaPartidosPredictionTables(session) {
   syncQuinielaPerfectBonusCanvases(wrap);
   syncGroupPtsBadgeCanvases(wrap);
   syncArenaTruncationHints();
+  scheduleSyncQuinielaTableHorizontalScroll(wrap);
 }
 
 /**
@@ -9918,6 +9975,7 @@ function renderQuiniela(session, official) {
 
   if (isArenaMode()) syncParticipantSearchInputs();
   if (isArenaMode()) syncArenaTruncationHints();
+  scheduleSyncQuinielaTableHorizontalScroll(wrap);
 }
 
 /**

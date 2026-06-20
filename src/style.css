@@ -9322,6 +9322,7 @@ span.quiniela-legend {
   color: var(--text);
   cursor: pointer;
   padding: 0 0.4rem;
+  touch-action: manipulation;
 }
 
 .score-stepper__btn:hover:not(:disabled) {
@@ -9347,6 +9348,11 @@ span.quiniela-legend {
   font-variant-numeric: tabular-nums;
   box-sizing: border-box;
   -moz-appearance: textfield;
+  touch-action: manipulation;
+}
+
+.score-stepper__input:read-only {
+  cursor: pointer;
 }
 
 .score-stepper__input::-webkit-outer-spin-button,
@@ -11392,7 +11398,7 @@ span.quiniela-legend {
   .table-scroll:has(.table-group-order-ranking)::after,
   .table-scroll:has(.table-match-ranking)::after,
   .table-scroll:has(.table-generales-preds)::after,
-  .partidos-match-card .table-scroll.quiniela-table-wrap::after {
+  .partidos-match-card .table-scroll.quiniela-table-wrap.quiniela-table-wrap--needs-scroll-x::after {
     content: "Desliza horizontalmente para ver más →";
     display: block;
     margin-top: 0.35rem;
@@ -11402,11 +11408,16 @@ span.quiniela-legend {
   }
 
   body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-table-wrap.table-scroll {
+    overflow-x: visible;
+    max-width: 100%;
+    touch-action: auto;
+  }
+
+  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-table-wrap.table-scroll.quiniela-table-wrap--needs-scroll-x {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
-    max-width: 100%;
-    touch-action: pan-x;
+    touch-action: manipulation;
   }
 
   #panel-partidos .partidos-match-card:has(tbody tr.quiniela-pred-row--lead) .quiniela-table-wrap {
@@ -13016,11 +13027,18 @@ body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds td.qui
   body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-table-wrap--full.table-scroll,
   body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-table-wrap.table-scroll,
   body:not(.app-arena) #panel-partidos .partidos-match-card:has(tbody tr[class*="quiniela-pred-row--tier-"]) .quiniela-table-wrap.table-scroll {
+    overflow-x: visible;
+    max-width: 100%;
+    touch-action: auto;
+  }
+
+  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-table-wrap--full.table-scroll.quiniela-table-wrap--needs-scroll-x,
+  body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-table-wrap.table-scroll.quiniela-table-wrap--needs-scroll-x,
+  body:not(.app-arena) #panel-partidos .partidos-match-card:has(tbody tr[class*="quiniela-pred-row--tier-"]) .quiniela-table-wrap.table-scroll.quiniela-table-wrap--needs-scroll-x {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
-    max-width: 100%;
-    touch-action: pan-x;
+    touch-action: manipulation;
   }
 
   body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds {
