@@ -6830,19 +6830,25 @@ function isUserPredictionConfirmedStore(pStore, m) {
 }
 
 /**
- * Primero los partidos de la jornada «SIGUIENTES» (`nextJornadaIds`); luego el resto. En cada bloque, por kickoff.
- * Así un partido reiniciado que vuelve a ser «siguiente» no cae al final por haber confirmado predicción en otros.
- * @param {Array<{ id: string, kickoff?: string | null }>} list
+ * En juego arriba; luego jornada «SIGUIENTES»; después el resto. Dentro de cada bloque, por kickoff.
+ * @param {Array<{ id: string, kickoff?: string | null, groupId?: string, roundId?: string }>} list
  * @param {Set<string>} nextJornadaIds
+ * @param {ReturnType<typeof loadOfficialResults>} official
  */
-function sortPartidosBySiguientesThenKickoff(list, nextJornadaIds) {
+function sortPartidosByLiveSiguientesKickoff(list, nextJornadaIds, official) {
+  /** @param {{ id: string, kickoff?: string | null, groupId?: string, roundId?: string }} m */
+  const sortTier = (m) => {
+    if (isMatchLiveInPlay(official, m)) return 0;
+    if (nextJornadaIds.has(m.id)) return 1;
+    return 2;
+  };
   return [...list].sort((a, b) => {
-    const ia = nextJornadaIds.has(a.id) ? 0 : 1;
-    const ib = nextJornadaIds.has(b.id) ? 0 : 1;
-    if (ia !== ib) return ia - ib;
-    const ta = a.kickoff ? Date.parse(a.kickoff) : Number.POSITIVE_INFINITY;
-    const tb = b.kickoff ? Date.parse(b.kickoff) : Number.POSITIVE_INFINITY;
+    const ta = sortTier(a);
+    const tb = sortTier(b);
     if (ta !== tb) return ta - tb;
+    const ka = a.kickoff ? Date.parse(a.kickoff) : Number.POSITIVE_INFINITY;
+    const kb = b.kickoff ? Date.parse(b.kickoff) : Number.POSITIVE_INFINITY;
+    if (ka !== kb) return ka - kb;
     return String(a.id).localeCompare(String(b.id));
   });
 }
@@ -9683,7 +9689,7 @@ function renderQuiniela(session, official) {
   if (showOnlyProximosNav) {
     /** Atajo del menú: la jornada próxima puede mezclar grupos y KO; no limitar por Vista ni por filtro de grupo. */
     let proximos = allCal.filter((m) => nextHighlightIds.has(m.id));
-    proximos = sortPartidosBySiguientesThenKickoff(proximos, nextHighlightIds);
+    proximos = sortPartidosByLiveSiguientesKickoff(proximos, nextHighlightIds, official);
     for (const m of proximos) {
       if (m.groupId != null) {
         blocks.push(renderQuinielaMatchCard(m, session, official, isAdmin, nextHighlightIds));
@@ -9711,12 +9717,12 @@ function renderQuiniela(session, official) {
     const filterEl = $("#quiniela-group-filter");
     const groupFilter = filterEl?.value ?? "";
     let matches = groupFilter ? GROUP_MATCHES.filter((m) => m.groupId === groupFilter) : GROUP_MATCHES;
-    matches = sortPartidosBySiguientesThenKickoff(matches, nextHighlightIds);
+    matches = sortPartidosByLiveSiguientesKickoff(matches, nextHighlightIds, official);
     blocks.push(...matches.map((m) => renderQuinielaMatchCard(m, session, official, isAdmin, nextHighlightIds)));
   } else {
     let koList = getKnockoutMatchesFlat();
     if (scope !== "all-ko") koList = koList.filter((x) => x.roundId === scope);
-    koList = sortPartidosBySiguientesThenKickoff(koList, nextHighlightIds);
+    koList = sortPartidosByLiveSiguientesKickoff(koList, nextHighlightIds, official);
     blocks.push(...koList.map((m) => renderQuinielaMatchCardKo(m, session, official, isAdmin, nextHighlightIds)));
   }
   const openAccordionMatchIds = collectOpenPartidosAccordionIds(wrap);
