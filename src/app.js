@@ -122,12 +122,12 @@ import {
   isKoMatchPredictionsLocked,
   isMatchPredictionLockedForActor,
   isAnyTournamentMatchKickoffLocked,
-  scheduleKickoffLockRefresh,
 } from "./locks.js";
 import {
   applyKickoffAutoStarts,
   confirmPendingPredictionsForGroupMatch,
   confirmPendingPredictionsForKoMatch,
+  scheduleKickoffAutoStartRefresh,
 } from "./kickoff-autostart.js";
 import {
   formatKickoffShortSpanish,
@@ -137,6 +137,7 @@ import {
   getNextMatchDayHighlightIds,
   daysUntilKickoffLocal,
   isMatchOfficiallyClosed,
+  isMatchLiveInPlay,
 } from "./match-calendar.js";
 import { syncQuinielaPerfectBonusCanvases } from "./quinielaPerfectBonusCanvas.js";
 import { syncGroupPtsBadgeCanvases, initGroupPtsBadgeCanvasObserver } from "./groupPtsBadgeCanvas.js";
@@ -173,6 +174,10 @@ const STATS_COLOR_HINT_DISMISSED_KEY = "pm26-stats-color-hint-dismissed-v3";
 const FASE_GRUPOS_FILTER_KEY = "pm26-fase-grupos-gid";
 const FLOATING_RANK_POS_KEY = "pm26-floating-rank-pos";
 const FLOATING_RANK_ENABLED_KEY = "pm26-floating-rank-enabled";
+/** Agrupa refrescos de ranking/stats tras ráfagas de clics en steppers (mejora INP). */
+const DEFERRED_GLOBAL_RANKINGS_MS = 120;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let deferredGlobalRankingsTimer = null;
 const MOBILE_LAYOUT_MQ =
   typeof window !== "undefined" ? window.matchMedia("(max-width: 40rem)") : null;
 
@@ -1816,7 +1821,8 @@ function wireScoreSteppers(wrap, mode, onCommit, wireOpts = {}) {
  */
 function wireOfficialKnockoutSteppers(wrap, onCommit) {
   const inputSel = ".score-stepper__input[data-okid]";
-  function collect() {
+  /** @param {HTMLElement | null | undefined} triggerEl */
+  function collect(triggerEl) {
     /** @type {Record<string, { home: string|number|"", away: string|number|"" }>} */
     const next = {};
     wrap.querySelectorAll(inputSel).forEach((el) => {
@@ -1828,7 +1834,7 @@ function wireOfficialKnockoutSteppers(wrap, onCommit) {
         el.value === "" ? "" : Math.max(0, Math.min(20, parseInt(el.value, 10) || 0));
       next[id][side] = raw;
     });
-    onCommit(next);
+    onCommit(next, triggerEl instanceof HTMLElement ? triggerEl : null);
   }
   wrap.querySelectorAll(".score-stepper").forEach((stepper) => {
     const inp = stepper.querySelector(inputSel);
@@ -1840,13 +1846,13 @@ function wireOfficialKnockoutSteppers(wrap, onCommit) {
         let n = inp.value === "" ? 0 : parseInt(inp.value, 10) || 0;
         n = Math.max(0, Math.min(20, n + d));
         inp.value = String(n);
-        collect();
+        collect(inp);
       });
     });
     inp.addEventListener("change", () => {
       const n = clampGoalInput(inp.value);
       inp.value = n === "" ? "" : String(n);
-      collect();
+      collect(inp);
     });
   });
 }
@@ -5533,6 +5539,33 @@ function computeLiveParticipantRows(currentParticipantId) {
   );
 }
 
+/** Rankings/stats globales: solo paneles visibles + ranking flotante. */
+function runGlobalRankingsRefresh(session) {
+  if (!session) return;
+  renderFloatingRanking(session);
+  const tab = getActiveTabId();
+  if (tab === "stats") renderStats(session);
+  if (tab === "match-ranking") redrawMatchRanking();
+  if (tab === "match-history") redrawMatchHistory();
+  if (tab === "final-ranking") renderFinalRanking(session);
+}
+
+function flushDeferredGlobalRankingsRefresh() {
+  if (deferredGlobalRankingsTimer == null) return;
+  clearTimeout(deferredGlobalRankingsTimer);
+  deferredGlobalRankingsTimer = null;
+  runGlobalRankingsRefresh(loadSession());
+}
+
+/** @param {{ participantId: string } | null} [session] */
+function scheduleDeferredGlobalRankingsRefresh(session) {
+  if (deferredGlobalRankingsTimer != null) clearTimeout(deferredGlobalRankingsTimer);
+  deferredGlobalRankingsTimer = window.setTimeout(() => {
+    deferredGlobalRankingsTimer = null;
+    runGlobalRankingsRefresh(session ?? loadSession());
+  }, DEFERRED_GLOBAL_RANKINGS_MS);
+}
+
 function renderFloatingRanking(session) {
   const host = $("#floating-ranking");
   const body = $("#floating-ranking-body");
@@ -7630,7 +7663,7 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
   const pStoreKo = loadPredictions(session.participantId);
   const userPredConfirmedKo = isUserPredictionConfirmedStore(pStoreKo, m);
   const matchClosedKo = isMatchOfficiallyClosed(official, m);
-  const koInPlay = koStage === "started";
+  const koInPlay = isMatchLiveInPlay(official, m);
   const cornerHtmlKo = partidosMatchCornerHtml(m, nextJornadaIds, userPredConfirmedKo, matchClosedKo, koInPlay);
   const noKickHtmlKo = partidosAccNoKickoffHintHtml(m);
   const officialPreviewKo = partidosOfficialPreviewLineKo(m, official, officialSlotsDecided);
@@ -7880,7 +7913,8 @@ function refreshAfterParticipantPredictionScores(session, matchId, focusEl) {
   } else if (wrap) {
     patchQuinielaKoMatchPredRows(wrap, matchId, focusEl);
   }
-  refreshAll(session, { skipPartidosRender: true, preserveScroll: true, onlyActivePanel: true });
+  updatePredictionTabsProgress(session, loadPredictions(session.participantId));
+  scheduleDeferredGlobalRankingsRefresh(session);
 }
 
 /**
@@ -7888,10 +7922,20 @@ function refreshAfterParticipantPredictionScores(session, matchId, focusEl) {
  * @param {HTMLElement} wrap
  * @param {string} matchId
  * @param {{ participantId: string }} session
+ * @param {HTMLElement | null} [focusEl]
  */
-function replaceQuinielaMatchArticleAndRebind(wrap, matchId, session) {
+function replaceQuinielaMatchArticleAndRebind(wrap, matchId, session, focusEl = null) {
   const oldArt = wrap.querySelector(`article.quiniela-match[data-quiniela-mid="${CSS.escape(matchId)}"]`);
   if (!(oldArt instanceof HTMLElement)) return;
+  const anchor =
+    capturePartidosInteractionAnchorFromElement(focusEl, wrap) ?? capturePartidosInteractionAnchor(wrap);
+  const viewportLock =
+    anchor?.articleMid === matchId
+      ? (() => {
+          const ae = wrap.querySelector(`article.quiniela-match[data-quiniela-mid="${CSS.escape(matchId)}"]`);
+          return ae ? { mid: matchId, vTop: ae.getBoundingClientRect().top } : null;
+        })()
+      : null;
   const official = loadOfficialResults();
   const isAdmin = canEditOfficialResults(session.participantId);
   const nextHighlightIds = getNextMatchDayHighlightIds(official, allMatchesForPartidosCalendar());
@@ -7921,6 +7965,7 @@ function replaceQuinielaMatchArticleAndRebind(wrap, matchId, session) {
   syncQuinielaPerfectBonusCanvases(wrap);
   syncGroupPtsBadgeCanvases(wrap);
   if (canManagePartidosMatchFlow(session.participantId)) bindPartidosAdminHandlers(newArt, session);
+  if (anchor?.articleMid === matchId) restorePartidosInteractionAnchor(wrap, anchor, viewportLock);
 }
 
 /**
@@ -7967,12 +8012,7 @@ function bindPartidosAdminHandlers(scope, session) {
           termBtn.disabled = partial[mid].home === "" || partial[mid].away === "";
         }
         patchQuinielaMatchPredRows(partidosWrap, mid, triggerEl);
-        const sess = loadSession();
-        renderFloatingRanking(sess);
-        redrawMatchRanking();
-        redrawMatchHistory();
-        renderStats(sess);
-        renderFinalRanking(sess);
+        scheduleDeferredGlobalRankingsRefresh(loadSession());
       },
       { collectOnInput: true },
     );
@@ -8027,7 +8067,7 @@ function bindPartidosAdminHandlers(scope, session) {
   });
 
   scope.querySelectorAll(".partidos-ko-official--editing").forEach((ed) => {
-    wireOfficialKnockoutSteppers(ed, (partial) => {
+    wireOfficialKnockoutSteppers(ed, (partial, triggerEl) => {
       const kid = ed.dataset.koMid;
       if (!kid || !partial[kid]) return;
       const latest = loadOfficialResults();
@@ -8053,7 +8093,11 @@ function bindPartidosAdminHandlers(scope, session) {
           ? { knockoutScoresConfirmed: { [kid]: false } }
           : {}),
       });
-      refreshAll(loadSession());
+      const sess = loadSession();
+      if (sess && partidosWrap) {
+        replaceQuinielaMatchArticleAndRebind(partidosWrap, kid, sess, triggerEl);
+      }
+      scheduleDeferredGlobalRankingsRefresh(sess);
     });
   });
 
@@ -8730,12 +8774,13 @@ function matchHistoryEstadoPartidoHtml(official, m) {
   const enJuegoHtml = () =>
     '<span class="match-history-estado match-history-estado--live">EN JUEGO</span>';
 
-  /* Antes del contador: si ya está en vivo, no mostrar «En X días» aunque el kickoff sea futuro. */
+  /* Si ya está en vivo (incl. kickoff pasado), no mostrar contador de días. */
+  if (isMatchLiveInPlay(official, m)) {
+    return enJuegoHtml();
+  }
+
   if (m.groupId != null) {
     const stage = official.groupMatchState?.[m.id] ?? "ready";
-    if (stage === "started") {
-      return enJuegoHtml();
-    }
     if (stage === "finished" && official.groupScoresConfirmed?.[m.id] !== true) {
       return '<span class="match-history-estado match-history-estado--wait">Pendiente confirmación</span>';
     }
@@ -9243,14 +9288,21 @@ function ensurePartidosScopeFilter() {
  * @param {boolean} officialConfirmed
  * @param {boolean} [groupTeamsDecided=true]
  * @param {boolean} [kickoffLocked=false]
+ * @param {boolean} [matchLive=false] kickoff pasado o admin inició (aunque el estado oficial siga en ready un instante)
  */
-function quinielaMatchStatusBanner(matchStage, officialConfirmed, groupTeamsDecided = true, kickoffLocked = false) {
+function quinielaMatchStatusBanner(
+  matchStage,
+  officialConfirmed,
+  groupTeamsDecided = true,
+  kickoffLocked = false,
+  matchLive = false,
+) {
   if (matchStage === "ready") {
     if (groupTeamsDecided === false) {
       return `<p class="quiniela-match-status quiniela-match-status--pending" role="status"><strong>Equipos por definir.</strong> Las predicciones están bloqueadas hasta que ambos equipos del partido estén fijados (sin «Por determinar»).</p>`;
     }
-    if (kickoffLocked) {
-      return `<p class="quiniela-match-status quiniela-match-status--live" role="status"><strong>Cerrado por hora de inicio.</strong> Las predicciones ya no se pueden editar ni confirmar.</p>`;
+    if (matchLive || kickoffLocked) {
+      return `<p class="quiniela-match-status quiniela-match-status--live" role="status"><strong>En juego.</strong> Las predicciones están cerradas; el marcador oficial lo actualiza el admin.</p>`;
     }
     return `<p class="quiniela-match-status quiniela-match-status--ready" role="status"><strong>No ha comenzado.</strong> Aquí puedes editar y confirmar tu predicción.</p>`;
   }
@@ -9284,7 +9336,7 @@ function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds) 
   const pStorePrev = loadPredictions(session.participantId);
   const userPredConfirmed = isUserPredictionConfirmedStore(pStorePrev, m);
   const matchClosed = isMatchOfficiallyClosed(official, m);
-  const matchInProgress = matchStage === "started";
+  const matchInProgress = isMatchLiveInPlay(official, m);
   const kickoffLocked = isLockedAtKickoff(m.kickoff);
   const cornerHtml = partidosMatchCornerHtml(m, nextJornadaIds, userPredConfirmed, matchClosed, matchInProgress);
   const noKickHtml = partidosAccNoKickoffHintHtml(m);
@@ -9412,7 +9464,7 @@ function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds) 
         </summary>
         <div class="partidos-acc__body">
           ${partidosAccKickoffBodyHtml(m)}
-          ${quinielaMatchStatusBanner(matchStage, officialConfirmed, groupTeamsDecided, kickoffLocked)}
+          ${quinielaMatchStatusBanner(matchStage, officialConfirmed, groupTeamsDecided, kickoffLocked, matchInProgress)}
           ${officialHtml}
           <div class="quiniela-preds-head-row">
             <div class="quiniela-preds-head">Predicciones</div>
@@ -9615,6 +9667,9 @@ function renderQuiniela(session, official) {
   }
 
   if (loginHint) loginHint.hidden = true;
+
+  applyKickoffAutoStarts();
+  official = loadOfficialResults();
 
   const isAdmin = canEditOfficialResults(session.participantId);
   const scope = getPartidosUnderlyingScope();
@@ -11325,10 +11380,15 @@ function refreshArenaPanelsIfIdle() {
 
 /**
  * @param {{ participantId: string } | null} session
- * @param {{ skipPartidosRender?: boolean, preserveScroll?: boolean, onlyActivePanel?: boolean }} [opts]
+ * @param {{ skipPartidosRender?: boolean, preserveScroll?: boolean, onlyActivePanel?: boolean, deferGlobalRankings?: boolean }} [opts]
  */
 function refreshAll(session, opts = {}) {
-  const { skipPartidosRender = false, preserveScroll = false, onlyActivePanel = false } = opts;
+  const {
+    skipPartidosRender = false,
+    preserveScroll = false,
+    onlyActivePanel = false,
+    deferGlobalRankings = false,
+  } = opts;
   if (isArenaMode()) syncArenaTruncationHints();
   applyKickoffAutoStarts();
   const activeTab = getActiveTabId();
@@ -11359,8 +11419,11 @@ function refreshAll(session, opts = {}) {
   }
   updateSessionBar(session);
   syncParticipantSearchInputs();
-  renderStats(session);
-  renderFloatingRanking(session);
+  if (deferGlobalRankings) {
+    scheduleDeferredGlobalRankingsRefresh(session);
+  } else {
+    runGlobalRankingsRefresh(session);
+  }
   ensureFaseGruposFilter();
   if (!session) {
     syncFaseGruposFilterOptions(null);
@@ -11393,7 +11456,7 @@ function refreshAll(session, opts = {}) {
     updateProximosNavShortcutButton(null);
     updatePredictionTabsProgress(null, null);
     syncGroupPtsBadgeCanvases(document.body);
-    scheduleKickoffLockRefresh(
+    scheduleKickoffAutoStartRefresh(
       isArenaMode()
         ? () => scheduleArenaDeferredRefresh(refreshArenaPanelsIfIdle)
         : () => refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true }),
@@ -11440,7 +11503,7 @@ function refreshAll(session, opts = {}) {
   const onTimedLockRefresh = isArenaMode()
     ? () => scheduleArenaDeferredRefresh(refreshArenaPanelsIfIdle)
     : () => refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true });
-  scheduleKickoffLockRefresh(onTimedLockRefresh);
+  scheduleKickoffAutoStartRefresh(onTimedLockRefresh);
   scheduleArenaGeneralesDeadlineRefresh(onTimedLockRefresh);
   if (!arenaDeadlineCountdownOpen()) {
     document.querySelectorAll("[data-arena-deadline-countdown]").forEach((el) => el.remove());
@@ -11467,24 +11530,28 @@ export function initApp() {
   });
   ensureFaseGruposFilter();
   tabsController = initTabs((tabId) => {
+    flushDeferredGlobalRankingsRefresh();
     syncDrawerExpandableSubmenus(tabId);
     const sess = loadSession();
-    if (tabId === "generales" && sess) {
-      renderGenerales(sess.participantId, loadPredictions(sess.participantId), false);
-    }
-    if (tabId === "grupos" && sess) {
-      renderGrupos(sess.participantId, loadPredictions(sess.participantId));
-    }
-    if (tabId === "brackets" && sess) {
-      renderBrackets(sess.participantId, loadPredictions(sess.participantId));
-    }
-    if (tabId === "partidos") redrawQuiniela();
-    if (tabId === "team-stats") redrawTeamStats();
-    if (tabId === "team-order") redrawTeamOrder();
-    if (tabId === "team-order-ranking") redrawTeamOrderRanking();
-    if (tabId === "match-ranking") redrawMatchRanking();
-    if (tabId === "match-history") redrawMatchHistory();
-    if (tabId === "final-ranking") renderFinalRanking(loadSession());
+    requestAnimationFrame(() => {
+      if (tabId === "generales" && sess) {
+        renderGenerales(sess.participantId, loadPredictions(sess.participantId), false);
+      }
+      if (tabId === "grupos" && sess) {
+        renderGrupos(sess.participantId, loadPredictions(sess.participantId));
+      }
+      if (tabId === "brackets" && sess) {
+        renderBrackets(sess.participantId, loadPredictions(sess.participantId));
+      }
+      if (tabId === "partidos") redrawQuiniela();
+      if (tabId === "team-stats") redrawTeamStats();
+      if (tabId === "team-order") redrawTeamOrder();
+      if (tabId === "team-order-ranking") redrawTeamOrderRanking();
+      if (tabId === "match-ranking") redrawMatchRanking();
+      if (tabId === "match-history") redrawMatchHistory();
+      if (tabId === "final-ranking") renderFinalRanking(loadSession());
+      if (tabId === "stats" && sess) renderStats(sess);
+    });
   });
   initDrawerExpandableSubmenus(tabsController);
   bindRulesQuickButton();
@@ -11509,7 +11576,11 @@ export function initApp() {
     }
     externalSyncRefreshChain = externalSyncRefreshChain
       .then(() => {
-        refreshAll(loadSession(), { preserveScroll: true, onlyActivePanel: true });
+        refreshAll(loadSession(), {
+          preserveScroll: true,
+          onlyActivePanel: true,
+          deferGlobalRankings: true,
+        });
       })
       .catch((err) => {
         console.error("[pm26] refresh tras sincronización externa", err);

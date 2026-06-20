@@ -2,7 +2,7 @@ import { isArenaMode } from "./arena-mode.js";
 import { getParticipantsForDisplay } from "./participants.js";
 import { loadOfficialResults, saveOfficialResults } from "./official-results-store.js";
 import { loadPredictions, savePredictions } from "./predictions-store.js";
-import { isLockedAtKickoff } from "./locks.js";
+import { isLockedAtKickoff, scheduleKickoffLockRefresh } from "./locks.js";
 import {
   GROUPS,
   GROUP_MATCHES,
@@ -171,4 +171,56 @@ export function applyKickoffAutoStarts() {
   }
 
   return changed;
+}
+
+/** @returns {boolean} hay partidos con kickoff pasado que siguen en «ready» */
+export function hasReadyMatchesPastKickoff() {
+  if (isArenaMode()) return false;
+  const official = loadOfficialResults();
+
+  for (const m of GROUP_MATCHES) {
+    if (!isLockedAtKickoff(m.kickoff)) continue;
+    if ((official.groupMatchState?.[m.id] ?? "ready") !== "ready") continue;
+    if (!isQuinielaTeamSlotDecided(m.home) || !isQuinielaTeamSlotDecided(m.away)) continue;
+    return true;
+  }
+
+  const labelO = allFilledOfficialKnockoutScores(official);
+  for (const m of getKnockoutMatchesFlat()) {
+    if (!isLockedAtKickoff(m.kickoff)) continue;
+    const { ri, mi } = getKoRoundMatchIndex(m.id);
+    if (ri < 0) continue;
+    const oh = resolveKnockoutSlotLabel(ri, mi, "home", labelO);
+    const oa = resolveKnockoutSlotLabel(ri, mi, "away", labelO);
+    if (!isQuinielaTeamSlotDecided(oh) || !isQuinielaTeamSlotDecided(oa)) continue;
+    if ((official.knockoutMatchState?.[m.id] ?? "ready") !== "ready") continue;
+    return true;
+  }
+
+  return false;
+}
+
+/** @type {ReturnType<typeof setTimeout> | null} */
+let staleKickoffRetryTimer = null;
+
+const STALE_KICKOFF_RETRY_MS = 15_000;
+
+/**
+ * Refresca al próximo kickoff y reintenta autostart si quedaron partidos «ready» tras la hora.
+ * @param {() => void} onRefresh
+ */
+export function scheduleKickoffAutoStartRefresh(onRefresh) {
+  scheduleKickoffLockRefresh(onRefresh);
+
+  if (staleKickoffRetryTimer) {
+    clearTimeout(staleKickoffRetryTimer);
+    staleKickoffRetryTimer = null;
+  }
+  if (!hasReadyMatchesPastKickoff()) return;
+
+  staleKickoffRetryTimer = window.setTimeout(() => {
+    staleKickoffRetryTimer = null;
+    onRefresh();
+    scheduleKickoffAutoStartRefresh(onRefresh);
+  }, STALE_KICKOFF_RETRY_MS);
 }

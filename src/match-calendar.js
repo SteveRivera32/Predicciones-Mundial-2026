@@ -121,6 +121,15 @@ export function countdownLabelSpanish(isoKickoff) {
 }
 
 /**
+ * @param {string | null | undefined} isoKickoff
+ */
+export function isPastKickoff(isoKickoff) {
+  if (!isoKickoff) return false;
+  const t = Date.parse(isoKickoff);
+  return !Number.isNaN(t) && Date.now() >= t;
+}
+
+/**
  * Grupo: terminado y resultado confirmado por admin.
  * @param {{ groupScoresConfirmed?: Record<string, true>, groupMatchState?: Record<string, string> }} official
  * @param {{ id: string }} m
@@ -150,9 +159,44 @@ export function isMatchOfficiallyClosed(official, m) {
 }
 
 /**
+ * Fase de grupos: en juego (admin inició o ya pasó la hora de kickoff sin cerrar).
+ * @param {ReturnType<typeof import("./official-results-store.js").loadOfficialResults>} official
+ * @param {{ id: string, kickoff?: string | null }} m
+ */
+export function isGroupMatchLive(official, m) {
+  const stage = official.groupMatchState?.[m.id] ?? "ready";
+  if (stage === "started") return true;
+  if (isGroupMatchOfficiallyClosed(official, m)) return false;
+  return isPastKickoff(m.kickoff);
+}
+
+/**
+ * Eliminatoria: en juego (admin inició o kickoff pasado sin resultado confirmado).
+ * @param {ReturnType<typeof import("./official-results-store.js").loadOfficialResults>} official
+ * @param {{ id: string, kickoff?: string | null }} m
+ */
+export function isKoMatchLive(official, m) {
+  const stage = official.knockoutMatchState?.[m.id] ?? "ready";
+  if (stage === "started") return true;
+  if (isKoMatchOfficiallyClosed(official, m)) return false;
+  return isPastKickoff(m.kickoff);
+}
+
+/**
+ * @param {ReturnType<typeof import("./official-results-store.js").loadOfficialResults>} official
+ * @param {{ id: string, kickoff?: string | null, groupId?: string, roundId?: string }} m
+ */
+export function isMatchLiveInPlay(official, m) {
+  if (m.groupId != null) return isGroupMatchLive(official, m);
+  if (m.roundId != null) return isKoMatchLive(official, m);
+  return false;
+}
+
+/**
  * Ids de la jornada próxima: todos los partidos con kickoff el mismo día (CDMX) que el día del partido
  * pendiente de cierre oficial más cercano. No usa predicciones de participantes; al cerrar un partido
  * con resultado oficial (admin), deja de contarse y la jornada avanza cuando toca.
+ * Los partidos ya en juego (incluido kickoff pasado) no se marcan «siguiente» ni anclan la jornada.
  * @param {ReturnType<typeof import("./official-results-store.js").loadOfficialResults>} official
  * @param {Array<{ id: string, kickoff?: string | null, groupId?: string, roundId?: string }>} allMatches
  */
@@ -160,8 +204,11 @@ export function getNextMatchDayHighlightIds(official, allMatches) {
   const pending = allMatches.filter((m) => m.kickoff && !isMatchOfficiallyClosed(official, m));
   if (pending.length === 0) return new Set();
 
+  const upcoming = pending.filter((m) => !isMatchLiveInPlay(official, m));
+  const anchorPool = upcoming.length > 0 ? upcoming : pending;
+
   let minTs = Infinity;
-  for (const m of pending) {
+  for (const m of anchorPool) {
     const ts = Date.parse(/** @type {string} */ (m.kickoff));
     if (!Number.isNaN(ts) && ts < minTs) minTs = ts;
   }
@@ -170,7 +217,9 @@ export function getNextMatchDayHighlightIds(official, allMatches) {
   const targetDay = calendarDayKeyInTz(new Date(minTs), TOURNAMENT_DAY_TZ);
   const ids = new Set();
   for (const m of pending) {
-    if (calendarDayKeyForKickoff(m.kickoff, TOURNAMENT_DAY_TZ) === targetDay) ids.add(m.id);
+    if (calendarDayKeyForKickoff(m.kickoff, TOURNAMENT_DAY_TZ) !== targetDay) continue;
+    if (isMatchLiveInPlay(official, m)) continue;
+    ids.add(m.id);
   }
   return ids;
 }
