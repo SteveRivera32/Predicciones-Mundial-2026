@@ -1740,7 +1740,27 @@ function clampGoalInput(v) {
 }
 
 /**
- * Evita que +/− abra el teclado en móvil; solo al tocar el campo central para escribir.
+ * @param {HTMLInputElement} inp
+ * @param {number} delta
+ */
+function applyScoreStepperDelta(inp, delta) {
+  const isEmpty = inp.value === "";
+  let n = isEmpty ? 0 : parseInt(inp.value, 10) || 0;
+
+  if (delta < 0) {
+    if (isEmpty) return;
+    if (n === 0) {
+      inp.value = "";
+      return;
+    }
+  }
+
+  n = Math.max(0, Math.min(20, n + delta));
+  inp.value = String(n);
+}
+
+/**
+ * En móvil solo +/− (sin teclado). En escritorio el centro sigue siendo editable.
  * @param {HTMLElement} stepper
  * @param {HTMLInputElement} inp
  */
@@ -1749,10 +1769,36 @@ function wireScoreStepperMobileBehavior(stepper, inp) {
   if (stepper.dataset.pm26MobileStepperWired === "1") return;
   stepper.dataset.pm26MobileStepperWired = "1";
 
+  stepper.querySelectorAll(".score-stepper__btn").forEach((btn) => {
+    btn.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+    });
+    btn.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+    });
+  });
+
+  if (isMobileLayout()) {
+    stepper.classList.add("score-stepper--buttons-only");
+    inp.readOnly = true;
+    inp.tabIndex = -1;
+    inp.type = "text";
+    inp.setAttribute("inputmode", "none");
+    inp.setAttribute("autocomplete", "off");
+    inp.setAttribute("aria-readonly", "true");
+    const blockInputFocus = (e) => {
+      e.preventDefault();
+      if (document.activeElement === inp) inp.blur();
+    };
+    inp.addEventListener("mousedown", blockInputFocus);
+    inp.addEventListener("touchstart", blockInputFocus, { passive: false });
+    inp.addEventListener("focus", () => inp.blur());
+    return;
+  }
+
   inp.readOnly = true;
   inp.setAttribute("inputmode", "numeric");
   inp.setAttribute("pattern", "[0-9]*");
-
   inp.addEventListener("focus", () => {
     inp.readOnly = false;
     inp.select?.();
@@ -1760,13 +1806,21 @@ function wireScoreStepperMobileBehavior(stepper, inp) {
   inp.addEventListener("blur", () => {
     inp.readOnly = true;
   });
+}
 
+/**
+ * @param {HTMLElement} stepper
+ * @param {HTMLInputElement} inp
+ * @param {(triggerEl: HTMLElement) => void} collect
+ */
+function wireScoreStepperButtons(stepper, inp, collect) {
   stepper.querySelectorAll(".score-stepper__btn").forEach((btn) => {
-    btn.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-    });
-    btn.addEventListener("mousedown", (e) => {
-      e.preventDefault();
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const d = parseInt(btn.dataset.delta ?? "0", 10);
+      applyScoreStepperDelta(inp, d);
+      if (document.activeElement === inp) inp.blur();
+      collect(btn);
     });
   });
 }
@@ -1843,24 +1897,18 @@ function wireScoreSteppers(wrap, mode, onCommit, wireOpts = {}) {
     const inp = stepper.querySelector(inputSel);
     if (!inp || inp.disabled) return;
     wireScoreStepperMobileBehavior(stepper, inp);
-    stepper.querySelectorAll(".score-stepper__btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        if (btn.disabled) return;
-        const d = parseInt(btn.dataset.delta ?? "0", 10);
-        let n = inp.value === "" ? 0 : parseInt(inp.value, 10) || 0;
-        n = Math.max(0, Math.min(20, n + d));
-        inp.value = String(n);
-        inp.blur();
-        collect(inp);
-      });
-    });
+    wireScoreStepperButtons(stepper, inp, (triggerEl) => collect(triggerEl));
     inp.addEventListener("change", () => {
+      if (isMobileLayout()) return;
       const n = clampGoalInput(inp.value);
       inp.value = n === "" ? "" : String(n);
       collect(inp);
     });
     if (collectOnInput) {
-      inp.addEventListener("input", () => collect(inp));
+      inp.addEventListener("input", () => {
+        if (isMobileLayout()) return;
+        collect(inp);
+      });
     }
   });
 }
@@ -1892,18 +1940,9 @@ function wireOfficialKnockoutSteppers(wrap, onCommit) {
     const inp = stepper.querySelector(inputSel);
     if (!inp || inp.disabled) return;
     wireScoreStepperMobileBehavior(stepper, inp);
-    stepper.querySelectorAll(".score-stepper__btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        if (btn.disabled) return;
-        const d = parseInt(btn.dataset.delta ?? "0", 10);
-        let n = inp.value === "" ? 0 : parseInt(inp.value, 10) || 0;
-        n = Math.max(0, Math.min(20, n + d));
-        inp.value = String(n);
-        inp.blur();
-        collect(inp);
-      });
-    });
+    wireScoreStepperButtons(stepper, inp, (triggerEl) => collect(triggerEl));
     inp.addEventListener("change", () => {
+      if (isMobileLayout()) return;
       const n = clampGoalInput(inp.value);
       inp.value = n === "" ? "" : String(n);
       collect(inp);
@@ -1943,18 +1982,9 @@ function wireOfficialGroupSteppers(wrap, onCommit, wireOpts = {}) {
     const inp = stepper.querySelector(inputSel);
     if (!inp || inp.disabled) return;
     wireScoreStepperMobileBehavior(stepper, inp);
-    stepper.querySelectorAll(".score-stepper__btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        if (btn.disabled) return;
-        const d = parseInt(btn.dataset.delta ?? "0", 10);
-        let n = inp.value === "" ? 0 : parseInt(inp.value, 10) || 0;
-        n = Math.max(0, Math.min(20, n + d));
-        inp.value = String(n);
-        inp.blur();
-        collect(inp);
-      });
-    });
+    wireScoreStepperButtons(stepper, inp, (triggerEl) => collect(triggerEl));
     inp.addEventListener("change", () => {
+      if (isMobileLayout()) return;
       const n = clampGoalInput(inp.value);
       inp.value = n === "" ? "" : String(n);
       collect(inp);
@@ -1962,6 +1992,7 @@ function wireOfficialGroupSteppers(wrap, onCommit, wireOpts = {}) {
     if (collectOnInput) {
       let inputTimer = null;
       inp.addEventListener("input", () => {
+        if (isMobileLayout()) return;
         if (inputTimer != null) clearTimeout(inputTimer);
         inputTimer = window.setTimeout(() => {
           inputTimer = null;
@@ -9724,14 +9755,15 @@ function restoreOpenPartidosAccordions(wrap, ids) {
 /**
  * Si el foco está en Partidos (p. ej. stepper del 2.º partido abierto), tras `innerHTML` el navegador
  * suele enfocar el primer acordeón y subir el scroll. Guardamos tarjeta + selector para restaurar.
- * Los botones ± dejan el foco en `.score-stepper__btn`, no en el input: resolvemos al input del mismo stepper.
+ * Los botones ± dejan el foco en `.score-stepper__btn`. En escritorio resolvemos al input del mismo stepper;
+ * en móvil mantenemos el botón para no abrir el teclado al restaurar foco tras re-render.
  * @param {HTMLElement | null | undefined} el
  * @param {HTMLElement | null} wrap
  * @returns {{ articleMid: string, focusSelector: string | null } | null}
  */
 function capturePartidosInteractionAnchorFromElement(el, wrap) {
   if (!wrap || !(el instanceof HTMLElement) || !wrap.contains(el)) return null;
-  if (el.matches(".score-stepper__btn")) {
+  if (el.matches(".score-stepper__btn") && !isMobileLayout()) {
     const stepper = el.closest(".score-stepper");
     const inp = stepper?.querySelector(".score-stepper__input");
     if (inp instanceof HTMLInputElement) el = inp;
@@ -9762,10 +9794,11 @@ function capturePartidosInteractionAnchorFromElement(el, wrap) {
     }
     return { articleMid, focusSelector: null };
   }
-  if (!el.matches(".score-stepper__input")) {
+  if (!el.matches(".score-stepper__input") && !el.matches(".score-stepper__btn")) {
     return { articleMid, focusSelector: null };
   }
   const side = el.dataset.side === "away" ? "away" : "home";
+  const isBtn = el.matches(".score-stepper__btn");
   let scope = "";
   if (el.closest(".quiniela-official.quiniela-official--admin.quiniela-official--editing")) {
     scope = ".quiniela-official.quiniela-official--admin.quiniela-official--editing ";
@@ -9804,7 +9837,9 @@ function capturePartidosInteractionAnchorFromElement(el, wrap) {
   } else {
     return { articleMid, focusSelector: null };
   }
-  return { articleMid, focusSelector: `${scope}.score-stepper__input${tail}` };
+  const deltaAttr = isBtn ? `[data-delta="${el.dataset.delta === "1" ? "1" : "-1"}"]` : "";
+  const stepperRole = isBtn ? "btn" : "input";
+  return { articleMid, focusSelector: `${scope}.score-stepper__${stepperRole}${tail}${deltaAttr}` };
 }
 
 /** @param {HTMLElement | null} wrap */
@@ -9836,10 +9871,14 @@ function restorePartidosInteractionAnchor(wrap, anchor, viewportLock) {
   requestAnimationFrame(() => {
     alignViewport();
     if (focusTarget instanceof HTMLElement) {
-      try {
-        focusTarget.focus({ preventScroll: true });
-      } catch {
-        focusTarget.focus();
+      const skipFocus =
+        isMobileLayout() && focusTarget.matches(".score-stepper__input");
+      if (!skipFocus) {
+        try {
+          focusTarget.focus({ preventScroll: true });
+        } catch {
+          focusTarget.focus();
+        }
       }
     }
     alignViewport();

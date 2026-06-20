@@ -9355,6 +9355,20 @@ span.quiniela-legend {
   cursor: pointer;
 }
 
+@media (max-width: 40rem) {
+  .score-stepper--buttons-only .score-stepper__input {
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+    caret-color: transparent;
+    cursor: default;
+  }
+
+  .score-stepper--buttons-only .score-stepper__input:read-only {
+    cursor: default;
+  }
+}
+
 .score-stepper__input::-webkit-outer-spin-button,
 .score-stepper__input::-webkit-inner-spin-button {
   -webkit-appearance: none;
