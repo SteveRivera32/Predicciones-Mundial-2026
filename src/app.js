@@ -1902,8 +1902,24 @@ function wireOfficialGroupSteppers(wrap, onCommit, wireOpts = {}) {
       collect(inp);
     });
     if (collectOnInput) {
-      inp.addEventListener("input", () => collect(inp));
+      let inputTimer = null;
+      inp.addEventListener("input", () => {
+        if (inputTimer != null) clearTimeout(inputTimer);
+        inputTimer = window.setTimeout(() => {
+          inputTimer = null;
+          collect(inp);
+        }, 80);
+      });
     }
+  });
+}
+
+/** Canvas de pastillas: fuera del camino crítico del clic (solo la tarjeta afectada). */
+function deferPartidosCardCanvasSync(card) {
+  if (!(card instanceof HTMLElement)) return;
+  requestAnimationFrame(() => {
+    syncQuinielaPerfectBonusCanvases(card);
+    syncGroupPtsBadgeCanvases(card);
   });
 }
 
@@ -5548,6 +5564,7 @@ function runGlobalRankingsRefresh(session) {
   if (tab === "match-ranking") redrawMatchRanking();
   if (tab === "match-history") redrawMatchHistory();
   if (tab === "final-ranking") renderFinalRanking(session);
+  if (tab === "team-stats") redrawTeamStats();
 }
 
 function flushDeferredGlobalRankingsRefresh() {
@@ -7867,8 +7884,7 @@ function patchQuinielaMatchPredRows(wrap, mid, focusEl) {
   tb.innerHTML = buildQuinielaPredRowsHtml(m, session, officialNow, isAdmin);
   stampQuinielaCardPredictionMeta(card, m, session, officialNow, false);
   wireQuinielaPredictionHandlersInScope(card, session);
-  syncQuinielaPerfectBonusCanvases(wrap);
-  syncGroupPtsBadgeCanvases(wrap);
+  deferPartidosCardCanvasSync(card);
   if (anchor?.articleMid === mid) restorePartidosInteractionAnchor(wrap, anchor, viewportLock);
 }
 
@@ -7901,8 +7917,7 @@ function patchQuinielaKoMatchPredRows(wrap, kid, focusEl) {
   tb.innerHTML = buildQuinielaPredRowsHtmlKo(m, session, officialNow, isAdmin);
   stampQuinielaCardPredictionMeta(card, m, session, officialNow, true);
   wireQuinielaPredictionHandlersInScope(card, session);
-  syncQuinielaPerfectBonusCanvases(wrap);
-  syncGroupPtsBadgeCanvases(wrap);
+  deferPartidosCardCanvasSync(card);
   if (anchor?.articleMid === kid) restorePartidosInteractionAnchor(wrap, anchor, viewportLock);
 }
 
@@ -8017,8 +8032,9 @@ function bindPartidosAdminHandlers(scope, session) {
         if (termBtn) {
           termBtn.disabled = partial[mid].home === "" || partial[mid].away === "";
         }
-        patchQuinielaMatchPredRows(partidosWrap, mid, triggerEl);
-        scheduleDeferredGlobalRankingsRefresh(loadSession());
+        const sess = loadSession();
+        scheduleDeferredGlobalRankingsRefresh(sess);
+        requestAnimationFrame(() => patchQuinielaMatchPredRows(partidosWrap, mid, triggerEl));
       },
       { collectOnInput: true },
     );
@@ -8100,10 +8116,10 @@ function bindPartidosAdminHandlers(scope, session) {
           : {}),
       });
       const sess = loadSession();
-      if (sess && partidosWrap) {
-        replaceQuinielaMatchArticleAndRebind(partidosWrap, kid, sess, triggerEl);
-      }
       scheduleDeferredGlobalRankingsRefresh(sess);
+      if (sess && partidosWrap) {
+        requestAnimationFrame(() => replaceQuinielaMatchArticleAndRebind(partidosWrap, kid, sess, triggerEl));
+      }
     });
   });
 
@@ -9766,8 +9782,7 @@ function renderQuiniela(session, official) {
           return;
         }
         const card = det.closest("article.partidos-match-card");
-        syncQuinielaPerfectBonusCanvases(card ?? wrap);
-        requestAnimationFrame(() => syncQuinielaPerfectBonusCanvases(card ?? wrap));
+        deferPartidosCardCanvasSync(card ?? wrap);
       },
       true,
     );
@@ -9775,7 +9790,6 @@ function renderQuiniela(session, official) {
 
   if (isArenaMode()) syncParticipantSearchInputs();
   if (isArenaMode()) syncArenaTruncationHints();
-  redrawTeamStats();
 }
 
 /**
