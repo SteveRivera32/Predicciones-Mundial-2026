@@ -180,10 +180,22 @@ const DEFERRED_GLOBAL_RANKINGS_MS = 120;
 let deferredGlobalRankingsTimer = null;
 const MOBILE_LAYOUT_MQ =
   typeof window !== "undefined" ? window.matchMedia("(max-width: 40rem)") : null;
+/** Tras +/- en partidos, evita re-render completo (eco WS) que cierra y reabre acordeones. */
+let partidosFullRenderMutedUntil = 0;
+const PARTIDOS_FULL_RENDER_MUTE_MS = 2200;
 
 /** @returns {boolean} */
 function isMobileLayout() {
   return MOBILE_LAYOUT_MQ?.matches === true;
+}
+
+function mutePartidosFullRenderAfterLocalEdit() {
+  partidosFullRenderMutedUntil = Date.now() + PARTIDOS_FULL_RENDER_MUTE_MS;
+}
+
+/** @returns {boolean} */
+function shouldMutePartidosFullRender() {
+  return Date.now() < partidosFullRenderMutedUntil;
 }
 const MAX_BEST_THIRD_TEAMS = 8;
 let tabsController = null;
@@ -7982,7 +7994,8 @@ function knockoutPhaseTitle(roundId) {
 /**
  * @param {ReturnType<typeof getKnockoutMatchesFlat>[number]} m
  */
-function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds) {
+function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds, openAccordionMatchIds = null) {
+  const accOpenAttr = openAccordionMatchIds?.has(m.id) ? " open" : "";
   const canForceUndecidedMatches = canEditAllParticipantsPredictions(session.participantId);
   const { ri, mi } = getKoRoundMatchIndex(m.id);
   const labelScores = allFilledOfficialKnockoutScores(official);
@@ -8123,7 +8136,7 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
   return `
     <article class="card quiniela-match partidos-match-card partidos-ko-card${kickClsKo}${sigKo}${enJuegoKoCls}${oficialPendienteClsKo}${oficialCerradoClsKo}" data-ko-round="${escapeHtml(m.roundId)}" data-quiniela-mid="${escapeHtml(m.id)}">
       ${cornerHtmlKo}
-      <details class="partidos-acc">
+      <details class="partidos-acc"${accOpenAttr}>
         <summary class="partidos-acc__summary">
           <span class="partidos-acc__chev" aria-hidden="true"></span>
           <div class="partidos-acc__summary-main">
@@ -8261,6 +8274,7 @@ function patchQuinielaKoMatchPredRows(wrap, kid, focusEl) {
  * @param {HTMLElement | null} [focusEl]
  */
 function refreshAfterParticipantPredictionScores(session, matchId, focusEl) {
+  mutePartidosFullRenderAfterLocalEdit();
   const wrap = $("#quiniela-wrap");
   if (wrap && GROUP_MATCHES.some((x) => x.id === matchId)) {
     patchQuinielaMatchPredRows(wrap, matchId, focusEl);
@@ -8295,12 +8309,15 @@ function replaceQuinielaMatchArticleAndRebind(wrap, matchId, session, focusEl = 
   const nextHighlightIds = getNextMatchDayHighlightIds(official, allMatchesForPartidosCalendar());
   const det = oldArt.querySelector("details.partidos-acc");
   const wasOpen = det instanceof HTMLDetailsElement && det.open;
+  const openAccordionForCard = wasOpen ? new Set([matchId]) : null;
   const m = GROUP_MATCHES.find((x) => x.id === matchId);
   const html = m
-    ? renderQuinielaMatchCard(m, session, official, isAdmin, nextHighlightIds)
+    ? renderQuinielaMatchCard(m, session, official, isAdmin, nextHighlightIds, openAccordionForCard)
     : (() => {
         const mKo = getKnockoutMatchesFlat().find((x) => x.id === matchId);
-        return mKo ? renderQuinielaMatchCardKo(mKo, session, official, isAdmin, nextHighlightIds) : "";
+        return mKo
+          ? renderQuinielaMatchCardKo(mKo, session, official, isAdmin, nextHighlightIds, openAccordionForCard)
+          : "";
       })();
   if (!html) return;
   oldArt.outerHTML = html;
@@ -9675,7 +9692,8 @@ function quinielaMatchStatusBanner(
  * @param {{ participantId: string } | null} session
  * @param {ReturnType<typeof loadOfficialResults>} official
  */
-function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds) {
+function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds, openAccordionMatchIds = null) {
+  const accOpenAttr = openAccordionMatchIds?.has(m.id) ? " open" : "";
   const canForceUndecidedMatches = canEditAllParticipantsPredictions(session.participantId);
   const groupTeamsDecided = isQuinielaTeamSlotDecided(m.home) && isQuinielaTeamSlotDecided(m.away);
   const off = official.groupScores[m.id] ?? { home: "", away: "" };
@@ -9798,7 +9816,7 @@ function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds) 
   return `
     <article class="card quiniela-match partidos-match-card${kickCls}${sig}${enJuegoCls}${oficialPendienteCls}${oficialCerradoCls}" data-group="${escapeHtml(m.groupId)}" data-quiniela-mid="${escapeHtml(m.id)}">
       ${cornerHtml}
-      <details class="partidos-acc">
+      <details class="partidos-acc"${accOpenAttr}>
         <summary class="partidos-acc__summary">
           <span class="partidos-acc__chev" aria-hidden="true"></span>
           <div class="partidos-acc__summary-main">
@@ -10042,6 +10060,7 @@ function renderQuiniela(session, official) {
   const showTerminados = scope === PARTIDOS_VISTA_TERMINADOS_VALUE;
   setPartidosGroupToolbarVisible(shouldShowPartidosGroupToolbar());
 
+  const openAccordionMatchIds = collectOpenPartidosAccordionIds(wrap);
   const blocks = [];
   if (showOnlyProximosNav) {
     /** Atajo del menú: la jornada próxima puede mezclar grupos y KO; no limitar por Vista ni por filtro de grupo. */
@@ -10049,9 +10068,9 @@ function renderQuiniela(session, official) {
     proximos = sortPartidosByLiveSiguientesKickoff(proximos, nextHighlightIds, official);
     for (const m of proximos) {
       if (m.groupId != null) {
-        blocks.push(renderQuinielaMatchCard(m, session, official, isAdmin, nextHighlightIds));
+        blocks.push(renderQuinielaMatchCard(m, session, official, isAdmin, nextHighlightIds, openAccordionMatchIds));
       } else {
-        blocks.push(renderQuinielaMatchCardKo(m, session, official, isAdmin, nextHighlightIds));
+        blocks.push(renderQuinielaMatchCardKo(m, session, official, isAdmin, nextHighlightIds, openAccordionMatchIds));
       }
     }
   } else if (showTerminados) {
@@ -10065,9 +10084,9 @@ function renderQuiniela(session, official) {
     });
     for (const m of terminados) {
       if (m.groupId != null) {
-        blocks.push(renderQuinielaMatchCard(m, session, official, isAdmin, noNextHighlight));
+        blocks.push(renderQuinielaMatchCard(m, session, official, isAdmin, noNextHighlight, openAccordionMatchIds));
       } else {
-        blocks.push(renderQuinielaMatchCardKo(m, session, official, isAdmin, noNextHighlight));
+        blocks.push(renderQuinielaMatchCardKo(m, session, official, isAdmin, noNextHighlight, openAccordionMatchIds));
       }
     }
   } else if (scope === "grupos") {
@@ -10075,14 +10094,21 @@ function renderQuiniela(session, official) {
     const groupFilter = filterEl?.value ?? "";
     let matches = groupFilter ? GROUP_MATCHES.filter((m) => m.groupId === groupFilter) : GROUP_MATCHES;
     matches = sortPartidosByLiveSiguientesKickoff(matches, nextHighlightIds, official);
-    blocks.push(...matches.map((m) => renderQuinielaMatchCard(m, session, official, isAdmin, nextHighlightIds)));
+    blocks.push(
+      ...matches.map((m) =>
+        renderQuinielaMatchCard(m, session, official, isAdmin, nextHighlightIds, openAccordionMatchIds),
+      ),
+    );
   } else {
     let koList = getKnockoutMatchesFlat();
     if (scope !== "all-ko") koList = koList.filter((x) => x.roundId === scope);
     koList = sortPartidosByLiveSiguientesKickoff(koList, nextHighlightIds, official);
-    blocks.push(...koList.map((m) => renderQuinielaMatchCardKo(m, session, official, isAdmin, nextHighlightIds)));
+    blocks.push(
+      ...koList.map((m) =>
+        renderQuinielaMatchCardKo(m, session, official, isAdmin, nextHighlightIds, openAccordionMatchIds),
+      ),
+    );
   }
-  const openAccordionMatchIds = collectOpenPartidosAccordionIds(wrap);
   const partidosInteractionAnchor = capturePartidosInteractionAnchor(wrap);
   const partidosViewportLock =
     partidosInteractionAnchor?.articleMid
@@ -11870,7 +11896,7 @@ function refreshAll(session, opts = {}) {
     renderFinalRanking(session);
     markPanelContentReady("final-ranking");
   }
-  if (showPanel("partidos") && !skipPartidosRender) {
+  if (showPanel("partidos") && !skipPartidosRender && !shouldMutePartidosFullRender()) {
     renderQuiniela(session, loadOfficialResults());
     markPanelContentReady("partidos");
   }
