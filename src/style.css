@@ -7856,6 +7856,10 @@ span.td-muted {
   display: none !important;
 }
 
+.partidos-ko-toolbar--hidden {
+  display: none !important;
+}
+
 .partidos-ko-official .quiniela-official-actions {
   margin-top: 0.55rem;
 }
