@@ -171,8 +171,8 @@ function pickGroupMatchSlice(local, remote, id) {
       ? /** @type {Record<string, object>} */ (remote.groupScores)[id]
       : lc && /** @type {Record<string, object>} */ (local.groupScores ?? {})[id]
         ? /** @type {Record<string, object>} */ (local.groupScores)[id]
-        : /** @type {Record<string, object>} */ (remote.groupScores ?? {})[id] ??
-          /** @type {Record<string, object>} */ (local.groupScores ?? {})[id];
+        : /** @type {Record<string, object>} */ (local.groupScores ?? {})[id] ??
+          /** @type {Record<string, object>} */ (remote.groupScores ?? {})[id];
   return { state: ls, score, confirmed: lc || rc };
 }
 
@@ -247,8 +247,8 @@ function pickKnockoutMatchSlice(local, remote, id) {
       ? /** @type {Record<string, object>} */ (remote.knockoutScores)[id]
       : lc && /** @type {Record<string, object>} */ (local.knockoutScores ?? {})[id]
         ? /** @type {Record<string, object>} */ (local.knockoutScores)[id]
-        : /** @type {Record<string, object>} */ (remote.knockoutScores ?? {})[id] ??
-          /** @type {Record<string, object>} */ (local.knockoutScores ?? {})[id];
+        : /** @type {Record<string, object>} */ (local.knockoutScores ?? {})[id] ??
+          /** @type {Record<string, object>} */ (remote.knockoutScores ?? {})[id];
   return { state: ls, score, confirmed: lc || rc };
 }
 
