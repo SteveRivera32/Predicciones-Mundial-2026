@@ -6142,7 +6142,6 @@ function renderFloatingRanking(session) {
     <thead><tr>
       <th scope="col" class="floating-ranking-th-num">#</th>
       <th scope="col" class="floating-ranking-th-player">Jugador</th>
-      <th scope="col" class="floating-ranking-th-stat" title="Bono más cerca del marcador en partidos">Cerc.</th>
       <th scope="col" class="floating-ranking-th-pts">Pts</th>
     </tr></thead>
     <tbody>
@@ -6158,8 +6157,7 @@ function renderFloatingRanking(session) {
                   : "";
           const rowClass = [podium, r.self ? "floating-ranking-row-self" : ""].filter(Boolean).join(" ");
           const you = r.self ? " (tu)" : "";
-          const cerc = r.totalClosest ?? 0;
-          return `<tr class="${rowClass}"><td>${r.displayRank}</td><th scope="row">${escapeHtml(r.p.name)}${you}</th><td class="floating-ranking-th-stat">${cerc}</td><td><strong>${r.pts}</strong></td></tr>`;
+          return `<tr class="${rowClass}"><td>${r.displayRank}</td><th scope="row">${escapeHtml(r.p.name)}${you}</th><td><strong>${r.pts}</strong></td></tr>`;
         })
         .join("")}
     </tbody>
@@ -6466,6 +6464,18 @@ function renderFinalRanking(session) {
         <td class="group-ranking-rank">${r.displayRank}</td>
         <th scope="row" class="group-ranking-name">${escapeHtml(r.p.name)}${you}</th>
         ${groupOrderRankingStatCell(
+          r.totalClosest ?? 0,
+          "CERCANÍA: bono «más cerca del marcador» en partidos (+1 c/u).",
+          maxClosest > 0 && (r.totalClosest ?? 0) === maxClosest,
+          "cercania",
+        )}
+        ${groupOrderRankingStatCell(
+          r.totalBonus,
+          "BONUS totales (improbable en partidos y minoría en orden de grupos).",
+          maxBonus > 0 && r.totalBonus === maxBonus,
+          "bonus",
+        )}
+        ${groupOrderRankingStatCell(
           r.totalBien,
           "BIEN totales (badge unico por prediccion).",
           maxBien > 0 && r.totalBien === maxBien,
@@ -6482,18 +6492,6 @@ function renderFinalRanking(session) {
           "PERFECTO totales (badge unico por prediccion).",
           maxPerfect > 0 && r.totalPerfect === maxPerfect,
           "perfecto",
-        )}
-        ${groupOrderRankingStatCell(
-          r.totalBonus,
-          "BONUS totales (improbable en partidos y minoría en orden de grupos).",
-          maxBonus > 0 && r.totalBonus === maxBonus,
-          "bonus",
-        )}
-        ${groupOrderRankingStatCell(
-          r.totalClosest ?? 0,
-          "CERCANÍA: bono «más cerca del marcador» en partidos (+1 c/u).",
-          maxClosest > 0 && (r.totalClosest ?? 0) === maxClosest,
-          "cercania",
         )}
         <td class="group-ranking-num group-ranking-total ${maxPts > 0 && r.pts === maxPts ? "group-ranking-total--top" : ""}"><strong>${r.pts}</strong></td>
       </tr>`;
@@ -9402,6 +9400,18 @@ function computeMatchRankingRows(scope, groupId, sessionParticipantId) {
         <td class="group-ranking-rank">${r.displayRank}</td>
         <th scope="row" class="group-ranking-name">${escapeHtml(r.participant.name)}${you}</th>
         ${groupOrderRankingStatCell(
+          r.closestCount,
+          "CERCANÍA: bono «más cerca del marcador» en partidos (+1 c/u).",
+          maxClosest > 0 && r.closestCount === maxClosest,
+          "cercania",
+        )}
+        ${groupOrderRankingStatCell(
+          r.bonusCount,
+          "BONUS improbable en partidos.",
+          maxBonus > 0 && r.bonusCount === maxBonus,
+          "bonus",
+        )}
+        ${groupOrderRankingStatCell(
           r.bienCount,
           "BIEN en partidos (badge unico por partido).",
           maxBien > 0 && r.bienCount === maxBien,
@@ -9418,18 +9428,6 @@ function computeMatchRankingRows(scope, groupId, sessionParticipantId) {
           "PERFECTO en partidos (badge unico por partido).",
           maxPerfect > 0 && r.perfectCount === maxPerfect,
           "perfecto",
-        )}
-        ${groupOrderRankingStatCell(
-          r.bonusCount,
-          "BONUS improbable en partidos.",
-          maxBonus > 0 && r.bonusCount === maxBonus,
-          "bonus",
-        )}
-        ${groupOrderRankingStatCell(
-          r.closestCount,
-          "CERCANÍA: bono «más cerca del marcador» en partidos (+1 c/u).",
-          maxClosest > 0 && r.closestCount === maxClosest,
-          "cercania",
         )}
         <td class="group-ranking-num group-ranking-total ${maxTotal > 0 && r.totalPoints === maxTotal ? "group-ranking-total--top" : ""}"><strong>${r.totalPoints}</strong></td>
       </tr>`;
@@ -12097,7 +12095,6 @@ function buildGroupOrderRankingRows(sessionParticipantId) {
   const maxExcelente = Math.max(0, ...rows.map((r) => r.excelenteCount));
   const maxPerfecto = Math.max(0, ...rows.map((r) => r.perfectoBonusCount));
   const maxBonus = Math.max(0, ...rows.map((r) => r.bonusCount));
-  const maxClosest = Math.max(0, ...rows.map((r) => r.closestCount));
   const maxPts = Math.max(0, ...rows.map((r) => r.totalPoints));
   const displayRows = orderRankingRowsForDisplay(rows, sessionParticipantId);
 
@@ -12118,6 +12115,12 @@ function buildGroupOrderRankingRows(sessionParticipantId) {
         <td class="group-ranking-rank">${r.displayRank}</td>
         <th scope="row" class="group-ranking-name">${escapeHtml(r.participant.name)}${you}</th>
         ${groupOrderRankingStatCell(
+          r.bonusCount,
+          "BONO: aciertos en posición con pick minoritario (+1 c/u).",
+          maxBonus > 0 && r.bonusCount === maxBonus,
+          "bonus",
+        )}
+        ${groupOrderRankingStatCell(
           r.bienCount,
           "BIEN: grupos con 1.º y 2.º en orden exacto (+1).",
           maxBien > 0 && r.bienCount === maxBien,
@@ -12134,18 +12137,6 @@ function buildGroupOrderRankingRows(sessionParticipantId) {
           "PERFECTO: grupos con orden completo y acierto de si el 3.º pasa (+1, total badge +4).",
           maxPerfecto > 0 && r.perfectoBonusCount === maxPerfecto,
           "perfecto",
-        )}
-        ${groupOrderRankingStatCell(
-          r.bonusCount,
-          "BONO: aciertos en posición con pick minoritario (+1 c/u).",
-          maxBonus > 0 && r.bonusCount === maxBonus,
-          "bonus",
-        )}
-        ${groupOrderRankingStatCell(
-          r.closestCount,
-          "CERCANÍA: solo aplica en partidos (no en orden de grupos).",
-          maxClosest > 0 && r.closestCount === maxClosest,
-          "cercania",
         )}
         <td class="group-ranking-num group-ranking-total ${maxPts > 0 && r.totalPoints === maxPts ? "group-ranking-total--top" : ""}"><strong>${r.totalPoints}</strong></td>
       </tr>`;
