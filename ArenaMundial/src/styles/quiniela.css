@@ -1,1 +1,6 @@
 @import "../../../src/style.css";
+
+/* PIN local: enmascarado sin type=password (evita autofill de iCloud en Safari). */
+.input--masked-pin {
+  -webkit-text-security: disc;
+}

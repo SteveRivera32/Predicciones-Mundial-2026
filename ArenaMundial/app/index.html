@@ -104,7 +104,7 @@
           <strong id="admin-settings-admin-hint"></strong>
         </p>
         <div id="admin-settings-list-wrap" class="admin-settings-list-wrap"></div>
-        <form id="form-admin-add-participant" class="admin-settings-add-form">
+        <form id="form-admin-add-participant" class="admin-settings-add-form" autocomplete="off">
           <p class="admin-settings-add-title">Añadir participante</p>
           <label class="field">
             <span class="field-label">Id (sin espacios, ej. <code>pedro</code>)</span>
@@ -112,11 +112,11 @@
           </label>
           <label class="field">
             <span class="field-label">Nombre visible</span>
-            <input id="admin-add-name" class="input" name="name" autocomplete="name" maxlength="48" required />
+            <input id="admin-add-name" class="input" name="name" autocomplete="off" maxlength="48" required />
           </label>
           <label class="field">
             <span class="field-label">PIN (opcional; vacío = no pedir PIN)</span>
-            <input id="admin-add-pin" class="input" name="pin" type="password" maxlength="16" autocomplete="new-password" />
+            <input id="admin-add-pin" class="input input--masked-pin" name="pin" type="text" maxlength="16" autocomplete="off" inputmode="numeric" />
           </label>
           <p id="admin-settings-form-error" class="form-error" role="alert" hidden></p>
           <button type="submit" class="btn btn-primary btn-sm">Añadir participante</button>
@@ -224,10 +224,15 @@
             <span class="field-label">Buscar jugador</span>
             <input
               id="arena-admin-user-search"
-              class="input"
+              class="input participant-search-input"
               type="search"
+              name="pm26-participant-filter"
               autocomplete="off"
-              placeholder="Nombre visible o usuario…"
+              autocapitalize="off"
+              spellcheck="false"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              placeholder="Nombre visible o nick…"
             />
           </label>
           <div id="arena-admin-user-results" class="admin-settings-list-wrap admin-settings-list-wrap--arena-users"></div>
@@ -560,7 +565,7 @@
         </label>
         <label class="field" id="onboarding-pin-wrap" hidden>
           <span class="field-label">PIN (solo la primera vez en este dispositivo)</span>
-          <input id="onboarding-pin" type="password" class="input" maxlength="16" autocomplete="current-password" />
+          <input id="onboarding-pin" type="text" class="input input--masked-pin" maxlength="16" autocomplete="off" tabindex="-1" aria-hidden="true" />
         </label>
         <p id="onboarding-error" class="form-error" role="alert" hidden></p>
         <button type="button" id="onboarding-submit" class="btn btn-primary">Entrar</button>
@@ -1506,7 +1511,7 @@
               <input
                 type="search"
                 class="input input-sm participant-search-input"
-                placeholder="Nombre o usuario…"
+                placeholder="Nombre o nick…"
                 autocomplete="off"
                 enterkeyhint="search"
                 aria-label="Buscar jugador en la tabla"
@@ -1863,7 +1868,7 @@
             <input
               type="search"
               class="input input-sm participant-search-input"
-              placeholder="Nombre o usuario…"
+              placeholder="Nombre o nick…"
               autocomplete="off"
               enterkeyhint="search"
               aria-label="Buscar jugador en el ranking"
@@ -1928,7 +1933,7 @@
             <input
               type="search"
               class="input input-sm participant-search-input"
-              placeholder="Nombre o usuario…"
+              placeholder="Nombre o nick…"
               autocomplete="off"
               enterkeyhint="search"
               aria-label="Buscar jugador en el ranking"
@@ -2127,7 +2132,7 @@
             <input
               type="search"
               class="input input-sm participant-search-input"
-              placeholder="Nombre o usuario…"
+              placeholder="Nombre o nick…"
               autocomplete="off"
               enterkeyhint="search"
               aria-label="Buscar jugador en la matriz"
@@ -2169,7 +2174,7 @@
             <input
               type="search"
               class="input input-sm participant-search-input"
-              placeholder="Nombre o usuario…"
+              placeholder="Nombre o nick…"
               autocomplete="off"
               enterkeyhint="search"
               aria-label="Buscar jugador en el ranking"

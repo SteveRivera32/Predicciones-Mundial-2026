@@ -35,9 +35,11 @@ import { initApp, finishBootstrap } from "@shared/app.js";
 import { initArenaChat } from "./arena-chat.js";
 
 import { setAppBootLoaderHint, dismissAppBootLoader } from "@shared/boot-loader.js";
+import { applyArenaIosAutofillGuard } from "@shared/arena-ios-autofill.js";
 
 async function bootstrap() {
   setArenaMode(true);
+  applyArenaIosAutofillGuard();
   bindArenaInteractionGuard();
   setAppBootLoaderHint("Verificando sesión…");
 
@@ -102,6 +104,7 @@ async function bootstrap() {
     });
 
     initApp();
+    applyArenaIosAutofillGuard();
     setAppBootLoaderHint("Sincronizando tus datos…");
     await liteSyncPromise;
     setAppBootLoaderHint("Preparando la interfaz…");

@@ -73,6 +73,7 @@ import {
   getArenaGroupThirdAdvanceVoteCounts,
   getArenaGeneralesVoteCountsBySlot,
 } from "./arena-mode.js";
+import { decorateArenaNonLoginInput } from "./arena-ios-autofill.js";
 import {
   computeLiveParticipantRowsFromData,
   ARENA_PRELAUNCH_EXCLUDED_GROUP_MATCH_IDS,
@@ -577,8 +578,13 @@ function participantSearchToolbarHtml({ ariaLabel = "Buscar jugador en la tabla"
       <input
         type="search"
         class="input input-sm participant-search-input"
-        placeholder="Nombre o usuario…"
+        name="pm26-participant-filter"
+        placeholder="Nombre o nick…"
         autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+        data-1p-ignore="true"
+        data-lpignore="true"
         enterkeyhint="search"
         aria-label="${escapeHtmlAttr(ariaLabel)}"
       />
@@ -2969,6 +2975,8 @@ function syncParticipantSearchInputs(value = getParticipantSearchQuery()) {
 function ensureParticipantSortToggle(bar) {
   if (!(bar instanceof HTMLElement) || !isArenaMode()) return;
   if (isArenaRankingPanelSearchBar(bar)) return;
+  const searchInput = bar.querySelector(".participant-search-input");
+  if (searchInput instanceof HTMLInputElement) decorateArenaNonLoginInput(searchInput);
   if (bar.querySelector("[data-participant-sort-toggle]")) return;
   const btn = document.createElement("button");
   btn.type = "button";
@@ -2988,6 +2996,9 @@ function initParticipantSearch(onSearchChange) {
   syncParticipantSearchInputs();
   document.querySelectorAll("[data-participant-search-bar]").forEach((bar) => {
     if (bar instanceof HTMLElement) ensureParticipantSortToggle(bar);
+  });
+  document.querySelectorAll(".participant-search-input, #arena-admin-user-search").forEach((el) => {
+    if (el instanceof HTMLInputElement) decorateArenaNonLoginInput(el);
   });
   syncParticipantSortButtons();
 
