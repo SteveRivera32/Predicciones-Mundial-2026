@@ -61,3 +61,15 @@ export function getCachedArenaAggregates(cacheMs) {
 export function invalidateArenaAggregatesCache() {
   cache = { sorted: [], matchVoteData: null, totalUsers: 0, at: 0, etag: "" };
 }
+
+/** Precalienta rankings/votos en segundo plano (primer request no paga el coste completo). */
+export function warmArenaAggregatesCache() {
+  setImmediate(() => {
+    try {
+      const cacheMs = Number(process.env.ARENA_AGGREGATES_CACHE_MS || 20_000);
+      getCachedArenaAggregates(cacheMs);
+    } catch (err) {
+      console.warn("[arena] warm aggregates", err);
+    }
+  });
+}

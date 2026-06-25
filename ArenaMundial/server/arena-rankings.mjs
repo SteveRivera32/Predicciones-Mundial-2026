@@ -27,6 +27,7 @@ export function getCachedArenaRankings(viewerUsername, cacheMs) {
       totalUsers: cached.totalUsers,
       limit: lim,
       truncated: cached.totalUsers > lim,
+      matchVoteData: cached.matchVoteData,
       rows: rows.map((r) => {
         const globalRank = cached.sorted.findIndex((x) => x.p.id === r.p.id) + 1;
         return {

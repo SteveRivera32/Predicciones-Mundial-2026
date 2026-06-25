@@ -17,8 +17,7 @@ import {
 import {
   initArenaSyncPoll,
   pullArenaSync,
-  pullArenaOfficialSync,
-  pullArenaRankings,
+  markArenaBootLiteSyncDone,
 } from "./arena-sync.js";
 import { setRemoteSyncActive } from "@shared/remote-sync-flags.js";
 import {
@@ -61,13 +60,13 @@ async function bootstrap() {
   setArenaBootLoaderHint("Verificando sesión…");
 
   const userPromise = requireAuthOrRedirect();
-  const warmSyncPromise = Promise.all([
-    pullArenaSync({ lite: true }),
-    pullArenaOfficialSync(),
-    pullArenaRankings().catch(() => {}),
-  ]).catch((err) => {
-    console.warn("[arena] precarga sync", err);
-  });
+  const liteSyncPromise = pullArenaSync({ lite: true })
+    .then(() => {
+      markArenaBootLiteSyncDone();
+    })
+    .catch((err) => {
+      console.warn("[arena] sync lite", err);
+    });
 
   const user = await userPromise;
   if (!user) return;
@@ -121,8 +120,8 @@ async function bootstrap() {
     });
 
     initApp();
-    setArenaBootLoaderHint("Sincronizando predicciones y resultados…");
-    await warmSyncPromise;
+    setArenaBootLoaderHint("Sincronizando tus datos…");
+    await liteSyncPromise;
     setArenaBootLoaderHint("Preparando la interfaz…");
     finishBootstrap();
     void initArenaChat().catch((err) => console.error("[arena] chat", err));

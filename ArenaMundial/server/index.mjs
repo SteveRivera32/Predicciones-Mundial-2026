@@ -73,7 +73,12 @@ import { isPrivadasArenaMirrorId } from "../../src/participants.js";
 import { saveArenaOfficial } from "./official-privadas-sync.mjs";
 import { isSyncSecretValid } from "../../server/sync-secret.mjs";
 import { getCachedArenaRankings, invalidateArenaRankingsCache } from "./arena-rankings.mjs";
-import { getCachedArenaMatchVoteData, invalidateArenaMatchVoteCache } from "./arena-match-votes.mjs";
+import {
+  getCachedArenaMatchVoteData,
+  getArenaAggregatesCacheMs,
+  invalidateArenaMatchVoteCache,
+} from "./arena-match-votes.mjs";
+import { warmArenaAggregatesCache } from "./arena-aggregates.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.ARENA_PORT || 8788);
@@ -483,7 +488,8 @@ app.put("/api/arena/me/predictions", requireArenaAuth, (req, res) => {
 
 // ── Datos compartidos (lectura con cache; sin empujar a otros clientes) ─────
 
-app.get("/api/arena/official", (_req, res) => {
+app.get("/api/arena/official", (req, res) => {
+  const lite = req.query.lite === "1" || req.query.lite === "true";
   const now = Date.now();
   if (!sharedCache.official.data || now - sharedCache.official.at > SHARED_CACHE_MS) {
     const { data, updatedAt } = getOfficialResults();
@@ -491,14 +497,17 @@ app.get("/api/arena/official", (_req, res) => {
   }
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("ETag", sharedCache.official.etag);
-  const matchVoteData = getCachedArenaMatchVoteData(SHARED_CACHE_MS);
-  res.json({ ...sharedCache.official.data, matchVoteData });
+  const payload = { ...sharedCache.official.data };
+  if (!lite) {
+    payload.matchVoteData = getCachedArenaMatchVoteData(getArenaAggregatesCacheMs());
+  }
+  res.json(payload);
 });
 
 app.get("/api/arena/rankings", requireArenaAuth, (req, res) => {
   const me = findUserById(req.userId);
   const viewerUsername = me?.username ?? "";
-  const { data, etag } = getCachedArenaRankings(viewerUsername, SHARED_CACHE_MS);
+  const { data, etag } = getCachedArenaRankings(viewerUsername, getArenaAggregatesCacheMs());
   res.setHeader("Cache-Control", "private, no-store");
   res.setHeader("ETag", etag);
   res.json(data);
@@ -655,6 +664,7 @@ if (SERVE_STATIC && fs.existsSync(DIST_DIR)) {
 
 initDb();
 setArenaDataChangedHandler(scheduleArenaBackup);
+warmArenaAggregatesCache();
 
 startPrivadasSyncPoll(invalidateSharedCache);
 

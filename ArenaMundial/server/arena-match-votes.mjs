@@ -4,7 +4,11 @@
 
 import { getCachedArenaAggregates, invalidateArenaAggregatesCache } from "./arena-aggregates.mjs";
 
-export function getCachedArenaMatchVoteData(cacheMs) {
+export function getArenaAggregatesCacheMs() {
+  return Number(process.env.ARENA_AGGREGATES_CACHE_MS || 20_000);
+}
+
+export function getCachedArenaMatchVoteData(cacheMs = getArenaAggregatesCacheMs()) {
   return getCachedArenaAggregates(cacheMs).matchVoteData;
 }
 

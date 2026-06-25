@@ -1784,7 +1784,17 @@ function stampGroupPredListMeta(host, grp, currentParticipantId) {
   stampArenaPredictionListMeta(bar, getGroupPredListOpts(grp, currentParticipantId));
 }
 
-/** Acordeón: la tabla «Predicciones de todos» solo se genera al abrir (como Partidos). */
+/** Tabla «Predicciones de todos» en orden de grupos (sin acordeón). */
+function mountGroupPredictionsTable(host, grp, participantId) {
+  if (!(host instanceof HTMLElement)) return;
+  host.className = "group-preds-host";
+  host.dataset.pm26PredsKind = "grupos";
+  host.dataset.groupId = grp.id;
+  host.innerHTML = buildGroupPredictionsTableHtml(grp, participantId);
+  stampGroupPredListMeta(host, grp, participantId);
+}
+
+/** Acordeón: la tabla «Predicciones de todos» solo se genera al abrir (generales). */
 function buildPredsEveryoneLazyShellHtml(kind, groupId = "") {
   const gidAttr = groupId ? ` data-group-id="${escapeHtml(groupId)}"` : "";
   return `<details class="preds-everyone-acc partidos-acc">
@@ -2862,7 +2872,7 @@ function restoreParticipantSearchFocus(snap) {
     input = card?.querySelector(".participant-search-input");
   } else if (snap.groupId) {
     const host = document.querySelector(
-      `[data-pm26-preds-lazy-host][data-pm26-preds-kind="grupos"][data-group-id="${CSS.escape(snap.groupId)}"]`,
+      `.group-preds-host[data-pm26-preds-kind="grupos"][data-group-id="${CSS.escape(snap.groupId)}"]`,
     );
     input = host?.querySelector(".participant-search-input");
   } else if (snap.panelId) {
@@ -2917,8 +2927,8 @@ function refreshArenaPartidosPredictionTables(session) {
 function refreshArenaGruposPredictionTables(session) {
   const wrap = $("#grupos-wrap");
   if (!wrap || !session) return;
-  wrap.querySelectorAll("[data-pm26-preds-lazy-host][data-pm26-preds-kind='grupos']").forEach((host) => {
-    if (!(host instanceof HTMLElement) || host.dataset.pm26PredsLazy === "1") return;
+  wrap.querySelectorAll('.group-preds-host[data-pm26-preds-kind="grupos"][data-group-id]').forEach((host) => {
+    if (!(host instanceof HTMLElement)) return;
     const groupId = host.dataset.groupId;
     const grp = GROUPS.find((g) => g.id === groupId);
     if (!grp) return;
@@ -5746,8 +5756,7 @@ function renderGrupos(participantId, predictions) {
     appendBestThirdSummaryEl(card, predictions);
 
     const predsHost = document.createElement("div");
-    predsHost.className = "group-preds-mount";
-    predsHost.innerHTML = buildPredsEveryoneLazyShellHtml("grupos", grp.id);
+    mountGroupPredictionsTable(predsHost, grp, participantId);
     card.appendChild(predsHost);
     wrap.appendChild(card);
 
@@ -5804,6 +5813,8 @@ function renderGrupos(participantId, predictions) {
 
   syncThirdLimitRibbon(predictions);
   syncParticipantSearchInputs();
+  if (isArenaMode()) syncArenaTruncationHints();
+  requestAnimationFrame(() => syncGroupPtsBadgeCanvases(wrap));
 }
 
 /**
