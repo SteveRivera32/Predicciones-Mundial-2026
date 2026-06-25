@@ -258,24 +258,36 @@ export function getLiveOfficialGroupSnapshotFromOfficial(official) {
     orderByGroup[grp.id] = hasData ? list.map((x) => x.team) : [];
   }
 
-  const thirdCandidates = GROUPS.map((grp) => {
-    const list = standingsByGroup[grp.id] ?? [];
-    if (!list[2]) return null;
-    if (groupCompletedByGroup[grp.id] !== true) return null;
-    return list[2];
-  })
-    .filter(Boolean)
-    .sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || a.team.localeCompare(b.team));
-  const topThird = new Set(thirdCandidates.slice(0, MAX_BEST_THIRD_TEAMS).map((x) => x.team));
+  const allGroupsCompleted = GROUPS.every((g) => groupCompletedByGroup[g.id] === true);
+  let rankedThirdTeams = [];
 
-  for (const grp of GROUPS) {
-    const thirdTeam = (orderByGroup[grp.id] ?? [])[2];
-    if (!thirdTeam) continue;
-    thirdAdvanceByGroup[grp.id] = topThird.has(thirdTeam);
+  if (allGroupsCompleted) {
+    const thirdCandidates = GROUPS.map((grp) => {
+      const list = standingsByGroup[grp.id] ?? [];
+      if (!list[2]) return null;
+      return list[2];
+    })
+      .filter(Boolean)
+      .sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || a.team.localeCompare(b.team));
+    const topThird = new Set(thirdCandidates.slice(0, MAX_BEST_THIRD_TEAMS).map((x) => x.team));
+
+    for (const grp of GROUPS) {
+      const thirdTeam = (orderByGroup[grp.id] ?? [])[2];
+      if (!thirdTeam) continue;
+      thirdAdvanceByGroup[grp.id] = topThird.has(thirdTeam);
+    }
+
+    rankedThirdTeams = thirdCandidates.slice(0, MAX_BEST_THIRD_TEAMS).map((x) => x.team);
   }
 
-  const rankedThirdTeams = thirdCandidates.slice(0, MAX_BEST_THIRD_TEAMS).map((x) => x.team);
-  return { orderByGroup, thirdAdvanceByGroup, hasOfficialDataByGroup, rankedThirdTeams, groupCompletedByGroup };
+  return {
+    orderByGroup,
+    thirdAdvanceByGroup,
+    hasOfficialDataByGroup,
+    rankedThirdTeams,
+    groupCompletedByGroup,
+    allGroupsCompleted,
+  };
 }
 
 /**

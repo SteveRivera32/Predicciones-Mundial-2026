@@ -115,7 +115,9 @@ import {
   KNOCKOUT_PHASE_ROUND_INDEX,
   knockoutRoundRequiresPenaltyPickOnDraw,
   normalizeTeamName,
+  R32_THIRD_WINNER_FOR_MATCH_ID,
 } from "./tournament.js";
+import { resolveThirdPlaceTeamForWinner } from "./third-place-assignments.js";
 import {
   isLockedAtKickoff,
   isGroupMatchPredictionsLocked,
@@ -1419,41 +1421,47 @@ function getLiveOfficialGroupSnapshot() {
     orderByGroup[grp.id] = hasData ? list.map((x) => x.team) : [];
   }
 
-  const thirdCandidates = GROUPS.map((grp) => {
-    const list = standingsByGroup[grp.id] ?? [];
-    if (!list[2]) return null;
-    if (groupCompletedByGroup[grp.id] !== true) return null;
-    return list[2];
-  })
-    .filter(Boolean)
-    .sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || a.team.localeCompare(b.team));
-  const topThird = new Set(thirdCandidates.slice(0, MAX_BEST_THIRD_TEAMS).map((x) => x.team));
+  const allGroupsCompleted = GROUPS.every((g) => groupCompletedByGroup[g.id] === true);
+  let rankedThirdTeams = [];
 
-  for (const grp of GROUPS) {
-    const thirdTeam = (orderByGroup[grp.id] ?? [])[2];
-    if (!thirdTeam) continue;
-    thirdAdvanceByGroup[grp.id] = topThird.has(thirdTeam);
+  if (allGroupsCompleted) {
+    const thirdCandidates = GROUPS.map((grp) => {
+      const list = standingsByGroup[grp.id] ?? [];
+      if (!list[2]) return null;
+      return list[2];
+    })
+      .filter(Boolean)
+      .sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || a.team.localeCompare(b.team));
+    const topThird = new Set(thirdCandidates.slice(0, MAX_BEST_THIRD_TEAMS).map((x) => x.team));
+
+    for (const grp of GROUPS) {
+      const thirdTeam = (orderByGroup[grp.id] ?? [])[2];
+      if (!thirdTeam) continue;
+      thirdAdvanceByGroup[grp.id] = topThird.has(thirdTeam);
+    }
+
+    rankedThirdTeams = thirdCandidates.slice(0, MAX_BEST_THIRD_TEAMS).map((x) => x.team);
   }
 
-  const rankedThirdTeams = thirdCandidates.slice(0, MAX_BEST_THIRD_TEAMS).map((x) => x.team);
-  return { orderByGroup, thirdAdvanceByGroup, hasOfficialDataByGroup, rankedThirdTeams, groupCompletedByGroup };
+  return {
+    orderByGroup,
+    thirdAdvanceByGroup,
+    hasOfficialDataByGroup,
+    rankedThirdTeams,
+    groupCompletedByGroup,
+    allGroupsCompleted,
+  };
 }
 
 /**
  * Resuelve una banda semilla de 16vos contra el estado oficial en vivo.
  * @param {string} label
+ * @param {string} matchId
  * @param {Record<string, string[]>} orderByGroup
  * @param {Record<string, boolean>} groupCompletedByGroup
- * @param {string[]} rankedThirdTeams
- * @param {{ value: number }} thirdCursor
+ * @param {Record<string, boolean>} thirdAdvanceByGroup
  */
-function resolveLiveR32SeedLabel(
-  label,
-  orderByGroup,
-  groupCompletedByGroup,
-  rankedThirdTeams,
-  thirdCursor,
-) {
+function resolveLiveR32SeedLabel(label, matchId, orderByGroup, groupCompletedByGroup, thirdAdvanceByGroup) {
   const txt = String(label ?? "").trim();
   const m = /^([12])º Grupo ([A-L])$/.exec(txt);
   if (m) {
@@ -1462,10 +1470,13 @@ function resolveLiveR32SeedLabel(
     if (groupCompletedByGroup[groupId] !== true) return txt;
     return orderByGroup[groupId]?.[pos] ?? txt;
   }
-  if (txt === "3º ranking") {
-    const idx = thirdCursor.value;
-    thirdCursor.value += 1;
-    return rankedThirdTeams[idx] ?? txt;
+  const winnerGroupId = R32_THIRD_WINNER_FOR_MATCH_ID[matchId];
+  if (winnerGroupId && txt.startsWith("3º")) {
+    const qualifyingThirdGroupIds = GROUPS.filter((g) => thirdAdvanceByGroup[g.id] === true).map((g) => g.id);
+    if (qualifyingThirdGroupIds.length !== MAX_BEST_THIRD_TEAMS) return txt;
+    return (
+      resolveThirdPlaceTeamForWinner(winnerGroupId, qualifyingThirdGroupIds, orderByGroup) ?? txt
+    );
   }
   return txt;
 }
@@ -1478,25 +1489,24 @@ function buildLiveR32SlotMap() {
   const snap = getLiveOfficialGroupSnapshot();
   const orderByGroup = snap.orderByGroup ?? {};
   const groupCompletedByGroup = snap.groupCompletedByGroup ?? {};
-  const rankedThirdTeams = snap.rankedThirdTeams ?? [];
-  const thirdCursor = { value: 0 };
+  const thirdAdvanceByGroup = snap.thirdAdvanceByGroup ?? {};
   /** @type {Record<string, string>} */
   const out = {};
   const r32 = KNOCKOUT_ROUNDS[KNOCKOUT_PHASE_ROUND_INDEX.r32];
   for (const m of r32.matches) {
     out[`${m.id}:home`] = resolveLiveR32SeedLabel(
       m.homeLabel,
+      m.id,
       orderByGroup,
       groupCompletedByGroup,
-      rankedThirdTeams,
-      thirdCursor,
+      thirdAdvanceByGroup,
     );
     out[`${m.id}:away`] = resolveLiveR32SeedLabel(
       m.awayLabel,
+      m.id,
       orderByGroup,
       groupCompletedByGroup,
-      rankedThirdTeams,
-      thirdCursor,
+      thirdAdvanceByGroup,
     );
   }
   return out;
@@ -8116,8 +8126,13 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
   const canForceUndecidedMatches = canEditAllParticipantsPredictions(session.participantId);
   const { ri, mi } = getKoRoundMatchIndex(m.id);
   const labelScores = allFilledOfficialKnockoutScores(official);
-  const homeLab = resolveKnockoutSlotLabel(ri, mi, "home", labelScores);
-  const awayLab = resolveKnockoutSlotLabel(ri, mi, "away", labelScores);
+  const liveR32SlotMap = ri === KNOCKOUT_PHASE_ROUND_INDEX.r32 ? buildLiveR32SlotMap() : null;
+  const homeLab =
+    liveR32SlotMap?.[`${m.id}:home`] ??
+    resolveKnockoutSlotLabel(ri, mi, "home", labelScores);
+  const awayLab =
+    liveR32SlotMap?.[`${m.id}:away`] ??
+    resolveKnockoutSlotLabel(ri, mi, "away", labelScores);
   const officialSlotsDecided = isQuinielaTeamSlotDecided(homeLab) && isQuinielaTeamSlotDecided(awayLab);
   const officialSlotsReadyForAdmin = officialSlotsDecided || canForceUndecidedMatches;
   const off = official.knockoutScores?.[m.id] ?? { home: "", away: "" };

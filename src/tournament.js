@@ -210,28 +210,68 @@ export const GROUP_MATCHES = GROUPS.flatMap((g) =>
 );
 
 /**
- * Plantilla tipo Copa del Mundo: dieciseisavos (16 partidos / 32 equipos) → final.
- * Los textos de cada banda son placeholders hasta que la llave oficial exista; se puede ajustar en `R32_SLOTS`.
+ * Llave oficial Ronda de 32 (M73–M88), según FIFA / bracketmundial2026.com.
+ * Los cruces con 3.º usan pools de grupos elegibles; la asignación concreta sigue el Anexo C.
  * `matchScoringKey` alinea con `MATCH_SCORING` en scoring-rules (quiniela futura).
  */
+export const R32_THIRD_POOL_LABELS = {
+  E: "3º A/B/C/D/F",
+  I: "3º C/D/F/G/H",
+  A: "3º C/E/F/H/I",
+  L: "3º E/H/I/J/K",
+  D: "3º B/E/F/I/J",
+  G: "3º A/E/H/I/J",
+  B: "3º E/F/G/I/J",
+  K: "3º D/E/I/J/L",
+};
+
+/** Partido de 16vos → letra del 1.º al que se enfrenta el 3.º (Anexo C). */
+export const R32_THIRD_WINNER_FOR_MATCH_ID = {
+  "ko-r32-2": "E",
+  "ko-r32-5": "I",
+  "ko-r32-7": "A",
+  "ko-r32-8": "L",
+  "ko-r32-9": "D",
+  "ko-r32-10": "G",
+  "ko-r32-13": "B",
+  "ko-r32-15": "K",
+};
+
 const R32_SLOTS = [
-  ["2º Grupo A", "2º Grupo B"],
-  ["1º Grupo E", "3º ranking"],
-  ["1º Grupo F", "2º Grupo C"],
-  ["1º Grupo C", "2º Grupo F"],
-  ["1º Grupo I", "3º ranking"],
-  ["2º Grupo E", "2º Grupo I"],
-  ["1º Grupo A", "3º ranking"],
-  ["2º Grupo D", "2º Grupo G"],
-  ["2º Grupo H", "2º Grupo J"],
-  ["1º Grupo L", "3º ranking"],
-  ["1º Grupo K", "3º ranking"],
-  ["1º Grupo D", "2º Grupo E"],
-  ["1º Grupo G", "3º ranking"],
-  ["2º Grupo K", "2º Grupo L"],
-  ["2º Grupo C", "2º Grupo I"],
-  ["1º Grupo J", "2º Grupo H"],
+  ["2º Grupo A", "2º Grupo B"], // M73
+  ["1º Grupo E", R32_THIRD_POOL_LABELS.E], // M74
+  ["1º Grupo F", "2º Grupo C"], // M75
+  ["1º Grupo C", "2º Grupo F"], // M76
+  ["1º Grupo I", R32_THIRD_POOL_LABELS.I], // M77
+  ["2º Grupo E", "2º Grupo I"], // M78
+  ["1º Grupo A", R32_THIRD_POOL_LABELS.A], // M79
+  ["1º Grupo L", R32_THIRD_POOL_LABELS.L], // M80
+  ["1º Grupo D", R32_THIRD_POOL_LABELS.D], // M81
+  ["1º Grupo G", R32_THIRD_POOL_LABELS.G], // M82
+  ["2º Grupo K", "2º Grupo L"], // M83
+  ["1º Grupo H", "2º Grupo J"], // M84
+  ["1º Grupo B", R32_THIRD_POOL_LABELS.B], // M85
+  ["1º Grupo J", "2º Grupo H"], // M86
+  ["1º Grupo K", R32_THIRD_POOL_LABELS.K], // M87
+  ["2º Grupo D", "2º Grupo G"], // M88
 ];
+
+/**
+ * Alimentadores personalizados R32 → octavos (M89–M96), índices 0-based en r32.matches.
+ * @type {Record<string, Array<{ home: number, away: number }>>}
+ */
+const KO_CUSTOM_FEEDERS = {
+  r16: [
+    { home: 0, away: 2 }, // M90: W73 vs W75
+    { home: 1, away: 4 }, // M89: W74 vs W77
+    { home: 3, away: 5 }, // M91: W76 vs W78
+    { home: 6, away: 7 }, // M92: W79 vs W80
+    { home: 10, away: 11 }, // M93: W83 vs W84
+    { home: 8, away: 9 }, // M94: W81 vs W82
+    { home: 13, away: 15 }, // M95: W86 vs W88
+    { home: 12, away: 14 }, // M96: W85 vs W87
+  ],
+};
 
 function koKick(id) {
   return R32_ID_TO_KICKOFF[id] ?? KO_OTHER_IDS_TO_KICKOFF[id] ?? null;
@@ -255,16 +295,16 @@ export const KNOCKOUT_ROUNDS = [
   {
     id: "r16",
     title: "Octavos de final",
-    matches: Array.from({ length: 8 }, (_, i) => {
-      const id = `ko-r16-${i + 1}`;
-      return {
-        id,
-        homeLabel: `Gana 32 · ${i * 2 + 1}`,
-        awayLabel: `Gana 32 · ${i * 2 + 2}`,
-        kickoff: koKick(id),
-        matchScoringKey: "r16",
-      };
-    }),
+    matches: [
+      { id: "ko-r16-1", homeLabel: "Gana 32 · 1", awayLabel: "Gana 32 · 3", kickoff: koKick("ko-r16-1"), matchScoringKey: "r16" }, // M90
+      { id: "ko-r16-2", homeLabel: "Gana 32 · 2", awayLabel: "Gana 32 · 5", kickoff: koKick("ko-r16-2"), matchScoringKey: "r16" }, // M89
+      { id: "ko-r16-3", homeLabel: "Gana 32 · 4", awayLabel: "Gana 32 · 6", kickoff: koKick("ko-r16-3"), matchScoringKey: "r16" }, // M91
+      { id: "ko-r16-4", homeLabel: "Gana 32 · 7", awayLabel: "Gana 32 · 8", kickoff: koKick("ko-r16-4"), matchScoringKey: "r16" }, // M92
+      { id: "ko-r16-5", homeLabel: "Gana 32 · 11", awayLabel: "Gana 32 · 12", kickoff: koKick("ko-r16-5"), matchScoringKey: "r16" }, // M93
+      { id: "ko-r16-6", homeLabel: "Gana 32 · 9", awayLabel: "Gana 32 · 10", kickoff: koKick("ko-r16-6"), matchScoringKey: "r16" }, // M94
+      { id: "ko-r16-7", homeLabel: "Gana 32 · 14", awayLabel: "Gana 32 · 16", kickoff: koKick("ko-r16-7"), matchScoringKey: "r16" }, // M95
+      { id: "ko-r16-8", homeLabel: "Gana 32 · 13", awayLabel: "Gana 32 · 15", kickoff: koKick("ko-r16-8"), matchScoringKey: "r16" }, // M96
+    ],
   },
   {
     id: "qf",
@@ -359,16 +399,16 @@ export const KNOCKOUT_PHASE_ROUND_INDEX = {
   final: 5,
 };
 
-/** Índices de partido por columna en cada mitad (izquierda: 0…, derecha: otra mitad del cuadro). */
+/** Índices de partido por columna en cada mitad (orden del árbol del cuadro, no M73…M88 lineal). */
 export const BRACKET_SIDE_MATCH_INDICES = {
   left: {
-    r32: [0, 1, 2, 3, 4, 5, 6, 7],
+    r32: [0, 2, 1, 4, 3, 5, 6, 7],
     r16: [0, 1, 2, 3],
     qf: [0, 1],
     sf: [0],
   },
   right: {
-    r32: [15, 14, 13, 12, 11, 10, 9, 8],
+    r32: [14, 12, 15, 13, 9, 8, 11, 10],
     r16: [7, 6, 5, 4],
     qf: [3, 2],
     sf: [1],
@@ -383,7 +423,12 @@ export function getKnockoutFeeder(roundIndex, matchIndex, side) {
   const prevIdx = roundIndex - 1;
   const prevRound = KNOCKOUT_ROUNDS[prevIdx];
   if (prevRound.id === "tp") return null;
-  const feederMatchIdx = side === "home" ? matchIndex * 2 : matchIndex * 2 + 1;
+  const custom = KO_CUSTOM_FEEDERS[round.id]?.[matchIndex];
+  const feederMatchIdx = custom
+    ? custom[side]
+    : side === "home"
+      ? matchIndex * 2
+      : matchIndex * 2 + 1;
   const m = prevRound.matches[feederMatchIdx];
   if (!m) return null;
   return { roundIndex: prevIdx, matchIndex: feederMatchIdx, matchId: m.id };
