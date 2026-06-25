@@ -220,6 +220,7 @@ let tabsController = null;
 /** Evita setTab al sincronizar details desde la pestaña activa. */
 let drawerSyncMuteToggleNav = false;
 let floatingRankingReady = false;
+let predsEveryoneLazyBound = false;
 
 /** Abre la pestaña Partidos en vista «SIGUIENTES» (mismo atajo que el botón amarillo). */
 function clearCompareTableParticipantBinding() {
@@ -1770,6 +1771,92 @@ function stampGroupPredListMeta(host, grp, currentParticipantId) {
   stampArenaPredictionListMeta(bar, getGroupPredListOpts(grp, currentParticipantId));
 }
 
+/** Acordeón: la tabla «Predicciones de todos» solo se genera al abrir (como Partidos). */
+function buildPredsEveryoneLazyShellHtml(kind, groupId = "") {
+  const gidAttr = groupId ? ` data-group-id="${escapeHtml(groupId)}"` : "";
+  return `<details class="preds-everyone-acc partidos-acc">
+    <summary class="preds-everyone-acc__summary partidos-acc__summary">
+      <span class="partidos-acc__chev" aria-hidden="true"></span>
+      <span class="subsection-title group-preds-table-title">Predicciones de todos</span>
+    </summary>
+    <div class="preds-everyone-acc__body partidos-acc__body group-preds-host" data-pm26-preds-lazy-host data-pm26-preds-lazy="1" data-pm26-preds-kind="${escapeHtml(kind)}"${gidAttr}>
+      <p class="muted preds-everyone-lazy-hint">Abre esta sección para cargar la tabla.</p>
+    </div>
+  </details>`;
+}
+
+function mountGeneralesComparisonTableLazy() {
+  const root = $("#generales-preds-host");
+  if (!root || root.querySelector("details.preds-everyone-acc")) return;
+  root.innerHTML = buildPredsEveryoneLazyShellHtml("generales");
+}
+
+/**
+ * @param {Element | null | undefined} host
+ */
+function hydratePredsEveryoneLazyHost(host) {
+  if (!(host instanceof HTMLElement) || host.dataset.pm26PredsLazy !== "1") return;
+  const session = loadSession();
+  if (!session) return;
+  const kind = host.dataset.pm26PredsKind ?? "";
+  if (kind === "generales") {
+    host.innerHTML = buildGeneralesPredictionsTableHtml(session.participantId);
+    const officialStore = loadOfficialResults();
+    const officialGen = officialStore.generalOfficial ?? {};
+    const hasOfficialData =
+      officialStore.generalOfficialConfirmed === true &&
+      Boolean(String(officialGen.first ?? "").trim()) &&
+      Boolean(String(officialGen.second ?? "").trim()) &&
+      Boolean(String(officialGen.third ?? "").trim());
+    const generalesBar = host.querySelector("[data-participant-search-bar]");
+    if (generalesBar instanceof HTMLElement) {
+      stampArenaPredictionListMeta(
+        generalesBar,
+        getGeneralesPredListOpts(session.participantId, officialGen, hasOfficialData),
+      );
+    }
+    requestAnimationFrame(() => {
+      syncGeneralesPredsTableMobileColumns(host);
+      syncGroupPtsBadgeCanvases(host);
+    });
+  } else if (kind === "grupos") {
+    const gid = host.dataset.groupId ?? "";
+    const grp = GROUPS.find((g) => g.id === gid);
+    if (!grp) return;
+    host.innerHTML = buildGroupPredictionsTableHtml(grp, session.participantId);
+    stampGroupPredListMeta(host, grp, session.participantId);
+    syncGroupPtsBadgeCanvases(host);
+  } else {
+    return;
+  }
+  delete host.dataset.pm26PredsLazy;
+  syncArenaTruncationHints();
+  syncParticipantSearchInputs();
+}
+
+/** @param {Element | null | undefined} host */
+function scheduleHydratePredsEveryoneLazyHost(host) {
+  if (!(host instanceof HTMLElement)) return;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => hydratePredsEveryoneLazyHost(host));
+  });
+}
+
+function ensurePredsEveryoneLazyBinding() {
+  if (predsEveryoneLazyBound) return;
+  predsEveryoneLazyBound = true;
+  document.addEventListener(
+    "toggle",
+    (e) => {
+      const det = e.target;
+      if (!(det instanceof HTMLDetailsElement) || !det.classList.contains("preds-everyone-acc")) return;
+      if (!det.open) return;
+      scheduleHydratePredsEveryoneLazyHost(det.querySelector("[data-pm26-preds-lazy-host]"));
+    },
+    true,
+  );
+}
+
 function clampGoalInput(v) {
   if (v === "" || v === null || v === undefined) return "";
   const n = typeof v === "number" ? v : parseInt(String(v), 10);
@@ -2711,7 +2798,9 @@ function restoreParticipantSearchFocus(snap) {
     }
     input = card?.querySelector(".participant-search-input");
   } else if (snap.groupId) {
-    const host = document.querySelector(`.group-preds-host[data-group-id="${CSS.escape(snap.groupId)}"]`);
+    const host = document.querySelector(
+      `[data-pm26-preds-lazy-host][data-pm26-preds-kind="grupos"][data-group-id="${CSS.escape(snap.groupId)}"]`,
+    );
     input = host?.querySelector(".participant-search-input");
   } else if (snap.panelId) {
     input = document.querySelector(`#${CSS.escape(snap.panelId)} .participant-search-input`);
@@ -2765,7 +2854,8 @@ function refreshArenaPartidosPredictionTables(session) {
 function refreshArenaGruposPredictionTables(session) {
   const wrap = $("#grupos-wrap");
   if (!wrap || !session) return;
-  wrap.querySelectorAll(".group-preds-host[data-group-id]").forEach((host) => {
+  wrap.querySelectorAll("[data-pm26-preds-lazy-host][data-pm26-preds-kind='grupos']").forEach((host) => {
+    if (!(host instanceof HTMLElement) || host.dataset.pm26PredsLazy === "1") return;
     const groupId = host.dataset.groupId;
     const grp = GROUPS.find((g) => g.id === groupId);
     if (!grp) return;
@@ -4722,8 +4812,11 @@ function syncGeneralesPredsTableMobileColumns(host) {
  * @param {string} participantId
  */
 function renderGeneralesComparisonTable(participantId) {
-  const host = $("#generales-preds-host");
-  if (!host) return;
+  const root = $("#generales-preds-host");
+  if (!root) return;
+  const lazyHost = root.querySelector("[data-pm26-preds-lazy-host]");
+  if (lazyHost instanceof HTMLElement && lazyHost.dataset.pm26PredsLazy === "1") return;
+  const host = lazyHost instanceof HTMLElement ? lazyHost : root;
   host.innerHTML = buildGeneralesPredictionsTableHtml(participantId);
   const officialStore = loadOfficialResults();
   const officialGen = officialStore.generalOfficial ?? {};
@@ -4732,7 +4825,7 @@ function renderGeneralesComparisonTable(participantId) {
     Boolean(String(officialGen.first ?? "").trim()) &&
     Boolean(String(officialGen.second ?? "").trim()) &&
     Boolean(String(officialGen.third ?? "").trim());
-  const generalesBar = document.querySelector("#panel-generales [data-participant-search-bar]");
+  const generalesBar = host.querySelector("[data-participant-search-bar]");
   if (generalesBar instanceof HTMLElement) {
     stampArenaPredictionListMeta(
       generalesBar,
@@ -5110,7 +5203,7 @@ function renderGenerales(participantId, predictions, disabled) {
   }
 
   renderGeneralesOfficialAdmin(participantId);
-  renderGeneralesComparisonTable(participantId);
+  mountGeneralesComparisonTableLazy();
 }
 
 function countBestThirdsYes(pred) {
@@ -5590,10 +5683,8 @@ function renderGrupos(participantId, predictions) {
     appendBestThirdSummaryEl(card, predictions);
 
     const predsHost = document.createElement("div");
-    predsHost.className = "group-preds-host";
-    predsHost.dataset.groupId = grp.id;
-    predsHost.innerHTML = buildGroupPredictionsTableHtml(grp, participantId);
-    stampGroupPredListMeta(predsHost, grp, participantId);
+    predsHost.className = "group-preds-mount";
+    predsHost.innerHTML = buildPredsEveryoneLazyShellHtml("grupos", grp.id);
     card.appendChild(predsHost);
     wrap.appendChild(card);
 
@@ -12002,12 +12093,16 @@ function refreshArenaPanelsIfIdle() {
   const session = loadSession();
   if (!session) return;
   const tab = getActiveTabId();
-  const predictions = loadPredictions(session.participantId);
-  const official = loadOfficialResults();
-  if (tab === "generales") renderGenerales(session.participantId, predictions, false);
-  else if (tab === "grupos") renderGrupos(session.participantId, predictions);
-  else if (tab === "brackets") renderBrackets(session.participantId, predictions);
-  else if (tab === "partidos") renderQuiniela(session, official);
+  if (tab === "generales") {
+    const lazyHost = $("#generales-preds-host")?.querySelector("[data-pm26-preds-lazy-host]");
+    if (lazyHost instanceof HTMLElement && lazyHost.dataset.pm26PredsLazy !== "1") {
+      renderGeneralesComparisonTable(session.participantId);
+    }
+  } else if (tab === "grupos") {
+    refreshArenaGruposPredictionTables(session);
+  } else if (tab === "partidos") {
+    refreshArenaPartidosPredictionTables(session);
+  }
 }
 
 /**
@@ -12163,6 +12258,7 @@ function refreshAll(session, opts = {}) {
 
 export function initApp() {
   initGroupPtsBadgeCanvasObserver();
+  ensurePredsEveryoneLazyBinding();
   updateSyncLiveBadge();
   bindGeneralesPointsHelpOverlay();
   bindGruposOrderHelpOverlay();

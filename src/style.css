@@ -7179,6 +7179,14 @@ span.td-muted {
   margin: 0;
 }
 
+.preds-everyone-acc {
+  margin-top: 1rem;
+}
+
+.preds-everyone-lazy-hint {
+  margin: 0.35rem 0 0.15rem;
+}
+
 .partidos-acc__summary {
   display: flex;
   flex-direction: row;
