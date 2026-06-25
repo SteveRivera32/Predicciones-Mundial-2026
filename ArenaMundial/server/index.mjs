@@ -592,15 +592,19 @@ app.get("/api/arena/chat/limits", requireArenaAuth, (_req, res) => {
 });
 
 app.get("/api/arena/sync", requireArenaAuth, (req, res) => {
+  const lite = req.query.lite === "1" || req.query.lite === "true";
   const { data: official, updatedAt } = getOfficialResults();
   const me = findUserById(req.userId);
   const myUsername = me?.username ?? "";
   const mine = getUserPredictions(req.userId);
-  const previewPredictions = getPreviewPredictionsByUsername(myUsername, PREVIEW_PREDICTIONS_LIMIT);
   /** @type {Record<string, object>} */
-  const predictions = { ...previewPredictions };
+  const predictions = {};
   if (myUsername) {
     predictions[myUsername] = mine.data;
+  }
+  if (!lite) {
+    const previewPredictions = getPreviewPredictionsByUsername(myUsername, PREVIEW_PREDICTIONS_LIMIT);
+    Object.assign(predictions, previewPredictions);
   }
   res.setHeader("Cache-Control", "no-store");
   res.json({
@@ -609,7 +613,8 @@ app.get("/api/arena/sync", requireArenaAuth, (req, res) => {
     officialUpdatedAt: updatedAt,
     predictions,
     totalParticipants: countCompetingUsers(),
-    previewLimit: PREVIEW_PREDICTIONS_LIMIT,
+    previewLimit: lite ? 0 : PREVIEW_PREDICTIONS_LIMIT,
+    lite,
   });
 });
 

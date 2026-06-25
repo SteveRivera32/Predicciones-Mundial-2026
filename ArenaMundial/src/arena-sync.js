@@ -16,8 +16,9 @@ let officialPollTimer = null;
 let lastFingerprint = "";
 let lastOfficialFingerprint = "";
 
-export async function pullArenaSync() {
-  const data = await apiFetch("/sync");
+export async function pullArenaSync(opts = {}) {
+  const lite = Boolean(opts.lite);
+  const data = await apiFetch(lite ? "/sync?lite=1" : "/sync");
   let fp;
   try {
     fp = JSON.stringify(data);
@@ -74,7 +75,9 @@ const RANKINGS_SYNC_MS = Math.max(
 );
 
 export async function initArenaSyncPoll() {
-  await Promise.all([pullArenaSync(), pullArenaOfficialSync(), pullArenaRankings()]);
+  await Promise.all([pullArenaSync({ lite: true }), pullArenaOfficialSync()]);
+  void pullArenaRankings().catch(() => {});
+  void pullArenaSync().catch(() => {});
   if (fullPollTimer != null) return;
   fullPollTimer = window.setInterval(() => {
     if (document.hidden) return;

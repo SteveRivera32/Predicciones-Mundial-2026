@@ -14,7 +14,7 @@ import {
   restoreArenaBackupFile,
   restoreArenaBackupUpload,
 } from "./api.js";
-import { initArenaSyncPoll, pullArenaSync } from "./arena-sync.js";
+import { initArenaSyncPoll, pullArenaSync, pullArenaOfficialSync } from "./arena-sync.js";
 import { setRemoteSyncActive } from "@shared/remote-sync-flags.js";
 import {
   setArenaMode,
@@ -31,11 +31,20 @@ import { initApp, finishBootstrap } from "@shared/app.js";
 import { initArenaChat } from "./arena-chat.js";
 
 async function bootstrap() {
-  const user = await requireAuthOrRedirect();
-  if (!user) return;
-
   setArenaMode(true);
   bindArenaInteractionGuard();
+
+  const userPromise = requireAuthOrRedirect();
+  const warmSyncPromise = Promise.all([
+    pullArenaSync({ lite: true }),
+    pullArenaOfficialSync(),
+  ]).catch((err) => {
+    console.warn("[arena] precarga sync", err);
+  });
+
+  const user = await userPromise;
+  if (!user) return;
+
   setArenaUser({
     username: user.username,
     displayName: user.displayName,
@@ -84,14 +93,11 @@ async function bootstrap() {
   });
 
   initApp();
+  finishBootstrap();
+  void warmSyncPromise;
   void initArenaChat().catch((err) => console.error("[arena] chat", err));
-  try {
-    await initArenaSyncPoll();
-    setRemoteSyncActive(true);
-  } catch (err) {
-    console.error("[arena] sync inicial", err);
-    finishBootstrap();
-  }
+  setRemoteSyncActive(true);
+  void initArenaSyncPoll().catch((err) => console.error("[arena] sync inicial", err));
 }
 
 void bootstrap();
