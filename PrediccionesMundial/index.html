@@ -3,11 +3,89 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
     <title>Predicciones Mundial 2026</title>
+    <style>
+      html {
+        color-scheme: dark;
+        background: #0f1419;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #0f1419;
+        color: #e8eaed;
+        font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+      }
+      /* Crítico: visible antes de cargar el CSS principal */
+      body.app-booting .app-shell {
+        visibility: hidden;
+      }
+      #app-boot-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: grid;
+        place-items: center;
+        padding: 1.5rem;
+        background: #0f1419;
+        color: #e8eaed;
+      }
+      #app-boot-loader[hidden] {
+        display: none !important;
+      }
+      .app-boot-loader__card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.85rem;
+        max-width: 18rem;
+        text-align: center;
+      }
+      .app-boot-loader__spinner {
+        width: 2.5rem;
+        height: 2.5rem;
+        border: 3px solid rgba(138, 180, 248, 0.22);
+        border-top-color: #8ab4f8;
+        border-radius: 50%;
+        animation: app-boot-spin 0.85s linear infinite;
+      }
+      .app-boot-loader__title {
+        margin: 0;
+        font-size: 1.1rem;
+        font-weight: 600;
+      }
+      .app-boot-loader__hint {
+        margin: 0;
+        font-size: 0.9rem;
+        color: #9aa0a6;
+        line-height: 1.45;
+      }
+      @keyframes app-boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
-  <body>
+  <body class="app-booting">
     <a class="skip-link" href="#contenido-principal">Ir al contenido</a>
+
+    <div
+      id="app-boot-loader"
+      class="app-boot-loader"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label="Cargando Predicciones Mundial"
+    >
+      <div class="app-boot-loader__card">
+        <div class="app-boot-loader__spinner" aria-hidden="true"></div>
+        <p class="app-boot-loader__title">Cargando Predicciones Mundial</p>
+        <p id="app-boot-loader-hint" class="app-boot-loader__hint">Preparando la quiniela…</p>
+      </div>
+    </div>
 
     <div
       id="overlay-admin-settings"

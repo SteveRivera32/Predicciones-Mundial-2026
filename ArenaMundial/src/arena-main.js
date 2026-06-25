@@ -34,30 +34,12 @@ import { saveSession } from "@shared/session.js";
 import { initApp, finishBootstrap } from "@shared/app.js";
 import { initArenaChat } from "./arena-chat.js";
 
-/** @param {string} [hint] */
-function setArenaBootLoaderHint(hint) {
-  const el = document.getElementById("arena-boot-loader-hint");
-  if (el && hint) el.textContent = hint;
-}
-
-function dismissArenaBootLoader() {
-  document.body.classList.remove("app-arena-booting");
-  const loader = document.getElementById("arena-boot-loader");
-  if (!(loader instanceof HTMLElement)) return;
-  loader.setAttribute("aria-busy", "false");
-  loader.classList.add("arena-boot-loader--out");
-  const remove = () => {
-    loader.hidden = true;
-    loader.classList.remove("arena-boot-loader--out");
-  };
-  loader.addEventListener("transitionend", remove, { once: true });
-  window.setTimeout(remove, 450);
-}
+import { setAppBootLoaderHint, dismissAppBootLoader } from "@shared/boot-loader.js";
 
 async function bootstrap() {
   setArenaMode(true);
   bindArenaInteractionGuard();
-  setArenaBootLoaderHint("Verificando sesión…");
+  setAppBootLoaderHint("Verificando sesión…");
 
   const userPromise = requireAuthOrRedirect();
   const liteSyncPromise = pullArenaSync({ lite: true })
@@ -120,19 +102,19 @@ async function bootstrap() {
     });
 
     initApp();
-    setArenaBootLoaderHint("Sincronizando tus datos…");
+    setAppBootLoaderHint("Sincronizando tus datos…");
     await liteSyncPromise;
-    setArenaBootLoaderHint("Preparando la interfaz…");
+    setAppBootLoaderHint("Preparando la interfaz…");
     finishBootstrap();
     void initArenaChat().catch((err) => console.error("[arena] chat", err));
     setRemoteSyncActive(true);
     void initArenaSyncPoll().catch((err) => console.error("[arena] sync inicial", err));
   } catch (err) {
     console.error("[arena] bootstrap", err);
-    setArenaBootLoaderHint("Error al cargar. Recarga la página o inténtalo de nuevo.");
+    setAppBootLoaderHint("Error al cargar. Recarga la página o inténtalo de nuevo.");
     await new Promise((resolve) => window.setTimeout(resolve, 1800));
   } finally {
-    dismissArenaBootLoader();
+    dismissAppBootLoader();
   }
 }
 
