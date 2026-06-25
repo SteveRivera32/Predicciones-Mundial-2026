@@ -9950,6 +9950,71 @@ span.quiniela-legend {
   display: none !important;
 }
 
+/* Arena: pantalla de carga inicial (también hay estilos críticos inline en index.html) */
+body.app-arena-booting .app-shell {
+  visibility: hidden;
+}
+
+.arena-boot-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: var(--bg, #0f1419);
+  color: var(--text, #e8eaed);
+  opacity: 1;
+  transition: opacity 0.35s ease;
+}
+
+.arena-boot-loader[hidden] {
+  display: none !important;
+}
+
+.arena-boot-loader--out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.arena-boot-loader__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  max-width: 20rem;
+  text-align: center;
+}
+
+.arena-boot-loader__spinner {
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 3px solid color-mix(in srgb, var(--accent, #8ab4f8) 22%, transparent);
+  border-top-color: var(--accent, #8ab4f8);
+  border-radius: 50%;
+  animation: arena-boot-spin 0.85s linear infinite;
+}
+
+.arena-boot-loader__title {
+  margin: 0;
+  font-size: 1.12rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.arena-boot-loader__hint {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted, #9aa0a6);
+  line-height: 1.45;
+}
+
+@keyframes arena-boot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .overlay-card {
   width: min(100%, 400px);
   background: var(--surface);

@@ -17,11 +17,75 @@
         color: #e8eaed;
         font-family: system-ui, "Segoe UI", Roboto, sans-serif;
       }
+      /* Crítico: visible antes de cargar el CSS principal */
+      body.app-arena-booting .app-shell {
+        visibility: hidden;
+      }
+      #arena-boot-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: grid;
+        place-items: center;
+        padding: 1.5rem;
+        background: #0f1419;
+        color: #e8eaed;
+      }
+      #arena-boot-loader[hidden] {
+        display: none !important;
+      }
+      .arena-boot-loader__card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.85rem;
+        max-width: 18rem;
+        text-align: center;
+      }
+      .arena-boot-loader__spinner {
+        width: 2.5rem;
+        height: 2.5rem;
+        border: 3px solid rgba(138, 180, 248, 0.22);
+        border-top-color: #8ab4f8;
+        border-radius: 50%;
+        animation: arena-boot-spin 0.85s linear infinite;
+      }
+      .arena-boot-loader__title {
+        margin: 0;
+        font-size: 1.1rem;
+        font-weight: 600;
+      }
+      .arena-boot-loader__hint {
+        margin: 0;
+        font-size: 0.9rem;
+        color: #9aa0a6;
+        line-height: 1.45;
+      }
+      @keyframes arena-boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
     </style>
     <link rel="stylesheet" href="../src/styles/quiniela.css" />
   </head>
-  <body>
+  <body class="app-arena-booting">
     <a class="skip-link" href="#contenido-principal">Ir al contenido</a>
+
+    <div
+      id="arena-boot-loader"
+      class="arena-boot-loader"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label="Cargando Arena Mundial"
+    >
+      <div class="arena-boot-loader__card">
+        <div class="arena-boot-loader__spinner" aria-hidden="true"></div>
+        <p class="arena-boot-loader__title">Cargando Arena Mundial</p>
+        <p id="arena-boot-loader-hint" class="arena-boot-loader__hint">Sincronizando predicciones y resultados…</p>
+      </div>
+    </div>
 
     <div
       id="overlay-admin-settings"
