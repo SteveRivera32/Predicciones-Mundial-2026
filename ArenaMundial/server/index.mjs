@@ -610,7 +610,6 @@ app.get("/api/arena/sync", requireArenaAuth, (req, res) => {
     predictions,
     totalParticipants: countCompetingUsers(),
     previewLimit: PREVIEW_PREDICTIONS_LIMIT,
-    matchVoteData: getCachedArenaMatchVoteData(SHARED_CACHE_MS),
   });
 });
 

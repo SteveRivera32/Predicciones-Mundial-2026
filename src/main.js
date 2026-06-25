@@ -1,10 +1,8 @@
-import { initApp } from "./app.js";
+import { initApp, finishBootstrap } from "./app.js";
 import { initRemoteSync, startRemoteSyncCatchup } from "./sync.js";
 
-void initRemoteSync()
-  .then((ok) => {
-    if (ok) startRemoteSyncCatchup();
-  })
-  .finally(() => {
-    initApp();
-  });
+initApp();
+void initRemoteSync().then((ok) => {
+  if (ok) startRemoteSyncCatchup();
+  else finishBootstrap();
+});

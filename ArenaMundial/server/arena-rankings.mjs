@@ -2,70 +2,17 @@
  * Rankings Arena calculados en servidor (cache compartido entre clientes).
  */
 
-import { getAllArenaParticipants, getAllPredictionsByUsername } from "./db.mjs";
-import { getOfficialResults } from "./db.mjs";
-import { normalizeOfficialResultsData } from "../../src/official-results-store.js";
-import { normalizePredictionsData } from "../../src/predictions-store.js";
-import {
-  computeLiveParticipantRowsFromData,
-  ARENA_RANKINGS_DISPLAY_LIMIT,
-} from "../../src/live-ranking.js";
-import { sortByRankingTiebreak } from "../../src/ranking-tiebreak.js";
+import { ARENA_RANKINGS_DISPLAY_LIMIT } from "../../src/live-ranking.js";
+import { getCachedArenaAggregates, invalidateArenaAggregatesCache } from "./arena-aggregates.mjs";
 
 const RANKINGS_LIMIT = Number(process.env.ARENA_RANKINGS_LIMIT || ARENA_RANKINGS_DISPLAY_LIMIT);
-
-/** @type {{ sorted: ReturnType<typeof computeLiveParticipantRowsFromData>, totalUsers: number, at: number, etag: string }} */
-let rankingsCache = { sorted: [], totalUsers: 0, at: 0, etag: "" };
-
-function bumpEtag() {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function getFullSortedRankings() {
-  const participants = getAllArenaParticipants();
-  const predictionsRaw = getAllPredictionsByUsername();
-  /** @type {Record<string, import("../../src/predictions-store.js").Predictions>} */
-  const predictionsMap = {};
-  for (const [id, raw] of Object.entries(predictionsRaw)) {
-    predictionsMap[id] = normalizePredictionsData(raw);
-  }
-  const { data: official } = getOfficialResults();
-  const normalizedOfficial = normalizeOfficialResultsData(official);
-  return sortByRankingTiebreak(
-    computeLiveParticipantRowsFromData(
-      participants,
-      predictionsMap,
-      normalizedOfficial,
-      "",
-      { arenaScoring: true },
-    ),
-  );
-}
-
-/**
- * @param {number} cacheMs
- */
-function getCachedSortedRankings(cacheMs) {
-  const now = Date.now();
-  if (rankingsCache.sorted.length > 0 && now - rankingsCache.at <= cacheMs) {
-    return rankingsCache;
-  }
-  const sorted = getFullSortedRankings();
-  rankingsCache = {
-    sorted,
-    totalUsers: sorted.length,
-    at: now,
-    etag: bumpEtag(),
-  };
-  return rankingsCache;
-}
 
 /**
  * @param {string | null | undefined} viewerUsername
  * @param {number} cacheMs
  */
 export function getCachedArenaRankings(viewerUsername, cacheMs) {
-  const cached = getCachedSortedRankings(cacheMs);
+  const cached = getCachedArenaAggregates(cacheMs);
   const viewer = String(viewerUsername ?? "");
   const lim = Math.max(1, RANKINGS_LIMIT);
   const top = cached.sorted.slice(0, lim);
@@ -100,5 +47,5 @@ export function getCachedArenaRankings(viewerUsername, cacheMs) {
 }
 
 export function invalidateArenaRankingsCache() {
-  rankingsCache = { sorted: [], totalUsers: 0, at: 0, etag: "" };
+  invalidateArenaAggregatesCache();
 }

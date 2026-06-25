@@ -188,6 +188,10 @@ const STATS_COLOR_HINT_DISMISSED_KEY = "pm26-stats-color-hint-dismissed-v3";
 const FASE_GRUPOS_FILTER_KEY = "pm26-fase-grupos-gid";
 const FLOATING_RANK_POS_KEY = "pm26-floating-rank-pos";
 const FLOATING_RANK_ENABLED_KEY = "pm26-floating-rank-enabled";
+
+function isFloatingRankingEnabled() {
+  return localStorage.getItem(FLOATING_RANK_ENABLED_KEY) !== "0";
+}
 /** Agrupa refrescos de ranking/stats tras ráfagas de clics en steppers (mejora INP). */
 const DEFERRED_GLOBAL_RANKINGS_MS = 120;
 /** @type {ReturnType<typeof setTimeout> | null} */
@@ -5920,7 +5924,7 @@ function computeLiveParticipantRows(currentParticipantId) {
 /** Rankings/stats globales: solo paneles visibles + ranking flotante. */
 function runGlobalRankingsRefresh(session) {
   if (!session) return;
-  renderFloatingRanking(session);
+  if (isFloatingRankingEnabled()) renderFloatingRanking(session);
   const tab = getActiveTabId();
   if (tab === "stats") renderStats(session);
   if (tab === "match-ranking") redrawMatchRanking();
@@ -11958,12 +11962,12 @@ function refreshArenaRemoteLight() {
   const session = loadSession();
   syncArenaTruncationHints();
   updateSessionBar(session);
-  renderStats(session);
-  renderFloatingRanking(session);
+  const tab = getActiveTabId();
+  if (tab === "stats") renderStats(session);
+  if (isFloatingRankingEnabled()) renderFloatingRanking(session);
   if (session) {
     updatePredictionTabsProgress(session, loadPredictions(session.participantId));
   }
-  const tab = getActiveTabId();
   if (tab === "team-stats") {
     redrawTeamStats();
     rebuildTeamStatsSelectOptions();
@@ -12014,7 +12018,7 @@ function refreshAll(session, opts = {}) {
   const {
     skipPartidosRender = false,
     preserveScroll = false,
-    onlyActivePanel = false,
+    onlyActivePanel = true,
     deferGlobalRankings = false,
   } = opts;
   if (isArenaMode()) syncArenaTruncationHints();
@@ -12251,16 +12255,12 @@ export function initApp() {
 
   if (isArenaMode()) {
     const sess = loadSession();
-    if (sess && getParticipantById(sess.participantId)) {
-      afterSessionReady();
-    } else {
+    if (!sess || !getParticipantById(sess.participantId)) {
       location.href = "/ArenaMundial/login/";
     }
   } else {
     let s = loadSession();
-    if (s && getParticipantById(s.participantId)) {
-      afterSessionReady();
-    } else {
+    if (!s || !getParticipantById(s.participantId)) {
       clearSession();
       showOnboarding(afterSessionReady);
       refreshAll(null);
@@ -12272,4 +12272,26 @@ export function initApp() {
   MOBILE_LAYOUT_MQ?.addEventListener?.("change", () => {
     syncGeneralesPredsTableMobileColumns($("#generales-preds-host"));
   });
+}
+
+/** Primer render si falla el sync inicial (el éxito lo dispara pm26-remote-sync). */
+export function finishBootstrap() {
+  if (isArenaMode()) {
+    const sess = loadSession();
+    if (sess && getParticipantById(sess.participantId)) {
+      refreshAll(sess, { onlyActivePanel: true, deferGlobalRankings: true });
+    } else {
+      location.href = "/ArenaMundial/login/";
+    }
+    return;
+  }
+  const sess = loadSession();
+  if (sess && getParticipantById(sess.participantId)) {
+    refreshAll(sess, { onlyActivePanel: true, deferGlobalRankings: true });
+  }
+}
+
+/** @deprecated Usar finishBootstrap */
+export function arenaFinishBootstrap() {
+  finishBootstrap();
 }

@@ -27,7 +27,7 @@ import {
   bindArenaInteractionGuard,
 } from "@shared/arena-mode.js";
 import { saveSession } from "@shared/session.js";
-import { initApp } from "@shared/app.js";
+import { initApp, finishBootstrap } from "@shared/app.js";
 import { initArenaChat } from "./arena-chat.js";
 
 async function bootstrap() {
@@ -83,14 +83,15 @@ async function bootstrap() {
     restoreBackupUpload: (payload) => restoreArenaBackupUpload(payload),
   });
 
+  initApp();
+  void initArenaChat().catch((err) => console.error("[arena] chat", err));
   try {
     await initArenaSyncPoll();
     setRemoteSyncActive(true);
   } catch (err) {
     console.error("[arena] sync inicial", err);
+    finishBootstrap();
   }
-  void initArenaChat().catch((err) => console.error("[arena] chat", err));
-  initApp();
 }
 
 void bootstrap();

@@ -74,9 +74,7 @@ const RANKINGS_SYNC_MS = Math.max(
 );
 
 export async function initArenaSyncPoll() {
-  await pullArenaSync();
-  await pullArenaOfficialSync();
-  await pullArenaRankings();
+  await Promise.all([pullArenaSync(), pullArenaOfficialSync(), pullArenaRankings()]);
   if (fullPollTimer != null) return;
   fullPollTimer = window.setInterval(() => {
     if (document.hidden) return;
