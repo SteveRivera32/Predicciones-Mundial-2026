@@ -194,6 +194,8 @@ function isFloatingRankingEnabled() {
 }
 /** Agrupa refrescos de ranking/stats tras ráfagas de clics en steppers (mejora INP). */
 const DEFERRED_GLOBAL_RANKINGS_MS = 120;
+/** Tarjetas de partidos por frame al montar la lista (evita bloquear la UI con muchos partidos). */
+const PARTIDOS_RENDER_CHUNK = 8;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let deferredGlobalRankingsTimer = null;
 const MOBILE_LAYOUT_MQ =
@@ -307,6 +309,7 @@ function getMatchScoringForQuiniela(m) {
 
 /** Votos confirmados de resultado (local / empate / visitante) en un partido de grupos. */
 function collectOutcomeVotesForMatch(matchId) {
+  if (isArenaMode() && !hasArenaMatchVoteData()) return [];
   const votes = [];
   for (const part of getParticipantsForDisplay()) {
     const store = loadPredictions(part.id);
@@ -327,6 +330,9 @@ function collectOutcomeVotesForMatch(matchId) {
 function getGroupOrderVoteCountsByPosition(groupId) {
   if (isArenaMode() && hasArenaMatchVoteData()) {
     return getArenaGroupOrderVoteCountsByPosition(groupId);
+  }
+  if (isArenaMode()) {
+    return [new Map(), new Map(), new Map(), new Map()];
   }
   /** @type {Map<string, number>[]} */
   const countsByPos = [new Map(), new Map(), new Map(), new Map()];
@@ -359,6 +365,7 @@ function hasUniquePickBonus(counts, team) {
 }
 
 function collectKnockoutOutcomeVotesForMatch(matchId) {
+  if (isArenaMode() && !hasArenaMatchVoteData()) return [];
   const votes = [];
   for (const part of getParticipantsForDisplay()) {
     const store = loadPredictions(part.id);
@@ -372,8 +379,9 @@ function collectKnockoutOutcomeVotesForMatch(matchId) {
 
 /** @param {string} matchId @param {boolean} isKo */
 function getMatchOutcomeVoteCounts(matchId, isKo) {
-  if (isArenaMode() && hasArenaMatchVoteData()) {
-    return getArenaMatchOutcomeCounts(matchId, isKo);
+  if (isArenaMode()) {
+    if (hasArenaMatchVoteData()) return getArenaMatchOutcomeCounts(matchId, isKo);
+    return { h: 0, d: 0, a: 0 };
   }
   const votes = isKo
     ? collectKnockoutOutcomeVotesForMatch(matchId)
@@ -388,8 +396,9 @@ function getMatchOutcomeVoteCounts(matchId, isKo) {
 
 /** @param {string} matchId */
 function getKnockoutPenaltyVoteCounts(matchId) {
-  if (isArenaMode() && hasArenaMatchVoteData()) {
-    return getArenaKnockoutPenaltyCounts(matchId);
+  if (isArenaMode()) {
+    if (hasArenaMatchVoteData()) return getArenaKnockoutPenaltyCounts(matchId);
+    return { home: 0, away: 0 };
   }
   return collectKnockoutPenaltyVotesForMatch(matchId);
 }
@@ -524,6 +533,7 @@ function getImprobableOutcomeSignForKoMatch(matchId, officialScore) {
 
 /** Predicciones confirmadas con marcador completo en un partido. */
 function collectCommittedMatchScoreEntries(matchId, isKo) {
+  if (isArenaMode() && !hasArenaMatchVoteData()) return [];
   /** @type {Array<{ id: string, pred: { home: unknown, away: unknown } }>} */
   const entries = [];
   for (const part of getParticipantsForDisplay()) {
@@ -848,6 +858,7 @@ function sortRankingRows(rows) {
 function getLiveRankingRows(currentParticipantId) {
   const serverRows = isArenaMode() ? mapArenaServerRankingRows(currentParticipantId) : null;
   if (serverRows) return serverRows;
+  if (isArenaMode()) return [];
   return sortRankingRows(
     computeLiveParticipantRowsFromData(
       getParticipantsForDisplay(),
@@ -1144,6 +1155,8 @@ function stampQuinielaCardPredictionMeta(card, m, session, official, isKo = fals
 function stampAllQuinielaPredictionMetas(wrap, session, official) {
   if (!isArenaMode() || !wrap || !session) return;
   wrap.querySelectorAll("article.quiniela-match[data-quiniela-mid]").forEach((card) => {
+    const det = card.querySelector("details.partidos-acc");
+    if (!(det instanceof HTMLDetailsElement) || !det.open) return;
     const mid = card.getAttribute("data-quiniela-mid");
     if (!mid) return;
     const gm = GROUP_MATCHES.find((x) => x.id === mid);
@@ -2299,14 +2312,37 @@ function partidosPredsLazyTbodyHtml() {
   return `<tbody data-pm26-preds-lazy="1"></tbody>`;
 }
 
+/** Barras de votos: se generan al abrir el acordeón (evita O(partidos × participantes) al cargar). */
+function partidosVoteBarsLazyShellHtml() {
+  return `<div class="match-vote-bars-host" data-pm26-vote-bars-lazy="1" hidden></div>`;
+}
+
+/**
+ * @param {HTMLElement} card
+ * @param {string} homeName
+ * @param {string} awayName
+ * @param {string} matchId
+ * @param {boolean} isKo
+ * @param {string} [roundId]
+ */
+function hydratePartidosMatchVoteBars(card, homeName, awayName, matchId, isKo, roundId = "") {
+  if (!(card instanceof HTMLElement)) return;
+  const host = card.querySelector("[data-pm26-vote-bars-lazy]");
+  if (!(host instanceof HTMLElement) || host.dataset.pm26VoteBarsLazy !== "1") return;
+  const html = buildMatchVoteBarsHtml(homeName, awayName, matchId, isKo, roundId);
+  if (html) {
+    host.outerHTML = html;
+  } else {
+    host.remove();
+  }
+}
+
 /**
  * @param {HTMLElement} card
  * @param {{ participantId: string }} session
  */
 function hydratePartidosMatchPredsTable(card, session) {
   if (!(card instanceof HTMLElement) || !session) return;
-  const tb = card.querySelector(".quiniela-preds tbody");
-  if (!(tb instanceof HTMLElement) || tb.dataset.pm26PredsLazy !== "1") return;
   const mid = card.dataset.quinielaMid;
   if (!mid) return;
 
@@ -2314,6 +2350,12 @@ function hydratePartidosMatchPredsTable(card, session) {
   const isAdmin = canEditOfficialResults(session.participantId);
   const gm = GROUP_MATCHES.find((x) => x.id === mid);
   if (gm) {
+    hydratePartidosMatchVoteBars(card, gm.home, gm.away, gm.id, false);
+    const tb = card.querySelector(".quiniela-preds tbody");
+    if (!(tb instanceof HTMLElement) || tb.dataset.pm26PredsLazy !== "1") {
+      stampQuinielaCardPredictionMeta(card, gm, session, official, false);
+      return;
+    }
     tb.innerHTML = buildQuinielaPredRowsHtml(gm, session, official, isAdmin);
     delete tb.dataset.pm26PredsLazy;
     stampQuinielaCardPredictionMeta(card, gm, session, official, false);
@@ -2324,6 +2366,19 @@ function hydratePartidosMatchPredsTable(card, session) {
   }
   const mKo = getKnockoutMatchesFlat().find((x) => x.id === mid);
   if (!mKo) return;
+  const { ri, mi } = getKoRoundMatchIndex(mKo.id);
+  const labelScores = allFilledOfficialKnockoutScores(official);
+  const liveR32SlotMap = ri === KNOCKOUT_PHASE_ROUND_INDEX.r32 ? buildLiveR32SlotMap() : null;
+  const homeLab =
+    liveR32SlotMap?.[`${mKo.id}:home`] ?? resolveKnockoutSlotLabel(ri, mi, "home", labelScores);
+  const awayLab =
+    liveR32SlotMap?.[`${mKo.id}:away`] ?? resolveKnockoutSlotLabel(ri, mi, "away", labelScores);
+  hydratePartidosMatchVoteBars(card, homeLab, awayLab, mKo.id, true, mKo.roundId);
+  const tb = card.querySelector(".quiniela-preds tbody");
+  if (!(tb instanceof HTMLElement) || tb.dataset.pm26PredsLazy !== "1") {
+    stampQuinielaCardPredictionMeta(card, mKo, session, official, true);
+    return;
+  }
   tb.innerHTML = buildQuinielaPredRowsHtmlKo(mKo, session, official, isAdmin);
   delete tb.dataset.pm26PredsLazy;
   stampQuinielaCardPredictionMeta(card, mKo, session, official, true);
@@ -2539,6 +2594,14 @@ function isPanelContentReady(panelId) {
 function invalidateAllPanelContent() {
   document.querySelectorAll(".panel[data-panel]").forEach((p) => {
     delete p.dataset.pm26ContentReady;
+  });
+}
+
+/** Arena: solo invalida paneles inactivos para no re-renderizar la pestaña visible en cada sync. */
+function invalidateInactivePanelContent() {
+  const active = getActiveTabId();
+  document.querySelectorAll(".panel[data-panel]").forEach((p) => {
+    if (p.dataset.panel !== active) delete p.dataset.pm26ContentReady;
   });
 }
 
@@ -6002,6 +6065,7 @@ function computeLiveParticipantRows(currentParticipantId) {
   if (isArenaMode()) {
     const serverRows = mapArenaServerRankingRows(currentParticipantId);
     if (serverRows) return serverRows;
+    return [];
   }
   return computeLiveParticipantRowsFromData(
     getParticipantsForDisplay(),
@@ -6046,6 +6110,10 @@ function renderFloatingRanking(session) {
   if (!host || !body) return;
   const currentId = session?.participantId ?? "";
   const sortedRows = sortRankingRows(getLiveRankingRows(currentId));
+  if (isArenaMode() && sortedRows.length === 0 && !getArenaServerRankings()?.rows?.length) {
+    body.innerHTML = '<p class="muted floating-ranking-loading">Cargando ranking…</p>';
+    return;
+  }
   const rows = orderRankingRowsForDisplay(sortedRows, currentId);
 
   body.innerHTML = `<table class="floating-ranking-table" aria-label="Ranking en vivo">
@@ -8390,7 +8458,7 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
             <div class="quiniela-preds-head">Predicciones</div>
             ${participantSearchToolbarHtml({ ariaLabel: "Buscar jugador en este partido" })}
           </div>
-          ${buildMatchVoteBarsHtml(homeLab, awayLab, m.id, true, m.roundId)}
+          ${partidosVoteBarsLazyShellHtml()}
           <div class="${quinielaPredsTableWrapClass()}">
             <table class="${quinielaPredsTableClsKo}">
               <thead>
@@ -10150,7 +10218,7 @@ function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds, 
             <div class="quiniela-preds-head">Predicciones</div>
             ${participantSearchToolbarHtml({ ariaLabel: "Buscar jugador en este partido" })}
           </div>
-          ${buildMatchVoteBarsHtml(m.home, m.away, m.id, false)}
+          ${partidosVoteBarsLazyShellHtml()}
           <div class="${quinielaPredsTableWrapClass()}">
             <table class="${quinielaPredsTableCls}">
               <thead>
@@ -10449,50 +10517,76 @@ function renderQuiniela(session, official) {
           return ae ? { mid: partidosInteractionAnchor.articleMid, vTop: ae.getBoundingClientRect().top } : null;
         })()
       : null;
-  wrap.innerHTML =
+  const emptyHtml =
     blocks.length === 0 && showOnlyProximosNav
       ? `<p class="muted partidos-proximos-empty">No quedan <strong>partidos siguientes</strong> pendientes. Cambia el listado a <strong>Partidos terminados</strong> o elige otra <strong>Vista</strong>.</p>`
       : blocks.length === 0 && showTerminados
         ? `<p class="muted partidos-proximos-empty">Aún no hay partidos con <strong>resultado oficial confirmado</strong>. Cuando el admin cierre partidos, aparecerán aquí.</p>`
-        : blocks.join("");
+        : "";
 
-  wireQuinielaPredictionHandlersInScope(wrap, session);
-  stampAllQuinielaPredictionMetas(wrap, session, official);
-  syncQuinielaPerfectBonusCanvases(wrap);
-  syncGroupPtsBadgeCanvases(wrap);
+  function afterPartidosBlocksMounted() {
+    wireQuinielaPredictionHandlersInScope(wrap, session);
+    stampAllQuinielaPredictionMetas(wrap, session, official);
+    syncQuinielaPerfectBonusCanvases(wrap);
+    syncGroupPtsBadgeCanvases(wrap);
 
-  if (canManagePartidosMatchFlow(session.participantId)) bindPartidosAdminHandlers(wrap, session);
+    if (canManagePartidosMatchFlow(session.participantId)) bindPartidosAdminHandlers(wrap, session);
 
-  if (blocks.length > 0) restoreOpenPartidosAccordions(wrap, openAccordionMatchIds);
-  restorePartidosInteractionAnchor(wrap, partidosInteractionAnchor, partidosViewportLock);
+    if (blocks.length > 0) restoreOpenPartidosAccordions(wrap, openAccordionMatchIds);
+    restorePartidosInteractionAnchor(wrap, partidosInteractionAnchor, partidosViewportLock);
 
-  syncQuinielaPerfectBonusCanvases(wrap);
-  requestAnimationFrame(() => syncQuinielaPerfectBonusCanvases(wrap));
+    syncQuinielaPerfectBonusCanvases(wrap);
+    requestAnimationFrame(() => syncQuinielaPerfectBonusCanvases(wrap));
 
-  if (!wrap.dataset.partidosAccToggleBound) {
-    wrap.dataset.partidosAccToggleBound = "1";
-    wrap.addEventListener(
-      "toggle",
-      (e) => {
-        const det = e.target;
-        if (!(det instanceof HTMLDetailsElement) || !det.classList.contains("partidos-acc") || !det.open) {
-          return;
-        }
-        const card = det.closest("article.partidos-match-card");
-        const sess = loadSession();
-        if (card instanceof HTMLElement && sess) {
-          scheduleHydratePartidosMatchPredsTable(card, sess);
-        } else {
-          deferPartidosCardCanvasSync(card ?? wrap);
-        }
-      },
-      true,
-    );
+    if (!wrap.dataset.partidosAccToggleBound) {
+      wrap.dataset.partidosAccToggleBound = "1";
+      wrap.addEventListener(
+        "toggle",
+        (e) => {
+          const det = e.target;
+          if (!(det instanceof HTMLDetailsElement) || !det.classList.contains("partidos-acc") || !det.open) {
+            return;
+          }
+          const card = det.closest("article.partidos-match-card");
+          const sess = loadSession();
+          if (card instanceof HTMLElement && sess) {
+            scheduleHydratePartidosMatchPredsTable(card, sess);
+          } else {
+            deferPartidosCardCanvasSync(card ?? wrap);
+          }
+        },
+        true,
+      );
+    }
+
+    if (isArenaMode()) syncParticipantSearchInputs();
+    if (isArenaMode()) syncArenaTruncationHints();
+    scheduleSyncQuinielaTableHorizontalScroll(wrap);
   }
 
-  if (isArenaMode()) syncParticipantSearchInputs();
-  if (isArenaMode()) syncArenaTruncationHints();
-  scheduleSyncQuinielaTableHorizontalScroll(wrap);
+  if (blocks.length === 0) {
+    wrap.innerHTML = emptyHtml;
+    afterPartidosBlocksMounted();
+    return;
+  }
+  if (blocks.length <= PARTIDOS_RENDER_CHUNK) {
+    wrap.innerHTML = blocks.join("");
+    afterPartidosBlocksMounted();
+    return;
+  }
+  wrap.innerHTML = "";
+  let blockIdx = 0;
+  const paintPartidosChunk = () => {
+    const slice = blocks.slice(blockIdx, blockIdx + PARTIDOS_RENDER_CHUNK);
+    wrap.insertAdjacentHTML("beforeend", slice.join(""));
+    blockIdx += PARTIDOS_RENDER_CHUNK;
+    if (blockIdx < blocks.length) {
+      requestAnimationFrame(paintPartidosChunk);
+    } else {
+      afterPartidosBlocksMounted();
+    }
+  };
+  requestAnimationFrame(paintPartidosChunk);
 }
 
 /**
@@ -12299,7 +12393,20 @@ export function initApp() {
 
   function queueRefreshAfterExternalSync() {
     if (isArenaMode()) {
-      scheduleArenaDeferredRefresh(refreshArenaPanelsIfIdle);
+      scheduleArenaDeferredRefresh(() => {
+        const sess = loadSession();
+        const tab = getActiveTabId();
+        if (!sess || !isPanelContentReady(tab)) {
+          refreshAll(sess, {
+            preserveScroll: true,
+            onlyActivePanel: true,
+            deferGlobalRankings: true,
+          });
+          return;
+        }
+        invalidateInactivePanelContent();
+        refreshArenaPanelsIfIdle();
+      });
       return;
     }
     externalSyncRefreshChain = externalSyncRefreshChain

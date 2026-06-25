@@ -14,7 +14,12 @@ import {
   restoreArenaBackupFile,
   restoreArenaBackupUpload,
 } from "./api.js";
-import { initArenaSyncPoll, pullArenaSync, pullArenaOfficialSync } from "./arena-sync.js";
+import {
+  initArenaSyncPoll,
+  pullArenaSync,
+  pullArenaOfficialSync,
+  pullArenaRankings,
+} from "./arena-sync.js";
 import { setRemoteSyncActive } from "@shared/remote-sync-flags.js";
 import {
   setArenaMode,
@@ -38,6 +43,7 @@ async function bootstrap() {
   const warmSyncPromise = Promise.all([
     pullArenaSync({ lite: true }),
     pullArenaOfficialSync(),
+    pullArenaRankings().catch(() => {}),
   ]).catch((err) => {
     console.warn("[arena] precarga sync", err);
   });
@@ -93,8 +99,8 @@ async function bootstrap() {
   });
 
   initApp();
+  await warmSyncPromise;
   finishBootstrap();
-  void warmSyncPromise;
   void initArenaChat().catch((err) => console.error("[arena] chat", err));
   setRemoteSyncActive(true);
   void initArenaSyncPoll().catch((err) => console.error("[arena] sync inicial", err));
