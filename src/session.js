@@ -1,14 +1,36 @@
-const STORAGE_KEY = "pm26-session";
+import { getArenaUserId, isArenaMode } from "./arena-mode.js";
+
+/** Clave antigua compartida (privadas + Arena pisaban la misma sesión entre pestañas). */
+const STORAGE_KEY_LEGACY = "pm26-session";
+/** Quiniela privada (PrediccionesMundial): una sesión por navegador, independiente de Arena. */
+const STORAGE_KEY_PRIVADAS = "pm26-session-privadas";
 const VERIFIED_PREFIX = "pm26-pin-verified:";
 
 /** @typedef {{ participantId: string }} Session */
+
+function migrateLegacyPrivadasSession() {
+  try {
+    if (localStorage.getItem(STORAGE_KEY_PRIVADAS)) return;
+    const raw = localStorage.getItem(STORAGE_KEY_LEGACY);
+    if (!raw) return;
+    localStorage.setItem(STORAGE_KEY_PRIVADAS, raw);
+    localStorage.removeItem(STORAGE_KEY_LEGACY);
+  } catch {
+    /* ignore */
+  }
+}
 
 /**
  * @returns {Session | null}
  */
 export function loadSession() {
+  if (isArenaMode()) {
+    const id = getArenaUserId();
+    return id ? { participantId: id } : null;
+  }
+  migrateLegacyPrivadasSession();
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY_PRIVADAS);
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (!data?.participantId) return null;
@@ -20,11 +42,13 @@ export function loadSession() {
 
 /** @param {Session} session */
 export function saveSession(session) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+  if (isArenaMode()) return;
+  localStorage.setItem(STORAGE_KEY_PRIVADAS, JSON.stringify(session));
 }
 
 export function clearSession() {
-  localStorage.removeItem(STORAGE_KEY);
+  if (isArenaMode()) return;
+  localStorage.removeItem(STORAGE_KEY_PRIVADAS);
 }
 
 /**

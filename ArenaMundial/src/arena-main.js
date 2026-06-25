@@ -30,7 +30,6 @@ import {
   setArenaSearchPredictions,
   bindArenaInteractionGuard,
 } from "@shared/arena-mode.js";
-import { saveSession } from "@shared/session.js";
 import { initApp, finishBootstrap } from "@shared/app.js";
 import { initArenaChat } from "./arena-chat.js";
 
@@ -62,7 +61,6 @@ async function bootstrap() {
       isAdmin: user.isAdmin,
       isPrivadas: user.isPrivadas,
     });
-    saveSession({ participantId: user.username });
 
     setArenaPushHandlers({
       pushMyPredictions: (data) => saveMyPredictions(data).then(() => {}),
