@@ -20,11 +20,12 @@ export const MAX_PODIUM = 16;
 export const INDIVIDUAL_AWARD_POINTS = 3;
 export const MAX_INDIVIDUAL_AWARDS = 9;
 
-/** +1 por 1.º/2.º en posición exacta; +1 por 3.º/4.º en posición exacta; +1 si acierta 2+ equipos en posición (BIEN); +1 si orden 1–4 exacto (EXCELENTE, total badge +2); +1 PERFECTO si orden exacto y acierto de si el 3.º pasa (total badge +3) */
+/** +1 por 1.º/2.º en posición exacta; +1 por 3.º/4.º en posición exacta; +1 si acierta si el 3.º pasa; +1 si acierta 2+ equipos en posición (BIEN); +1 si orden 1–4 exacto (EXCELENTE, total badge +2); +1 PERFECTO si orden exacto y acierto de si el 3.º pasa (total badge +3) */
 export const GROUP_PASS_POINTS = 1;
 export const GROUP_POSITION_POINTS = 1;
 export const GROUP_QUALIFIERS_ORDER_BONUS = 1;
 export const GROUP_PERFECT_ORDER_BONUS = 1;
+export const GROUP_THIRD_ADVANCE_POINTS = 1;
 /** +1 cuando el orden 1–4 es exacto y además acierta si el 3.º pasa */
 export const GROUP_PERFECTO_ORDER_AND_THIRD_BONUS = 1;
 export const MAX_PER_GROUP = 8;
@@ -103,6 +104,11 @@ export function computeGroupOrderPoints(
     (predictedThirdAdvances === true || predictedThirdAdvances === false) &&
     (officialThirdAdvances === true || officialThirdAdvances === false) &&
     predictedThirdAdvances === officialThirdAdvances;
+
+  // +1 por acertar si el 3.º predicho pasa como mejor tercero (sin contar si adivinan el país).
+  if (thirdAdvanceHit) {
+    points += GROUP_THIRD_ADVANCE_POINTS;
+  }
 
   // +1 (PERFECTO) si orden 1–4 exacto y acierto de si el 3.º pasa (total badge +3 con BIEN y EXCELENTE).
   if (fullOrderHit && thirdAdvanceHit) {
