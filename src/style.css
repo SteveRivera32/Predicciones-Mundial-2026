@@ -458,6 +458,28 @@ code {
   font-weight: 600;
 }
 
+.arena-ranking-loading-cell {
+  text-align: center;
+  padding: 1.25rem 0.75rem !important;
+}
+
+.arena-ranking-loading {
+  display: inline-block;
+  font-size: 0.84rem;
+  color: var(--muted, rgba(255, 255, 255, 0.62));
+  animation: arena-ranking-loading-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes arena-ranking-loading-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .participant-list-hint {
   margin: 0.35rem 0 0.65rem;
   padding: 0.45rem 0.65rem;

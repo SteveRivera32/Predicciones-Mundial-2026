@@ -23,6 +23,8 @@ import {
   isAdminParticipantId,
   ADMIN_PARTICIPANT_ID,
   filterParticipantsForArenaRankingAudience,
+  isArenaFollowersRankingActive,
+  participantMatchesSearchQuery,
 } from "./participants.js";
 import {
   loadSession,
@@ -322,9 +324,15 @@ function getMatchScoringForQuiniela(m) {
 /** @param {string | null | undefined} sessionParticipantId */
 function getParticipantsForArenaRanking(sessionParticipantId) {
   if (!isArenaMode()) return getParticipantsForDisplay();
-  return filterParticipantsForArenaRankingAudience(
-    getParticipantsForListDisplay(sessionParticipantId),
-  );
+  let list = getParticipantsForDisplay();
+  if (isArenaFollowersRankingActive()) {
+    list = filterParticipantsForArenaRankingAudience(list);
+  }
+  const q = getParticipantSearchQuery().trim();
+  if (q) {
+    list = list.filter((p) => participantMatchesSearchQuery(p, q));
+  }
+  return list;
 }
 
 function useArenaServerVoteAggregates() {
@@ -754,6 +762,45 @@ function arenaRankingsHintText() {
 }
 
 const ARENA_RANKING_PANEL_IDS = ["panel-final-ranking", "panel-match-ranking", "panel-team-order-ranking"];
+
+const ARENA_RANKING_TABLE_BODY_IDS = [
+  "table-final-ranking-body",
+  "table-match-ranking-body",
+  "table-team-order-ranking-body",
+];
+
+let arenaRankingsAudienceLoading = false;
+
+function isArenaRankingsAudienceLoading() {
+  return arenaRankingsAudienceLoading;
+}
+
+function setArenaRankingsAudienceLoading(loading) {
+  arenaRankingsAudienceLoading = loading;
+  document.querySelectorAll("[data-arena-ranking-audience]").forEach((btn) => {
+    if (btn instanceof HTMLButtonElement) btn.disabled = loading;
+  });
+  if (!loading) return;
+  const loadingRow = `<tr><td colspan="10" class="arena-ranking-loading-cell"><span class="arena-ranking-loading" role="status" aria-live="polite">Cargando ranking…</span></td></tr>`;
+  for (const id of ARENA_RANKING_TABLE_BODY_IDS) {
+    const body = document.getElementById(id);
+    if (body) body.innerHTML = loadingRow;
+  }
+  const floatingBody = $("#floating-ranking-body");
+  if (floatingBody) {
+    floatingBody.innerHTML =
+      '<p class="muted arena-ranking-loading" role="status" aria-live="polite">Cargando ranking…</p>';
+  }
+}
+
+/** @param {{ participantId: string } | null | undefined} session */
+function refreshAllArenaRankingPanels(session) {
+  if (!session) return;
+  renderFinalRanking(session);
+  redrawMatchRanking();
+  redrawTeamOrderRanking();
+  if (isFloatingRankingEnabled()) renderFloatingRanking(session);
+}
 
 /** @param {Element} bar */
 function isArenaRankingPanelSearchBar(bar) {
@@ -3230,12 +3277,17 @@ function initParticipantSearch(onSearchChange) {
     const mode = btn.dataset.arenaRankingAudience;
     if (mode !== "all" && mode !== "followers") return;
     if (getArenaRankingAudience() === mode) return;
+    setArenaRankingsAudienceLoading(true);
     setArenaRankingAudience(mode);
     syncArenaRankingAudienceButtons();
-    void arenaPullRankings().then(() => {
-      syncArenaTruncationHints();
-      runGlobalRankingsRefresh(loadSession());
-    });
+    void arenaPullRankings()
+      .then(() => {
+        syncArenaTruncationHints();
+        runGlobalRankingsRefresh(loadSession());
+      })
+      .finally(() => {
+        setArenaRankingsAudienceLoading(false);
+      });
   });
 }
 
@@ -6283,12 +6335,21 @@ function computeLiveParticipantRows(currentParticipantId) {
 /** Rankings/stats globales: solo paneles visibles + ranking flotante. */
 function runGlobalRankingsRefresh(session) {
   if (!session) return;
+  if (isArenaMode()) {
+    refreshAllArenaRankingPanels(session);
+    const tab = getActiveTabId();
+    if (tab === "stats") renderStats(session);
+    if (tab === "match-history") redrawMatchHistory();
+    if (tab === "team-stats") redrawTeamStats();
+    return;
+  }
   if (isFloatingRankingEnabled()) renderFloatingRanking(session);
   const tab = getActiveTabId();
   if (tab === "stats") renderStats(session);
   if (tab === "match-ranking") redrawMatchRanking();
   if (tab === "match-history") redrawMatchHistory();
   if (tab === "final-ranking") renderFinalRanking(session);
+  if (tab === "team-order-ranking") redrawTeamOrderRanking();
   if (tab === "team-stats") redrawTeamStats();
 }
 
@@ -12332,7 +12393,6 @@ function refreshArenaRemoteLight() {
   updateSessionBar(session);
   const tab = getActiveTabId();
   if (tab === "stats") renderStats(session);
-  if (isFloatingRankingEnabled()) renderFloatingRanking(session);
   if (session) {
     updatePredictionTabsProgress(session, loadPredictions(session.participantId));
   }
@@ -12344,10 +12404,15 @@ function refreshArenaRemoteLight() {
     redrawTeamOrder();
     rebuildTeamOrderSelectOptions();
   }
-  if (tab === "team-order-ranking") redrawTeamOrderRanking();
-  if (tab === "match-ranking") redrawMatchRanking();
   if (tab === "match-history") redrawMatchHistory();
-  if (tab === "final-ranking") renderFinalRanking(session);
+  if (isArenaMode() && session && !isArenaRankingsAudienceLoading()) {
+    refreshAllArenaRankingPanels(session);
+  } else {
+    if (isFloatingRankingEnabled()) renderFloatingRanking(session);
+    if (tab === "team-order-ranking") redrawTeamOrderRanking();
+    if (tab === "match-ranking") redrawMatchRanking();
+    if (tab === "final-ranking") renderFinalRanking(session);
+  }
 }
 
 function hasOpenGroupOrderPicker() {
