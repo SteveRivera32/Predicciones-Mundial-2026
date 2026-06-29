@@ -157,6 +157,8 @@ const PARTIDOS_NAV_TERMINADOS_SESSION_KEY = "pm26-partidos-nav-terminados";
 /** Valor legacy en PARTIDOS_SCOPE_KEY antes de separar listado terminados de la vista. */
 const PARTIDOS_VISTA_TERMINADOS_VALUE = "terminados";
 const PARTIDOS_VISTA_ELIMINATORIAS_VALUE = "eliminatorias";
+/** El usuario eligió manualmente Fase de grupos / Eliminatorias en Partidos. */
+const PARTIDOS_SCOPE_MANUAL_KEY = "pm26-partidos-scope-manual";
 const PARTIDOS_KO_ROUND_IDS = /** @type {const} */ (["all-ko", "r32", "r16", "qf", "sf", "tp", "final"]);
 const PARTIDOS_KO_ROUND_LABELS = {
   "all-ko": "Todas las fases",
@@ -7000,6 +7002,48 @@ function partidosSiguientesVistaActiva() {
 }
 
 let partidosScopeStorageMigrated = false;
+/** Evita reactivar «Siguientes» en la misma sesión tras cambiar Vista o el listado. */
+let partidosKoListModeDefaultedThisLoad = false;
+
+/**
+ * @param {ReturnType<typeof loadOfficialResults>} official
+ */
+function isGroupStageFullyClosed(official) {
+  return GROUP_MATCHES.every((m) => isMatchOfficiallyClosed(official, m));
+}
+
+/**
+ * Tras cerrar todos los partidos de grupos: vista Eliminatorias + listado Siguientes por defecto.
+ * Respeta si el usuario cambió la Vista manualmente en el selector.
+ * @param {ReturnType<typeof loadOfficialResults>} official
+ */
+function applyPartidosKnockoutPhaseDefaults(official) {
+  if (isArenaMode()) return;
+  if (!isGroupStageFullyClosed(official)) {
+    try {
+      localStorage.removeItem(PARTIDOS_SCOPE_MANUAL_KEY);
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  const scopeManual = localStorage.getItem(PARTIDOS_SCOPE_MANUAL_KEY) === "1";
+  if (!scopeManual) {
+    localStorage.setItem(PARTIDOS_SCOPE_KEY, PARTIDOS_VISTA_ELIMINATORIAS_VALUE);
+  }
+  if (
+    !partidosKoListModeDefaultedThisLoad &&
+    !partidosTerminadosVistaActiva() &&
+    !partidosSiguientesVistaActiva()
+  ) {
+    try {
+      sessionStorage.setItem(PARTIDOS_NAV_PROXIMOS_SESSION_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+    partidosKoListModeDefaultedThisLoad = true;
+  }
+}
 
 /** Migra scope legacy (terminados en localStorage, rondas KO en scope) al modelo vista + fase KO + listado en session. */
 function migratePartidosScopeStorage() {
@@ -10027,7 +10071,9 @@ function ensurePartidosScopeFilter() {
   `;
   sel.addEventListener("change", () => {
     clearPartidosListModeSession();
+    partidosKoListModeDefaultedThisLoad = true;
     localStorage.setItem(PARTIDOS_SCOPE_KEY, sel.value);
+    localStorage.setItem(PARTIDOS_SCOPE_MANUAL_KEY, "1");
     syncPartidosToolbarUi();
     syncPartidosSubfilterToolbars();
     redrawQuiniela();
@@ -12213,6 +12259,7 @@ function refreshAll(session, opts = {}) {
   } = opts;
   if (isArenaMode()) syncArenaTruncationHints();
   applyKickoffAutoStarts();
+  applyPartidosKnockoutPhaseDefaults(loadOfficialResults());
   const activeTab = getActiveTabId();
   const showPanel = (panelId) => !onlyActivePanel || activeTab === panelId;
   const partidosWrap = $("#quiniela-wrap");
