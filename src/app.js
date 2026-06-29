@@ -77,6 +77,7 @@ import { decorateArenaNonLoginInput } from "./arena-ios-autofill.js";
 import {
   computeLiveParticipantRowsFromData,
   ARENA_PRELAUNCH_EXCLUDED_GROUP_MATCH_IDS,
+  ARENA_PRELAUNCH_EXCLUDED_KNOCKOUT_MATCH_IDS,
 } from "./live-ranking.js";
 import { sortByRankingTiebreak, compareRankingRows } from "./ranking-tiebreak.js";
 import { applyRemoteState } from "./sync.js";
@@ -9364,6 +9365,9 @@ function computeMatchRankingRows(scope, groupId, sessionParticipantId) {
   if (isArenaMode()) {
     selectedGroupMatches = selectedGroupMatches.filter(
       (m) => !ARENA_PRELAUNCH_EXCLUDED_GROUP_MATCH_IDS.has(m.id),
+    );
+    selectedKoMatches = selectedKoMatches.filter(
+      (m) => !ARENA_PRELAUNCH_EXCLUDED_KNOCKOUT_MATCH_IDS.has(m.id),
     );
   }
 

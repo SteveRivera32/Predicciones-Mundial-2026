@@ -35,9 +35,20 @@ const MAX_BEST_THIRD_TEAMS = 8;
  */
 export const ARENA_PRELAUNCH_EXCLUDED_GROUP_MATCH_IDS = new Set(["gg-A-0", "gg-A-5"]);
 
+/**
+ * Partidos de eliminatoria que no puntúan en Arena: ya se jugaron antes del lanzamiento público.
+ * ko-r32-1 = primer partido de dieciseisavos (M73).
+ */
+export const ARENA_PRELAUNCH_EXCLUDED_KNOCKOUT_MATCH_IDS = new Set(["ko-r32-1"]);
+
 /** @param {string} matchId @param {{ arenaScoring?: boolean }} [opts] */
 export function isArenaPrelaunchExcludedGroupMatch(matchId, opts) {
   return opts?.arenaScoring === true && ARENA_PRELAUNCH_EXCLUDED_GROUP_MATCH_IDS.has(matchId);
+}
+
+/** @param {string} matchId @param {{ arenaScoring?: boolean }} [opts] */
+export function isArenaPrelaunchExcludedKnockoutMatch(matchId, opts) {
+  return opts?.arenaScoring === true && ARENA_PRELAUNCH_EXCLUDED_KNOCKOUT_MATCH_IDS.has(matchId);
 }
 
 /** @param {{ matchScoringKey?: string }} m */
@@ -136,6 +147,7 @@ export function computeClosestScoreBonusMaps(official, predictionsMap, participa
   }
 
   for (const m of getKnockoutMatchesFlat()) {
+    if (isArenaPrelaunchExcludedKnockoutMatch(m.id, opts)) continue;
     if (official.knockoutScoresConfirmed?.[m.id] !== true) continue;
     const off = official.knockoutScores[m.id];
     if (!off || off.home === "" || off.away === "") continue;
@@ -403,6 +415,7 @@ export function computePerParticipantMatchColumnStatsFromData(
     processMatch(m, off, false);
   }
   for (const m of getKnockoutMatchesFlat()) {
+    if (isArenaPrelaunchExcludedKnockoutMatch(m.id, opts)) continue;
     if (official.knockoutScoresConfirmed?.[m.id] !== true) continue;
     const off = official.knockoutScores[m.id];
     if (!off || off.home === "" || off.away === "") continue;
@@ -559,6 +572,7 @@ export function computeLiveParticipantRowsFromData(
     }
 
     for (const m of getKnockoutMatchesFlat()) {
+      if (isArenaPrelaunchExcludedKnockoutMatch(m.id, opts)) continue;
       if (official.knockoutScoresConfirmed?.[m.id] !== true) continue;
       const off = official.knockoutScores[m.id];
       if (!off || off.home === "" || off.away === "") continue;
@@ -807,6 +821,7 @@ export function computeArenaMatchVoteData(official, predictionsMap, participants
   }
 
   for (const m of getKnockoutMatchesFlat()) {
+    if (ARENA_PRELAUNCH_EXCLUDED_KNOCKOUT_MATCH_IDS.has(m.id)) continue;
     const votes = collectKnockoutOutcomeVotesForMatch(m.id, predictionsMap, participants);
     knockoutVotes[m.id] = votesToCounts(votes);
     const off = official.knockoutScores?.[m.id];
