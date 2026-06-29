@@ -5942,6 +5942,19 @@ span.td-muted {
   text-align: center;
 }
 
+.pred-history-match__pen-inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  flex-wrap: nowrap;
+}
+
+.pred-history-match__pen .bracket-team-line--inline {
+  display: inline-flex;
+  align-items: center;
+}
+
 .match-history-pts-max {
   color: #81c995;
   text-shadow:
@@ -11450,6 +11463,16 @@ body.app-booting .app-shell {
   #panel-match-history .pred-history-match__pen {
     font-size: 0.62rem;
     margin-top: 0.25rem;
+  }
+
+  #panel-match-history .pred-history-match__pen-inner {
+    gap: 0.2rem;
+  }
+
+  #panel-match-history .pred-history-match__pen .team-flag-img,
+  #panel-match-history .pred-history-match__pen .team-flag-placeholder {
+    width: 0.9rem;
+    height: 0.68rem;
   }
 
   #panel-stats .table-stats-matrix {

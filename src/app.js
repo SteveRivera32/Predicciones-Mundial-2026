@@ -2567,16 +2567,18 @@ function resolveKnockoutSlotLabelsForHistory(m, official, pStore) {
 
 /**
  * @param {string} label
- * @param {{ winner?: boolean }} opts
+ * @param {{ winner?: boolean, inline?: boolean }} opts
  */
 function bracketTeamLineHtml(label, opts = {}) {
-  const { winner = false } = opts;
+  const { winner = false, inline = false } = opts;
   const winCls = winner ? " is-winner" : "";
+  const inlineCls = inline ? " bracket-team-line--inline" : "";
+  const tag = inline ? "span" : "div";
   const displayLabel = normalizeTeamName(label);
   if (BRACKET_KNOWN_TEAMS.has(displayLabel)) {
-    return `<div class="bracket-team-line${winCls}">${teamLabelHtml(displayLabel)}</div>`;
+    return `<${tag} class="bracket-team-line${inlineCls}${winCls}">${teamLabelHtml(displayLabel)}</${tag}>`;
   }
-  return `<div class="bracket-team-line bracket-team-line--seed${winCls}"><span class="bracket-slot-txt">${escapeHtml(label || "—")}</span></div>`;
+  return `<${tag} class="bracket-team-line bracket-team-line--seed${inlineCls}${winCls}"><span class="bracket-slot-txt">${escapeHtml(label || "—")}</span></${tag}>`;
 }
 
 /** @param {string} label */
@@ -9954,10 +9956,12 @@ function predictionHistoryScoreGridHtml(homeTeamHtml, awayTeamHtml, pred, roundI
     predictionOutcomeSign(pred) === "d" &&
     (pred?.penaltyWinner === "home" || pred?.penaltyWinner === "away")
   ) {
-    penHtml =
-      pred.penaltyWinner === "home"
-        ? `<p class="pred-history-match__pen muted">Penales: ${homeLab ? bracketTeamLineHtml(homeLab) : "local"}</p>`
-        : `<p class="pred-history-match__pen muted">Penales: ${awayLab ? bracketTeamLineHtml(awayLab) : "visitante"}</p>`;
+    const penWinnerLab = pred.penaltyWinner === "home" ? homeLab : awayLab;
+    const penWinnerFallback = pred.penaltyWinner === "home" ? "local" : "visitante";
+    const penWinnerHtml = penWinnerLab
+      ? bracketTeamLineHtml(penWinnerLab, { inline: true })
+      : escapeHtml(penWinnerFallback);
+    penHtml = `<div class="pred-history-match__pen muted"><span class="pred-history-match__pen-inner">Penales: ${penWinnerHtml}</span></div>`;
   }
   return `<div class="quiniela-official-grid quiniela-official-grid--readonly pred-history-match-grid" role="group" aria-label="Tu predicción">
     <div class="quiniela-cell quiniela-cell--team">${homeTeamHtml}</div>
