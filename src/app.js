@@ -745,7 +745,7 @@ function ensureArenaRankingAudienceToggle(bar) {
     btn.className = "btn btn-sm btn-ghost arena-ranking-audience-btn";
     btn.dataset.arenaRankingAudience = mode;
     btn.textContent = mode === "all" ? "Todos" : "Seguidores";
-    btn.title = mode === "all" ? "Todos los jugadores" : "Solo jugadores de Arena (sin quiniela privada)";
+    btn.title = mode === "all" ? "Todos los jugadores" : "Solo jugadores de Arena";
     wrap.appendChild(btn);
   }
   bar.insertBefore(wrap, bar.firstChild);
@@ -753,10 +753,7 @@ function ensureArenaRankingAudienceToggle(bar) {
 }
 
 function arenaRankingsHintText() {
-  if (!isArenaMode()) return "";
-  if (isArenaFollowersRankingActive()) {
-    return "Ranking solo de jugadores de Arena (sin la quiniela privada Predicciones Amigos). Busca un nombre para filtrar.";
-  }
+  if (!isArenaMode() || isArenaFollowersRankingActive()) return "";
   const data = getArenaServerRankings();
   if (!data?.truncated || data.totalUsers <= data.limit) return "";
   const hasSelfOutsideTop = data.rows?.some((r) => r.self && Number(r.rank) > Number(data.limit));

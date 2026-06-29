@@ -453,7 +453,7 @@ export function searchUsersByQuery(query, limit = 25) {
 export function getAllArenaParticipants() {
   return getDb()
     .prepare(
-      `SELECT username, display_name FROM users
+      `SELECT username, display_name, is_privadas FROM users
        WHERE is_admin = 0
        ORDER BY id ASC`,
     )
@@ -462,6 +462,7 @@ export function getAllArenaParticipants() {
       id: row.username,
       name: row.display_name,
       pin: null,
+      isPrivadas: Boolean(row.is_privadas),
     }));
 }
 

@@ -31,7 +31,7 @@ export const BUILTIN_PARTICIPANTS = [
 ];
 
 /**
- * @typedef {{ id: string, name: string, pin: string | null, hue?: number, color?: string }} Participant
+ * @typedef {{ id: string, name: string, pin: string | null, hue?: number, color?: string, isPrivadas?: boolean }} Participant
  */
 
 /** Matiz por defecto (0–359) derivado del id. */
@@ -155,7 +155,19 @@ export function isPrivadasArenaMirrorId(id) {
   return getPrivadasArenaMirrorParticipants().some((p) => p.id.toLowerCase() === key);
 }
 
-/** Ranking Arena filtrado a jugadores registrados (sin espejos de Predicciones Amigos). */
+/** @param {Participant | string | null | undefined} participantOrId */
+export function isArenaPrivadasParticipant(participantOrId) {
+  if (!isArenaMode()) return false;
+  if (participantOrId && typeof participantOrId === "object") {
+    return participantOrId.isPrivadas === true;
+  }
+  const id = String(participantOrId ?? "").trim();
+  if (!id) return false;
+  const p = getParticipants().find((x) => x.id === id);
+  return p?.isPrivadas === true;
+}
+
+/** Ranking Arena filtrado a jugadores registrados en Arena (excluye cuentas espejo de privadas). */
 export function isArenaFollowersRankingActive() {
   return isArenaMode() && getArenaRankingAudience() === "followers";
 }
@@ -163,7 +175,7 @@ export function isArenaFollowersRankingActive() {
 /** @param {Participant[]} participants */
 export function filterParticipantsForArenaRankingAudience(participants) {
   if (!isArenaFollowersRankingActive()) return participants;
-  return participants.filter((p) => !isPrivadasArenaMirrorId(p.id));
+  return participants.filter((p) => !isArenaPrivadasParticipant(p));
 }
 /** Administradores con permisos sobre resultados oficiales/Ajustes. */
 const OFFICIAL_RESULTS_ADMIN_IDS = new Set(["tivo", "admin"]);
@@ -183,6 +195,7 @@ function normalizeParticipant(p) {
   const hue = normalizeHueField(p && p.hue);
   /** @type {Participant} */
   const out = { id, name, pin };
+  if (p && p.isPrivadas === true) out.isPrivadas = true;
   if (color) {
     out.color = color;
   } else if (hue !== undefined) {
