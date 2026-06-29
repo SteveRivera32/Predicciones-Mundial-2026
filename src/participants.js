@@ -7,7 +7,13 @@
  */
 
 import { isRemoteSyncActive } from "./remote-sync-flags.js";
-import { isArenaMode, isArenaAdmin, getArenaUserId, getArenaUser } from "./arena-mode.js";
+import {
+  isArenaMode,
+  isArenaAdmin,
+  getArenaUserId,
+  getArenaUser,
+  getArenaRankingAudience,
+} from "./arena-mode.js";
 import { searchTextIncludes } from "./search-normalize.js";
 import { prunePredictionsToParticipantIds } from "./predictions-store.js";
 import { pushParticipants } from "./sync-push.js";
@@ -147,6 +153,17 @@ export function getPrivadasArenaMirrorParticipants() {
 export function isPrivadasArenaMirrorId(id) {
   const key = String(id ?? "").trim().toLowerCase();
   return getPrivadasArenaMirrorParticipants().some((p) => p.id.toLowerCase() === key);
+}
+
+/** Ranking Arena filtrado a jugadores registrados (sin espejos de Predicciones Amigos). */
+export function isArenaFollowersRankingActive() {
+  return isArenaMode() && getArenaRankingAudience() === "followers";
+}
+
+/** @param {Participant[]} participants */
+export function filterParticipantsForArenaRankingAudience(participants) {
+  if (!isArenaFollowersRankingActive()) return participants;
+  return participants.filter((p) => !isPrivadasArenaMirrorId(p.id));
 }
 /** Administradores con permisos sobre resultados oficiales/Ajustes. */
 const OFFICIAL_RESULTS_ADMIN_IDS = new Set(["tivo", "admin"]);

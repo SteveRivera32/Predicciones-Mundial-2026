@@ -642,4 +642,33 @@ export function bindArenaInteractionGuard() {
 
 }
 
+const ARENA_RANKING_AUDIENCE_KEY = "pm26-arena-ranking-audience";
+
+/** @typedef {"all" | "followers"} ArenaRankingAudience */
+
+/** @returns {ArenaRankingAudience} */
+export function getArenaRankingAudience() {
+  if (!arenaMode) return "all";
+  try {
+    if (localStorage.getItem(ARENA_RANKING_AUDIENCE_KEY) === "followers") return "followers";
+  } catch {
+    /* ignore */
+  }
+  return "all";
+}
+
+/** @param {ArenaRankingAudience} audience */
+export function setArenaRankingAudience(audience) {
+  try {
+    localStorage.setItem(ARENA_RANKING_AUDIENCE_KEY, audience === "followers" ? "followers" : "all");
+  } catch {
+    /* ignore */
+  }
+}
+
+/** @param {ArenaRankingAudience} [mode] */
+export function arenaRankingAudienceLabel(mode = getArenaRankingAudience()) {
+  return mode === "followers" ? "Seguidores" : "Todos";
+}
+
 

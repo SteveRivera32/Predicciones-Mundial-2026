@@ -426,6 +426,38 @@ code {
   padding-inline: 0.55rem;
 }
 
+.arena-ranking-audience {
+  display: flex;
+  flex: 0 0 auto;
+  align-self: stretch;
+  border-radius: 7px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.arena-ranking-audience-btn {
+  flex: 1 1 50%;
+  border: none;
+  border-radius: 0;
+  margin: 0;
+  min-width: 0;
+  font-size: 0.74rem;
+  padding: 0.28rem 0.55rem;
+  color: var(--muted, rgba(255, 255, 255, 0.62));
+  background: transparent;
+}
+
+.arena-ranking-audience-btn + .arena-ranking-audience-btn {
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.arena-ranking-audience-btn--active,
+.arena-ranking-audience-btn[aria-pressed="true"] {
+  color: var(--text, #f4f7fb);
+  background: rgba(138, 180, 248, 0.18);
+  font-weight: 600;
+}
+
 .participant-list-hint {
   margin: 0.35rem 0 0.65rem;
   padding: 0.45rem 0.65rem;
