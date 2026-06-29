@@ -72,7 +72,7 @@ import { syncPrivadasToArena, startPrivadasSyncPoll } from "./privadas-bridge.mj
 import { isPrivadasArenaMirrorId } from "../../src/participants.js";
 import { saveArenaOfficial } from "./official-privadas-sync.mjs";
 import { isSyncSecretValid } from "../../server/sync-secret.mjs";
-import { getCachedArenaRankings, invalidateArenaRankingsCache } from "./arena-rankings.mjs";
+import { getCachedArenaRankingsBundle, invalidateArenaRankingsCache } from "./arena-rankings.mjs";
 import {
   getCachedArenaMatchVoteData,
   getArenaAggregatesCacheMs,
@@ -507,8 +507,7 @@ app.get("/api/arena/official", (req, res) => {
 app.get("/api/arena/rankings", requireArenaAuth, (req, res) => {
   const me = findUserById(req.userId);
   const viewerUsername = me?.username ?? "";
-  const audience = req.query.audience === "followers" ? "followers" : "all";
-  const { data, etag } = getCachedArenaRankings(viewerUsername, getArenaAggregatesCacheMs(), audience);
+  const { data, etag } = getCachedArenaRankingsBundle(viewerUsername, getArenaAggregatesCacheMs());
   res.setHeader("Cache-Control", "private, no-store");
   res.setHeader("ETag", etag);
   res.json(data);

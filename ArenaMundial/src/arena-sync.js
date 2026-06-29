@@ -1,6 +1,6 @@
 import { applyRemoteOfficialOnly, applyRemoteState } from "@shared/sync.js";
 
-import { setArenaServerRankings, setArenaMatchVoteData, getArenaRankingAudience } from "@shared/arena-mode.js";
+import { setArenaServerRankings, setArenaMatchVoteData, setArenaRankingsBundle, switchArenaRankingAudience, hasArenaRankingsBundle } from "@shared/arena-mode.js";
 
 import { apiFetch } from "./api.js";
 
@@ -108,13 +108,9 @@ export async function pullArenaRankings() {
 
   try {
 
-    const audience = getArenaRankingAudience() === "followers" ? "followers" : "all";
+    const data = await apiFetch("/rankings");
 
-    const data = await apiFetch(`/rankings?audience=${encodeURIComponent(audience)}`);
-
-    setArenaServerRankings(data);
-
-    if (data.matchVoteData) setArenaMatchVoteData(data.matchVoteData);
+    setArenaRankingsBundle(data);
 
     window.dispatchEvent(new CustomEvent("pm26-arena-rankings"));
 

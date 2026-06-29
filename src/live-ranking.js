@@ -465,6 +465,7 @@ export function computeLiveParticipantRowsFromData(
     let groupOrderExcelenteCount = 0;
     let groupOrderPerfectCount = 0;
     let groupOrderBonusCount = 0;
+    let groupOrderPointsTotal = 0;
     let matchBienCount = 0;
     let matchExcelenteCount = 0;
     let matchPerfectCount = 0;
@@ -514,13 +515,15 @@ export function computeLiveParticipantRowsFromData(
         return acc;
       }, 0);
       groupOrderBonusCount += groupBonus;
-      total +=
+      const groupPts =
         computeGroupOrderPoints(
           predOrder,
           officialOrder,
           predThird,
           officialThirdDefined ? officialThird : undefined,
         ) + groupBonus;
+      groupOrderPointsTotal += groupPts;
+      total += groupPts;
     }
 
     for (const m of GROUP_MATCHES) {
@@ -631,6 +634,17 @@ export function computeLiveParticipantRowsFromData(
       totalPerfect,
       totalBien,
       totalExcelente,
+      matchBienCount,
+      matchExcelenteCount,
+      matchPerfectCount,
+      matchPointsTotal,
+      matchBonusCount,
+      matchClosestCount,
+      groupOrderBienCount,
+      groupOrderExcelenteCount,
+      groupOrderPerfectCount,
+      groupOrderBonusCount,
+      groupOrderPointsTotal,
     };
   });
 }
@@ -686,6 +700,63 @@ export function computeArenaRankingsDisplay(
 }
 
 export { DEFAULT_RANKINGS_LIMIT as ARENA_RANKINGS_DISPLAY_LIMIT };
+
+/**
+ * @param {ReturnType<typeof computeLiveParticipantRowsFromData>[number]} row
+ */
+export function arenaRankingRowToParticipantStats(row) {
+  return {
+    id: row.p.id,
+    name: row.p.name,
+    matchBienCount: row.matchBienCount ?? 0,
+    matchExcelenteCount: row.matchExcelenteCount ?? 0,
+    matchPerfectCount: row.matchPerfectCount ?? 0,
+    matchBonusCount: row.matchBonusCount ?? 0,
+    matchClosestCount: row.matchClosestCount ?? 0,
+    matchPointsTotal: row.matchPointsTotal ?? 0,
+    groupOrderBienCount: row.groupOrderBienCount ?? 0,
+    groupOrderExcelenteCount: row.groupOrderExcelenteCount ?? 0,
+    groupOrderPerfectCount: row.groupOrderPerfectCount ?? 0,
+    groupOrderBonusCount: row.groupOrderBonusCount ?? 0,
+    groupOrderPointsTotal: row.groupOrderPointsTotal ?? 0,
+  };
+}
+
+/**
+ * @param {ReturnType<typeof computeLiveParticipantRowsFromData>} sortedRows
+ * @param {string | null | undefined} viewerId
+ * @param {number} [limit]
+ */
+export function buildArenaRankingsAudienceSlice(sortedRows, viewerId, limit = DEFAULT_RANKINGS_LIMIT) {
+  const lim = Math.max(1, limit);
+  const top = sortedRows.slice(0, lim);
+  const topIds = new Set(top.map((r) => r.p.id));
+  const viewerRow = viewerId ? sortedRows.find((r) => r.p.id === viewerId) : null;
+  const rows =
+    viewerRow && !topIds.has(viewerRow.p.id) ? [...top, viewerRow] : top;
+
+  return {
+    totalUsers: sortedRows.length,
+    limit: lim,
+    truncated: sortedRows.length > lim,
+    rows: rows.map((r) => {
+      const globalRank = sortedRows.findIndex((x) => x.p.id === r.p.id) + 1;
+      return {
+        rank: globalRank,
+        username: r.p.id,
+        displayName: r.p.name,
+        pts: r.pts,
+        totalBien: r.totalBien,
+        totalExcelente: r.totalExcelente,
+        totalPerfect: r.totalPerfect,
+        totalBonus: r.totalBonus,
+        totalClosest: r.totalClosest,
+        self: r.p.id === viewerId,
+      };
+    }),
+    participants: sortedRows.map(arenaRankingRowToParticipantStats),
+  };
+}
 
 /** @param {("h"|"d"|"a")[]} votes */
 function votesToCounts(votes) {

@@ -218,6 +218,9 @@ let searchPredictionsFn = null;
 
 let arenaServerRankings = null;
 
+/** @type {{ audiences?: Record<string, unknown>, matchVoteData?: unknown } | null} */
+let arenaRankingsBundle = null;
+
 /** @type {import("./live-ranking.js").ArenaVoteData | null} */
 let arenaMatchVoteData = null;
 
@@ -300,16 +303,55 @@ export function arenaSearchPredictions(q) {
 
 }
 
+/** @param {"all"|"followers"} [audience] */
+function applyArenaRankingsAudienceSlice(audience = getArenaRankingAudience()) {
+  const key = audience === "followers" ? "followers" : "all";
+  const slice = arenaRankingsBundle?.audiences?.[key];
+  if (!slice || typeof slice !== "object") return;
+  arenaServerRankings = {
+    ...(/** @type {Record<string, unknown>} */ (slice)),
+    matchVoteData: arenaRankingsBundle?.matchVoteData,
+  };
+}
+
+export function setArenaRankingsBundle(data) {
+  if (!data || typeof data !== "object" || !data.audiences) {
+    arenaRankingsBundle = null;
+    arenaServerRankings = null;
+    return;
+  }
+  arenaRankingsBundle = {
+    audiences: data.audiences,
+    matchVoteData: data.matchVoteData ?? null,
+  };
+  applyArenaRankingsAudienceSlice();
+  if (arenaRankingsBundle.matchVoteData) {
+    arenaMatchVoteData = /** @type {import("./live-ranking.js").ArenaVoteData} */ (
+      arenaRankingsBundle.matchVoteData
+    );
+  }
+}
+
+export function hasArenaRankingsBundle() {
+  return Boolean(arenaRankingsBundle?.audiences?.all && arenaRankingsBundle?.audiences?.followers);
+}
+
+/** Cambia Todos/Seguidores usando datos ya descargados (sin red). */
+export function switchArenaRankingAudience(audience) {
+  setArenaRankingAudience(audience);
+  applyArenaRankingsAudienceSlice(audience);
+}
+
 export function setArenaServerRankings(data) {
-
+  if (data?.audiences) {
+    setArenaRankingsBundle(data);
+    return;
+  }
   arenaServerRankings = data && typeof data === "object" ? data : null;
-
 }
 
 export function getArenaServerRankings() {
-
   return arenaServerRankings;
-
 }
 
 export function setArenaMatchVoteData(data) {
