@@ -98,7 +98,9 @@ import {
   GROUP_PERFECTO_ORDER_AND_THIRD_BONUS,
   GROUP_PERFECT_ORDER_BONUS,
   GROUP_QUALIFIERS_ORDER_BONUS,
+  GROUP_THIRD_ADVANCE_POINTS,
   hasGroupOrderBienBadge,
+  isGroupThirdAdvanceHit,
   INDIVIDUAL_AWARD_POINTS,
   MAX_PER_GROUP,
   MATCH_SCORING,
@@ -1614,8 +1616,9 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
       const thirdHit =
         hasOfficialData &&
         officialThirdDefined &&
-        (thirdP === true || thirdP === false) &&
-        thirdP === officialThird;
+        isGroupThirdAdvanceHit(thirdP, officialThird);
+      const thirdAdvancePts =
+        hasOfficialData && officialThirdDefined && thirdHit ? GROUP_THIRD_ADVANCE_POINTS : 0;
 
       const posCells = [0, 1, 2, 3]
         .map((i) => {
@@ -1698,6 +1701,7 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
         thirdCellClass,
         thirdTxt,
         thirdHit,
+        thirdAdvancePts,
         groupOrderBienEligible,
         fullOrderHit,
         groupPts,
@@ -1708,7 +1712,7 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
 
   const participantRows = groupParticipantRowData
     .map((row) => {
-      const { p, posCells, thirdCellClass, thirdTxt, thirdHit, groupOrderBienEligible, fullOrderHit, groupPts } = row;
+      const { p, posCells, thirdCellClass, thirdTxt, thirdHit, thirdAdvancePts, groupOrderBienEligible, fullOrderHit, groupPts } = row;
       const hasSubmission = participantHasGroupOrderSubmission(p, grp.id);
       const rowClasses = [
         "group-preds-row",
@@ -1746,8 +1750,9 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
         </th>
         ${posCells}
         <td class="${thirdCellClass}">
-          <div class="group-preds-cell-wrap group-preds-cell-wrap--center">
-            ${thirdTxt}
+          <div class="group-preds-cell-wrap group-preds-cell-wrap--third">
+            <span class="group-preds-third-mark">${thirdTxt}</span>
+            ${pointsBadgeHtml(thirdAdvancePts, { title: "Acierto: 3.º pasa / no pasa" })}
           </div>
         </td>
         <td class="${ptsTdClass}"><div class="group-preds-pts-cell">${groupPts}</div></td>

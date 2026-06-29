@@ -4716,6 +4716,20 @@ span.td-muted {
   min-width: 1.4rem;
 }
 
+.table-group-preds .group-preds-cell-wrap--third {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
+  text-align: center;
+  min-width: 2.25rem;
+}
+
+.table-group-preds .group-preds-third-mark {
+  display: inline-block;
+  line-height: 1.2;
+}
+
 .group-preds-pt-badge {
   position: absolute;
   top: -0.42rem;
@@ -13717,6 +13731,11 @@ body:not(.app-arena) #panel-partidos .partidos-match-card .quiniela-preds td.qui
 
   body.app-arena #panel-grupos .table-group-preds .group-preds-cell-wrap--center {
     min-width: 1.1rem;
+  }
+
+  body.app-arena #panel-grupos .table-group-preds .group-preds-cell-wrap--third {
+    min-width: 1.65rem;
+    min-height: 0.95rem;
   }
 
   body.app-arena #panel-grupos .group-preds-pt-badge {

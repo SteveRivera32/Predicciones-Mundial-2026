@@ -55,6 +55,18 @@ export function hasGroupOrderBienBadge(predictedOrder, officialOrder) {
 }
 
 /**
+ * @param {boolean|undefined} predictedThirdAdvances
+ * @param {boolean|undefined} officialThirdAdvances
+ */
+export function isGroupThirdAdvanceHit(predictedThirdAdvances, officialThirdAdvances) {
+  return (
+    (predictedThirdAdvances === true || predictedThirdAdvances === false) &&
+    (officialThirdAdvances === true || officialThirdAdvances === false) &&
+    predictedThirdAdvances === officialThirdAdvances
+  );
+}
+
+/**
  * Calcula puntos de orden de grupo según reglas actuales.
  * @param {string[]} predictedOrder
  * @param {string[]} officialOrder
@@ -100,10 +112,7 @@ export function computeGroupOrderPoints(
     points += GROUP_PERFECT_ORDER_BONUS;
   }
 
-  const thirdAdvanceHit =
-    (predictedThirdAdvances === true || predictedThirdAdvances === false) &&
-    (officialThirdAdvances === true || officialThirdAdvances === false) &&
-    predictedThirdAdvances === officialThirdAdvances;
+  const thirdAdvanceHit = isGroupThirdAdvanceHit(predictedThirdAdvances, officialThirdAdvances);
 
   // +1 por acertar si el 3.º predicho pasa como mejor tercero (sin contar si adivinan el país).
   if (thirdAdvanceHit) {
