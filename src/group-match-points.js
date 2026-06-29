@@ -65,6 +65,27 @@ export function getUniqueOfficialOutcomeBonusSign(votes, officialScore) {
 }
 
 /**
+ * Bono improbable en orden de grupos: el pick debe estar entre las opciones menos votadas
+ * y su recuento no puede superar el tope (misma regla que partidos).
+ * @param {Map<string, number>} counts recuento por equipo en una posición
+ * @param {string} pick equipo predicho
+ */
+export function hasMinorityPickBonus(counts, pick) {
+  if (!pick) return false;
+  const withVotes = [...counts.entries()].filter(([, n]) => n > 0);
+  if (withVotes.length < 2) return false;
+  const pickVotes = counts.get(pick) ?? 0;
+  if (pickVotes <= 0) return false;
+  const totalVotes = withVotes.reduce((acc, [, n]) => acc + n, 0);
+  if (totalVotes < 2) return false;
+  const minN = Math.min(...withVotes.map(([, n]) => n));
+  const minVoteCap = getImprobableMinVoteCap(totalVotes);
+  if (minN > minVoteCap) return false;
+  const minTier = withVotes.filter(([, n]) => n === minN).map(([t]) => t);
+  return minTier.includes(pick);
+}
+
+/**
  * @deprecated Usar getUniqueOfficialOutcomeBonusSign (incluye resultado oficial y tope escalado).
  * Opción minoritaria “clara” en el recuento de un partido.
  * @param {("h"|"d"|"a")[]} votes

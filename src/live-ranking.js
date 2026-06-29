@@ -10,6 +10,7 @@ import {
   predictionOutcomeSign,
   getUniqueOfficialOutcomeBonusSign,
   getClosestScoreBonusParticipantIds,
+  hasMinorityPickBonus,
 } from "./group-match-points.js";
 import {
   computeGeneralPredictionsScore,
@@ -325,15 +326,6 @@ export function getGroupOrderVoteCountsByPositionFromMap(groupId, participants, 
   return countsByPos;
 }
 
-/** @param {Map<string, number>} counts @param {string} team */
-export function hasUniquePickBonus(counts, team) {
-  if (!team) return false;
-  const teamVotes = counts.get(team) ?? 0;
-  if (teamVotes !== 1) return false;
-  const totalVotes = [...counts.values()].reduce((acc, n) => acc + n, 0);
-  return totalVotes >= 2;
-}
-
 /**
  * @param {Array<{ id: string, name: string }>} participants
  * @param {Record<string, unknown>} predictionsMap
@@ -518,7 +510,7 @@ export function computeLiveParticipantRowsFromData(
       const groupBonus = [0, 1, 2, 3].reduce((acc, i) => {
         const t = predOrder[i];
         const isExact = Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
-        if (isExact && hasUniquePickBonus(voteCountsByPos[i], t)) return acc + 1;
+        if (isExact && hasMinorityPickBonus(voteCountsByPos[i], t)) return acc + 1;
         return acc;
       }, 0);
       groupOrderBonusCount += groupBonus;

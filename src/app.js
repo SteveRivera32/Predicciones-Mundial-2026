@@ -91,6 +91,7 @@ import {
   predictionOutcomeSign,
   getUniqueOfficialOutcomeBonusSign,
   getClosestScoreBonusParticipantIds,
+  hasMinorityPickBonus,
 } from "./group-match-points.js";
 import {
   computeGeneralPredictionsScore,
@@ -355,20 +356,6 @@ function getGroupOrderVoteCountsByPosition(groupId) {
     }
   }
   return countsByPos;
-}
-
-/**
- * Bono por "único en esa posición": el equipo fue elegido por una sola persona
- * en esa posición, y hay al menos 2 votos totales en la columna.
- * @param {Map<string, number>} counts
- * @param {string} team
- */
-function hasUniquePickBonus(counts, team) {
-  if (!team) return false;
-  const teamVotes = counts.get(team) ?? 0;
-  if (teamVotes !== 1) return false;
-  const totalVotes = [...counts.values()].reduce((acc, n) => acc + n, 0);
-  return totalVotes >= 2;
 }
 
 function collectKnockoutOutcomeVotesForMatch(matchId) {
@@ -1051,7 +1038,7 @@ function computeGroupPredTablePoints(p, grp, liveOfficial) {
   const minorityBonusPts = [0, 1, 2, 3].reduce((acc, i) => {
     const t = orderArr[i];
     const isExact = Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
-    if (isExact && hasUniquePickBonus(voteCountsByPos[i], t)) return acc + 1;
+    if (isExact && hasMinorityPickBonus(voteCountsByPos[i], t)) return acc + 1;
     return acc;
   }, 0);
   return groupOrderPts + minorityBonusPts;
@@ -1647,7 +1634,7 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
             ptsCell += 1;
             badgeTitle = "Posición exacta acertada (+1)";
           }
-          if (hasOfficialData && hitExact && hasUniquePickBonus(voteCountsByPos[i], t)) {
+          if (hasOfficialData && hitExact && hasMinorityPickBonus(voteCountsByPos[i], t)) {
             bonusPtsCell += 1;
           }
           const cellPoints = ptsCell + bonusPtsCell;
@@ -1688,7 +1675,7 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
             const t = orderArr[i];
             const isExact =
               Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
-            if (isExact && hasUniquePickBonus(voteCountsByPos[i], t)) return acc + 1;
+            if (isExact && hasMinorityPickBonus(voteCountsByPos[i], t)) return acc + 1;
             return acc;
           }, 0)
         : 0;
@@ -10932,7 +10919,7 @@ function buildTeamOrderSinglePredGroupCard(grp, orderByGroup, officialSnapshot, 
           hasOfficialData && Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
         const rowBasePts = hasOfficialData && hitExact ? 1 : 0;
         const rowBonusPts =
-          hitExact && hasUniquePickBonus(voteCountsByPos[i], t) ? 1 : 0;
+          hitExact && hasMinorityPickBonus(voteCountsByPos[i], t) ? 1 : 0;
         const rowPts = rowBasePts + rowBonusPts;
         ptsCell = `<td class="team-tables-single-pts">${pointsBadgeHtml(rowPts, {
           bonus: rowBonusPts > 0,
@@ -10968,7 +10955,7 @@ function buildTeamOrderSinglePredGroupCard(grp, orderByGroup, officialSnapshot, 
     ? [0, 1, 2, 3].reduce((acc, i) => {
         const t = predOrder[i];
         const isExact = Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
-        if (isExact && hasUniquePickBonus(voteCountsByPos[i], t)) return acc + 1;
+        if (isExact && hasMinorityPickBonus(voteCountsByPos[i], t)) return acc + 1;
         return acc;
       }, 0)
     : 0;
@@ -11715,7 +11702,7 @@ function buildTeamOrderPredTableBody(orderByGroup, officialSnapshot, participant
           hasOfficialData && Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
         const rowBasePts = hasOfficialData && hitExact ? 1 : 0;
         const rowBonusPts =
-          hitExact && hasUniquePickBonus(voteCountsByPos[i], t) ? 1 : 0;
+          hitExact && hasMinorityPickBonus(voteCountsByPos[i], t) ? 1 : 0;
         const rowPts = rowBasePts + rowBonusPts;
         ptsCell = `<td class="team-order-points-cell">${pointsBadgeHtml(rowPts, {
           bonus: rowBonusPts > 0,
@@ -11751,7 +11738,7 @@ function buildTeamOrderPredTableBody(orderByGroup, officialSnapshot, participant
         ? [0, 1, 2, 3].reduce((acc, i) => {
             const t = predOrder[i];
             const isExact = Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
-            if (isExact && hasUniquePickBonus(voteCountsByPos[i], t)) return acc + 1;
+            if (isExact && hasMinorityPickBonus(voteCountsByPos[i], t)) return acc + 1;
             return acc;
           }, 0)
         : 0;
@@ -12208,7 +12195,7 @@ function buildGroupOrderRankingRows(sessionParticipantId) {
       for (let i = 0; i < 4; i++) {
         const t = predOrder[i];
         const isExact = Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
-        if (isExact && hasUniquePickBonus(voteCountsByPos[i], t)) bonusCount += 1;
+        if (isExact && hasMinorityPickBonus(voteCountsByPos[i], t)) bonusCount += 1;
       }
 
       const basePts = computeGroupOrderPoints(
