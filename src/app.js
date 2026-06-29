@@ -2392,6 +2392,7 @@ function hydratePartidosMatchPredsTable(card, session) {
   }
   tb.innerHTML = buildQuinielaPredRowsHtmlKo(mKo, session, official, isAdmin);
   delete tb.dataset.pm26PredsLazy;
+  patchQuinielaKoPredTableTeamHeaders(card, mKo, official);
   stampQuinielaCardPredictionMeta(card, mKo, session, official, true);
   wireQuinielaPredictionHandlersInScope(card, session);
   deferPartidosCardCanvasSync(card);
@@ -2576,6 +2577,42 @@ function bracketTeamLineHtml(label, opts = {}) {
     return `<div class="bracket-team-line${winCls}">${teamLabelHtml(displayLabel)}</div>`;
   }
   return `<div class="bracket-team-line bracket-team-line--seed${winCls}"><span class="bracket-slot-txt">${escapeHtml(label || "—")}</span></div>`;
+}
+
+/** @param {string} label */
+function quinielaKoPredTableTeamColParts(label) {
+  const full = String(label ?? "—");
+  const short = full.length > 22 ? `${full.slice(0, 20)}…` : full;
+  return { full, short };
+}
+
+/** Encabezado de columna local/visitante en la quiniela KO (equipos clasificados cuando ya se conocen). */
+function quinielaKoPredTableTeamTh(label) {
+  const { full, short } = quinielaKoPredTableTeamColParts(label);
+  return `<th class="quiniela-num" title="${escapeHtml(full)}">${escapeHtml(short)}</th>`;
+}
+
+/**
+ * @param {HTMLElement} card
+ * @param {ReturnType<typeof getKnockoutMatchesFlat>[number]} m
+ * @param {ReturnType<typeof loadOfficialResults>} official
+ */
+function patchQuinielaKoPredTableTeamHeaders(card, m, official) {
+  const tr = card.querySelector(".quiniela-preds thead tr");
+  if (!tr) return;
+  const { home, away } = resolveQuinielaKnockoutSlotLabels(m, official);
+  const homeTh = tr.children[1];
+  const awayTh = tr.children[2];
+  if (homeTh instanceof HTMLElement) {
+    const p = quinielaKoPredTableTeamColParts(home);
+    homeTh.title = p.full;
+    homeTh.textContent = p.short;
+  }
+  if (awayTh instanceof HTMLElement) {
+    const p = quinielaKoPredTableTeamColParts(away);
+    awayTh.title = p.full;
+    awayTh.textContent = p.short;
+  }
 }
 
 function initNavDrawer() {
@@ -3020,6 +3057,7 @@ function refreshArenaPartidosPredictionTables(session) {
     const mKo = getKnockoutMatchesFlat().find((x) => x.id === mid);
     if (mKo) {
       tb.innerHTML = buildQuinielaPredRowsHtmlKo(mKo, session, official, isAdmin);
+      patchQuinielaKoPredTableTeamHeaders(card, mKo, official);
       stampQuinielaCardPredictionMeta(card, mKo, session, official, true);
       wireQuinielaPredictionHandlersInScope(card, session);
     }
@@ -8181,8 +8219,7 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
       const pStore = loadPredictions(p.id);
       const pred = pStore.knockoutScores?.[m.id] ?? { home: "", away: "" };
       const predCommitted = pStore.knockoutScoresConfirmed?.[m.id] === true;
-      const homeName = resolveKnockoutSlotLabel(ri, mi, "home", pStore.knockoutScores ?? {});
-      const awayName = resolveKnockoutSlotLabel(ri, mi, "away", pStore.knockoutScores ?? {});
+      const { home: homeName, away: awayName } = resolveKnockoutSlotLabelsForHistory(m, official, pStore);
       const virtualM = { id: m.id, home: homeName, away: awayName };
       return { p, pred, predCommitted, virtualM };
     });
@@ -8484,14 +8521,6 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
   });
   const kickClsKo = m.kickoff ? " partidos-match-card--has-kickoff" : "";
 
-  const myPred = loadPredictions(session.participantId).knockoutScores ?? {};
-  const colHomeFull = escapeHtml(resolveKnockoutSlotLabel(ri, mi, "home", myPred));
-  const colAwayFull = escapeHtml(resolveKnockoutSlotLabel(ri, mi, "away", myPred));
-  const colHome =
-    colHomeFull.length > 20 ? `${colHomeFull.slice(0, 18)}…` : colHomeFull;
-  const colAway =
-    colAwayFull.length > 20 ? `${colAwayFull.slice(0, 18)}…` : colAwayFull;
-
   const statusBanner = koStage === "finished" && offOk
     ? `<p class="quiniela-match-status quiniela-match-status--done" role="status"><strong>Resultado oficial confirmado.</strong></p>`
     : !officialSlotsReadyForAdmin
@@ -8618,8 +8647,8 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
               <thead>
                 <tr>
                   <th>Participante</th>
-                  <th class="quiniela-num" title="${colHomeFull}">${colHome}</th>
-                  <th class="quiniela-num" title="${colAwayFull}">${colAway}</th>
+                  ${quinielaKoPredTableTeamTh(homeLab)}
+                  ${quinielaKoPredTableTeamTh(awayLab)}
                   <th class="quiniela-num quiniela-ganador-col" scope="col">Ganador</th>
                   ${quinielaPredsLastThKo}
                 </tr>
@@ -8744,6 +8773,7 @@ function patchQuinielaKoMatchPredRows(wrap, kid, focusEl, skipLightPatch = false
   const isAdmin = canEditOfficialResults(session.participantId);
   const officialNow = loadOfficialResults();
   replacePartidosPredTbody(tb, buildQuinielaPredRowsHtmlKo(m, session, officialNow, isAdmin), scrollY);
+  patchQuinielaKoPredTableTeamHeaders(card, m, officialNow);
   stampQuinielaCardPredictionMeta(card, m, session, officialNow, true);
   wireQuinielaPredictionHandlersInScope(card, session);
   deferPartidosCardCanvasSync(card);
