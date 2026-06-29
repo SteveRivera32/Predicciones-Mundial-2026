@@ -20,16 +20,38 @@ export const MAX_PODIUM = 16;
 export const INDIVIDUAL_AWARD_POINTS = 3;
 export const MAX_INDIVIDUAL_AWARDS = 9;
 
-/** +1 por clasificado directo; +1 por 3.º/4.º en posición exacta; +1 si acierta orden 1.º/2.º (BIEN); +2 si orden 1–4 exacto (EXCELENTE, total badge +3); +1 si acierta si el 3.º pasa; +1 PERFECTO (total badge +4) */
+/** +1 por 1.º/2.º en posición exacta; +1 por 3.º/4.º en posición exacta; +1 si acierta 2+ equipos en posición (BIEN); +1 si orden 1–4 exacto (EXCELENTE, total badge +2); +1 PERFECTO si orden exacto y acierto de si el 3.º pasa (total badge +3) */
 export const GROUP_PASS_POINTS = 1;
 export const GROUP_POSITION_POINTS = 1;
 export const GROUP_QUALIFIERS_ORDER_BONUS = 1;
-export const GROUP_PERFECT_ORDER_BONUS = 2;
-export const GROUP_THIRD_ADVANCE_POINTS = 1;
-/** +1 cuando el orden 1–4 es exacto y además acierta si el 3.º pasa (suma con el +1 del acierto 3.º) */
+export const GROUP_PERFECT_ORDER_BONUS = 1;
+/** +1 cuando el orden 1–4 es exacto y además acierta si el 3.º pasa */
 export const GROUP_PERFECTO_ORDER_AND_THIRD_BONUS = 1;
-export const MAX_PER_GROUP = 9;
-export const MAX_GROUPS_TOTAL = 12 * MAX_PER_GROUP; // 108
+export const MAX_PER_GROUP = 8;
+export const MAX_GROUPS_TOTAL = 12 * MAX_PER_GROUP; // 96
+
+/**
+ * @param {string[]} predictedOrder
+ * @param {string[]} officialOrder
+ */
+export function countGroupExactPositionHits(predictedOrder, officialOrder) {
+  if (!Array.isArray(predictedOrder) || !Array.isArray(officialOrder)) return 0;
+  let hits = 0;
+  for (let i = 0; i < 4; i++) {
+    if (predictedOrder[i] && officialOrder[i] && predictedOrder[i] === officialOrder[i]) {
+      hits += 1;
+    }
+  }
+  return hits;
+}
+
+/**
+ * @param {string[]} predictedOrder
+ * @param {string[]} officialOrder
+ */
+export function hasGroupOrderBienBadge(predictedOrder, officialOrder) {
+  return countGroupExactPositionHits(predictedOrder, officialOrder) >= 2;
+}
 
 /**
  * Calcula puntos de orden de grupo según reglas actuales.
@@ -51,20 +73,14 @@ export function computeGroupOrderPoints(
 
   let points = 0;
 
-  // +1 por cada clasificado directo acertado (sin importar el orden).
-  const offTop2Set = new Set(offTop2.filter(Boolean));
-  for (const team of predTop2) {
-    if (team && offTop2Set.has(team)) points += GROUP_PASS_POINTS;
-  }
-
-  // +1 por cada posición exacta de 3.º y 4.º.
-  for (let i = 2; i < 4; i++) {
+  // +1 por cada posición exacta (1.º/2.º clasificados o 3.º/4.º).
+  for (let i = 0; i < 4; i++) {
     if (
       predictedOrder[i] &&
       officialOrder[i] &&
       predictedOrder[i] === officialOrder[i]
     ) {
-      points += GROUP_POSITION_POINTS;
+      points += i < 2 ? GROUP_PASS_POINTS : GROUP_POSITION_POINTS;
     }
   }
 
@@ -73,12 +89,12 @@ export function computeGroupOrderPoints(
     officialOrder.length >= 4 &&
     [0, 1, 2, 3].every((i) => predictedOrder[i] === officialOrder[i]);
 
-  // +1 (BIEN) si acierta el orden exacto de 1.º y 2.º.
-  if (predTop2[0] === offTop2[0] && predTop2[1] === offTop2[1]) {
+  // +1 (BIEN) si acierta al menos 2 equipos en posición exacta.
+  if (hasGroupOrderBienBadge(predictedOrder, officialOrder)) {
     points += GROUP_QUALIFIERS_ORDER_BONUS;
   }
 
-  // +2 (EXCELENTE) por orden completo exacto del grupo (total badge +3 con BIEN).
+  // +1 (EXCELENTE) por orden completo exacto del grupo (total badge +2 con BIEN).
   if (fullOrderHit) {
     points += GROUP_PERFECT_ORDER_BONUS;
   }
@@ -88,12 +104,7 @@ export function computeGroupOrderPoints(
     (officialThirdAdvances === true || officialThirdAdvances === false) &&
     predictedThirdAdvances === officialThirdAdvances;
 
-  // +1 por acertar si el 3.º predicho pasa como mejor tercero.
-  if (thirdAdvanceHit) {
-    points += GROUP_THIRD_ADVANCE_POINTS;
-  }
-
-  // +1 (PERFECTO) si orden 1–4 exacto y acierto de si el 3.º pasa.
+  // +1 (PERFECTO) si orden 1–4 exacto y acierto de si el 3.º pasa (total badge +3 con BIEN y EXCELENTE).
   if (fullOrderHit && thirdAdvanceHit) {
     points += GROUP_PERFECTO_ORDER_AND_THIRD_BONUS;
   }

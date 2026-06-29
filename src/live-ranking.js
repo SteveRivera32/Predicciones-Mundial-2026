@@ -14,6 +14,7 @@ import {
 import {
   computeGeneralPredictionsScore,
   computeGroupOrderPoints,
+  hasGroupOrderBienBadge,
   MATCH_SCORING,
   normalizeAwardText,
 } from "./scoring-rules.js";
@@ -488,11 +489,7 @@ export function computeLiveParticipantRowsFromData(
           ? [0, 1, 2, 3].map((i) => (typeof order[i] === "string" ? order[i] : ""))
           : ["", "", "", ""];
       const predThird = pStore.groupThirdAdvances?.[grp.id];
-      const top2InExactOrder =
-        Boolean(predOrder[0]) &&
-        Boolean(predOrder[1]) &&
-        predOrder[0] === officialOrder[0] &&
-        predOrder[1] === officialOrder[1];
+      const groupOrderBienEligible = hasGroupOrderBienBadge(predOrder, officialOrder);
       const fullOrderHit = [0, 1, 2, 3].every(
         (i) => Boolean(predOrder[i]) && Boolean(officialOrder[i]) && predOrder[i] === officialOrder[i],
       );
@@ -502,7 +499,7 @@ export function computeLiveParticipantRowsFromData(
         predThird === officialThird;
       if (fullOrderHit && thirdAdvanceHit) groupOrderPerfectCount += 1;
       else if (fullOrderHit) groupOrderExcelenteCount += 1;
-      else if (top2InExactOrder) groupOrderBienCount += 1;
+      else if (groupOrderBienEligible) groupOrderBienCount += 1;
 
       const voteCountsByPos = getGroupOrderVoteCountsByPositionFromMap(grp.id, participants, predictionsMap);
       const groupBonus = [0, 1, 2, 3].reduce((acc, i) => {

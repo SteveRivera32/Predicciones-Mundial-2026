@@ -97,6 +97,7 @@ import {
   GROUP_PERFECTO_ORDER_AND_THIRD_BONUS,
   GROUP_PERFECT_ORDER_BONUS,
   GROUP_QUALIFIERS_ORDER_BONUS,
+  hasGroupOrderBienBadge,
   INDIVIDUAL_AWARD_POINTS,
   MAX_PER_GROUP,
   MATCH_SCORING,
@@ -1599,12 +1600,8 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
       const thirdP = pred.groupThirdAdvances?.[grp.id];
       const thirdTxt = thirdP === true ? "✓" : thirdP === false ? "✕" : "—";
       const officialQualifiers = new Set([officialOrder[0], officialOrder[1]].filter(Boolean));
-      const top2InExactOrder =
-        hasOfficialData &&
-        Boolean(orderArr[0]) &&
-        Boolean(orderArr[1]) &&
-        orderArr[0] === officialOrder[0] &&
-        orderArr[1] === officialOrder[1];
+      const groupOrderBienEligible =
+        hasOfficialData && hasGroupOrderBienBadge(orderArr, officialOrder);
       const fullOrderHit =
         hasOfficialData &&
         [0, 1, 2, 3].every(
@@ -1642,10 +1639,7 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
           let ptsCell = 0;
           let bonusPtsCell = 0;
           let badgeTitle = "";
-          if (hasOfficialData && i < 2 && Boolean(t) && officialQualifiers.has(t)) {
-            ptsCell += 1;
-            badgeTitle = "Clasificado directo acertado (+1)";
-          } else if (hasOfficialData && hitExact && i >= 2) {
+          if (hasOfficialData && hitExact) {
             ptsCell += 1;
             badgeTitle = "Posición exacta acertada (+1)";
           }
@@ -1694,7 +1688,7 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
             return acc;
           }, 0)
         : 0;
-      /** Solo puntos del bloque «orden del grupo» (máx. 9); la quiniela por partido se ve en su pestaña. */
+      /** Solo puntos del bloque «orden del grupo» (máx. 8); la quiniela por partido se ve en su pestaña. */
       const groupPts = groupOrderPts + minorityBonusPts;
 
       return {
@@ -1703,7 +1697,7 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
         thirdCellClass,
         thirdTxt,
         thirdHit,
-        top2InExactOrder,
+        groupOrderBienEligible,
         fullOrderHit,
         groupPts,
       };
@@ -1713,7 +1707,7 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
 
   const participantRows = groupParticipantRowData
     .map((row) => {
-      const { p, posCells, thirdCellClass, thirdTxt, thirdHit, top2InExactOrder, fullOrderHit, groupPts } = row;
+      const { p, posCells, thirdCellClass, thirdTxt, thirdHit, groupOrderBienEligible, fullOrderHit, groupPts } = row;
       const hasSubmission = participantHasGroupOrderSubmission(p, grp.id);
       const rowClasses = [
         "group-preds-row",
@@ -1727,15 +1721,15 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
       let orderBonusUnderName = "";
       if (hasOfficialData && fullOrderHit && thirdHit) {
         orderBonusUnderName = `<div class="quiniela-perfect-inline group-preds-order-bonus-inline" role="status" aria-label="Orden completo y acierto 3.º pasa"><span class="group-preds-perfecto-label">Perfecto</span>${pointsBadgeHtml(perfectOrderPts + GROUP_PERFECTO_ORDER_AND_THIRD_BONUS, {
-          title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden de 1.º y 2.º, +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo y +${GROUP_PERFECTO_ORDER_AND_THIRD_BONUS} por acierto de 3.º pasa`,
+          title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por 2 equipos en posición exacta, +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo y +${GROUP_PERFECTO_ORDER_AND_THIRD_BONUS} por acierto de 3.º pasa`,
         })}</div>`;
       } else if (hasOfficialData && fullOrderHit) {
         orderBonusUnderName = `<div class="quiniela-perfect-inline group-preds-order-bonus-inline" role="status" aria-label="Orden 1.º a 4.º exacto"><span class="group-preds-excelente-label">Excelente</span>${pointsBadgeHtml(perfectOrderPts, {
-          title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden de 1.º y 2.º y +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo`,
+          title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por 2 equipos en posición exacta y +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo`,
         })}</div>`;
-      } else if (hasOfficialData && top2InExactOrder) {
-        orderBonusUnderName = `<div class="quiniela-perfect-inline group-preds-order-bonus-inline" role="status" aria-label="Orden de 1.º y 2.º correcto"><span class="group-preds-bien-label">Bien</span>${pointsBadgeHtml(GROUP_QUALIFIERS_ORDER_BONUS, {
-          title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden correcto de 1.º y 2.º`,
+      } else if (hasOfficialData && groupOrderBienEligible) {
+        orderBonusUnderName = `<div class="quiniela-perfect-inline group-preds-order-bonus-inline" role="status" aria-label="2 equipos en posición exacta"><span class="group-preds-bien-label">Bien</span>${pointsBadgeHtml(GROUP_QUALIFIERS_ORDER_BONUS, {
+          title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por 2 equipos en posición exacta`,
         })}</div>`;
       }
       const ptsTdClass =
@@ -1753,7 +1747,6 @@ function buildGroupPredictionsTableHtml(grp, currentParticipantId) {
         <td class="${thirdCellClass}">
           <div class="group-preds-cell-wrap group-preds-cell-wrap--center">
             ${thirdTxt}
-            ${pointsBadgeHtml(thirdHit ? 1 : 0, { title: "Acierto: 3.º pasa / no pasa" })}
           </div>
         </td>
         <td class="${ptsTdClass}"><div class="group-preds-pts-cell">${groupPts}</div></td>
@@ -10857,13 +10850,8 @@ function buildTeamOrderSinglePredGroupCard(grp, orderByGroup, officialSnapshot, 
   const order = Array.isArray(orderByGroup?.[grp.id]) ? orderByGroup[grp.id] : [];
   const predOrder = [0, 1, 2, 3].map((i) => (typeof order[i] === "string" ? order[i] : ""));
   const predThird = pStore.groupThirdAdvances?.[grp.id];
-  const officialQualifiers = new Set([officialOrder[0], officialOrder[1]].filter(Boolean));
-  const top2InExactOrder =
-    hasOfficialData &&
-    Boolean(predOrder[0]) &&
-    Boolean(predOrder[1]) &&
-    predOrder[0] === officialOrder[0] &&
-    predOrder[1] === officialOrder[1];
+  const groupOrderBienEligible =
+    hasOfficialData && hasGroupOrderBienBadge(predOrder, officialOrder);
   const fullOrderHit =
     hasOfficialData &&
     [0, 1, 2, 3].every(
@@ -10879,15 +10867,15 @@ function buildTeamOrderSinglePredGroupCard(grp, orderByGroup, officialSnapshot, 
   if (withPts) {
     if (fullOrderHit && thirdAdvanceHit) {
       groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-perfecto-label">Perfecto</span>${pointsBadgeHtml(perfectOrderPts + GROUP_PERFECTO_ORDER_AND_THIRD_BONUS, {
-        title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden de 1.º y 2.º, +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo y +${GROUP_PERFECTO_ORDER_AND_THIRD_BONUS} por acierto de 3.º pasa`,
+        title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por 2 equipos en posición exacta, +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo y +${GROUP_PERFECTO_ORDER_AND_THIRD_BONUS} por acierto de 3.º pasa`,
       })}</span>`;
     } else if (fullOrderHit) {
       groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-excelente-label">Excelente</span>${pointsBadgeHtml(perfectOrderPts, {
-        title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden de 1.º y 2.º y +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo`,
+        title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por 2 equipos en posición exacta y +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo`,
       })}</span>`;
-    } else if (top2InExactOrder) {
+    } else if (groupOrderBienEligible) {
       groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-bien-label">Bien</span>${pointsBadgeHtml(GROUP_QUALIFIERS_ORDER_BONUS, {
-        title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden correcto de 1.º y 2.º`,
+        title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por 2 equipos en posición exacta`,
       })}</span>`;
     }
   }
@@ -10899,12 +10887,7 @@ function buildTeamOrderSinglePredGroupCard(grp, orderByGroup, officialSnapshot, 
       if (withPts) {
         const hitExact =
           hasOfficialData && Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
-        const rowBasePts =
-          hasOfficialData && i < 2 && Boolean(t) && officialQualifiers.has(t)
-            ? 1
-            : hitExact && i >= 2
-              ? 1
-              : 0;
+        const rowBasePts = hasOfficialData && hitExact ? 1 : 0;
         const rowBonusPts =
           hitExact && hasUniquePickBonus(voteCountsByPos[i], t) ? 1 : 0;
         const rowPts = rowBasePts + rowBonusPts;
@@ -10915,9 +10898,9 @@ function buildTeamOrderSinglePredGroupCard(grp, orderByGroup, officialSnapshot, 
               ? rowBasePts > 0
                 ? "Acierto en posición con bono por minoría (+1 base +1 bono)"
                 : "Acierto en posición con bono por minoría (+1 bono)"
-              : rowBasePts > 0 && i >= 2
+              : rowBasePts > 0
                 ? "Posición exacta acertada (+1)"
-                : "Clasificado directo acertado (+1)",
+                : "",
         }) || '<span class="muted">—</span>'}</td>`;
       }
       return `
@@ -11642,13 +11625,8 @@ function buildTeamOrderPredTableBody(orderByGroup, officialSnapshot, participant
     const order = Array.isArray(orderByGroup?.[grp.id]) ? orderByGroup[grp.id] : [];
     const predOrder = [0, 1, 2, 3].map((i) => (typeof order[i] === "string" ? order[i] : ""));
     const predThird = pStore.groupThirdAdvances?.[grp.id];
-    const officialQualifiers = new Set([officialOrder[0], officialOrder[1]].filter(Boolean));
-    const top2InExactOrder =
-      hasOfficialData &&
-      Boolean(predOrder[0]) &&
-      Boolean(predOrder[1]) &&
-      predOrder[0] === officialOrder[0] &&
-      predOrder[1] === officialOrder[1];
+    const groupOrderBienEligible =
+      hasOfficialData && hasGroupOrderBienBadge(predOrder, officialOrder);
     const fullOrderHit =
       hasOfficialData &&
       [0, 1, 2, 3].every(
@@ -11667,15 +11645,15 @@ function buildTeamOrderPredTableBody(orderByGroup, officialSnapshot, participant
     if (withPts) {
       if (fullOrderHit && thirdAdvanceHit) {
         groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-perfecto-label">Perfecto</span>${pointsBadgeHtml(perfectOrderPts + GROUP_PERFECTO_ORDER_AND_THIRD_BONUS, {
-          title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden de 1.º y 2.º, +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo y +${GROUP_PERFECTO_ORDER_AND_THIRD_BONUS} por acierto de 3.º pasa`,
+          title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por 2 equipos en posición exacta, +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo y +${GROUP_PERFECTO_ORDER_AND_THIRD_BONUS} por acierto de 3.º pasa`,
         })}</span>`;
       } else if (fullOrderHit) {
         groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-excelente-label">Excelente</span>${pointsBadgeHtml(perfectOrderPts, {
-          title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden de 1.º y 2.º y +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo`,
+          title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por 2 equipos en posición exacta y +${GROUP_PERFECT_ORDER_BONUS} por el grupo completo`,
         })}</span>`;
-      } else if (top2InExactOrder) {
+      } else if (groupOrderBienEligible) {
         groupBadge = `<span class="team-order-inline-bonus"><span class="group-preds-bien-label">Bien</span>${pointsBadgeHtml(GROUP_QUALIFIERS_ORDER_BONUS, {
-          title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por orden correcto de 1.º y 2.º`,
+          title: `+${GROUP_QUALIFIERS_ORDER_BONUS} por 2 equipos en posición exacta`,
         })}</span>`;
       }
     }
@@ -11692,12 +11670,7 @@ function buildTeamOrderPredTableBody(orderByGroup, officialSnapshot, participant
       if (withPts) {
         const hitExact =
           hasOfficialData && Boolean(t) && Boolean(officialOrder[i]) && t === officialOrder[i];
-        const rowBasePts =
-          hasOfficialData && i < 2 && Boolean(t) && officialQualifiers.has(t)
-            ? 1
-            : hitExact && i >= 2
-              ? 1
-              : 0;
+        const rowBasePts = hasOfficialData && hitExact ? 1 : 0;
         const rowBonusPts =
           hitExact && hasUniquePickBonus(voteCountsByPos[i], t) ? 1 : 0;
         const rowPts = rowBasePts + rowBonusPts;
@@ -11708,9 +11681,9 @@ function buildTeamOrderPredTableBody(orderByGroup, officialSnapshot, participant
               ? rowBasePts > 0
                 ? "Acierto en posición con bono por minoría (+1 base +1 bono)"
                 : "Acierto en posición con bono por minoría (+1 bono)"
-              : rowBasePts > 0 && i >= 2
+              : rowBasePts > 0
                 ? "Posición exacta acertada (+1)"
-                : "Clasificado directo acertado (+1)",
+                : "",
         }) || '<span class="muted">—</span>'}</td>`;
       }
       rows.push(`
@@ -12171,11 +12144,7 @@ function buildGroupOrderRankingRows(sessionParticipantId) {
           : ["", "", "", ""];
       const predThird = pStore.groupThirdAdvances?.[grp.id];
 
-      const top2InExactOrder =
-        Boolean(predOrder[0]) &&
-        Boolean(predOrder[1]) &&
-        predOrder[0] === officialOrder[0] &&
-        predOrder[1] === officialOrder[1];
+      const groupOrderBienEligible = hasGroupOrderBienBadge(predOrder, officialOrder);
       const fullOrderHit = [0, 1, 2, 3].every(
         (i) => Boolean(predOrder[i]) && Boolean(officialOrder[i]) && predOrder[i] === officialOrder[i],
       );
@@ -12189,7 +12158,7 @@ function buildGroupOrderRankingRows(sessionParticipantId) {
         perfectoBonusCount += 1;
       } else if (fullOrderHit) {
         excelenteCount += 1;
-      } else if (top2InExactOrder) {
+      } else if (groupOrderBienEligible) {
         bienCount += 1;
       }
 
@@ -12245,19 +12214,19 @@ function buildGroupOrderRankingRows(sessionParticipantId) {
         )}
         ${groupOrderRankingStatCell(
           r.bienCount,
-          "BIEN: grupos con 1.º y 2.º en orden exacto (+1).",
+          "BIEN: grupos con al menos 2 equipos en posición exacta (+1).",
           maxBien > 0 && r.bienCount === maxBien,
           "bien",
         )}
         ${groupOrderRankingStatCell(
           r.excelenteCount,
-          "EXCELENTE: grupos con orden 1.º a 4.º exacto (+2, total badge +3).",
+          "EXCELENTE: grupos con orden 1.º a 4.º exacto (+1, total badge +2).",
           maxExcelente > 0 && r.excelenteCount === maxExcelente,
           "excelente",
         )}
         ${groupOrderRankingStatCell(
           r.perfectoBonusCount,
-          "PERFECTO: grupos con orden completo y acierto de si el 3.º pasa (+1, total badge +4).",
+          "PERFECTO: grupos con orden completo y acierto de si el 3.º pasa (+1, total badge +3).",
           maxPerfecto > 0 && r.perfectoBonusCount === maxPerfecto,
           "perfecto",
         )}
