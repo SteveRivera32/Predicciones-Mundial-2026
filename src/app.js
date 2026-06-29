@@ -2382,13 +2382,7 @@ function hydratePartidosMatchPredsTable(card, session) {
   }
   const mKo = getKnockoutMatchesFlat().find((x) => x.id === mid);
   if (!mKo) return;
-  const { ri, mi } = getKoRoundMatchIndex(mKo.id);
-  const labelScores = allFilledOfficialKnockoutScores(official);
-  const liveR32SlotMap = ri === KNOCKOUT_PHASE_ROUND_INDEX.r32 ? buildLiveR32SlotMap() : null;
-  const homeLab =
-    liveR32SlotMap?.[`${mKo.id}:home`] ?? resolveKnockoutSlotLabel(ri, mi, "home", labelScores);
-  const awayLab =
-    liveR32SlotMap?.[`${mKo.id}:away`] ?? resolveKnockoutSlotLabel(ri, mi, "away", labelScores);
+  const { home: homeLab, away: awayLab } = resolveQuinielaKnockoutSlotLabels(mKo, official);
   hydratePartidosMatchVoteBars(card, homeLab, awayLab, mKo.id, true, mKo.roundId);
   const tb = card.querySelector(".quiniela-preds tbody");
   if (!(tb instanceof HTMLElement) || tb.dataset.pm26PredsLazy !== "1") {
@@ -2453,6 +2447,32 @@ function getKoRoundMatchIndex(matchId) {
     if (mi >= 0) return { ri, mi };
   }
   return { ri: 0, mi: 0 };
+}
+
+/**
+ * Etiquetas de equipos para un cruce KO en Partidos/Quiniela (16vos desde grupos en vivo + eliminatoria).
+ * @param {ReturnType<typeof getKnockoutMatchesFlat>[number]} m
+ * @param {ReturnType<typeof loadOfficialResults>} official
+ * @returns {{ home: string, away: string }}
+ */
+function resolveQuinielaKnockoutSlotLabels(m, official) {
+  const { ri, mi } = getKoRoundMatchIndex(m.id);
+  const labelScores = allFilledOfficialKnockoutScores(official);
+  const liveR32SlotMap = ri === KNOCKOUT_PHASE_ROUND_INDEX.r32 ? buildLiveR32SlotMap() : null;
+  return {
+    home:
+      liveR32SlotMap?.[`${m.id}:home`] ??
+      resolveKnockoutSlotLabel(ri, mi, "home", labelScores),
+    away:
+      liveR32SlotMap?.[`${m.id}:away`] ??
+      resolveKnockoutSlotLabel(ri, mi, "away", labelScores),
+  };
+}
+
+/** @param {ReturnType<typeof getKnockoutMatchesFlat>[number]} m @param {ReturnType<typeof loadOfficialResults>} official */
+function areQuinielaKnockoutSlotsDecided(m, official) {
+  const { home, away } = resolveQuinielaKnockoutSlotLabels(m, official);
+  return isQuinielaTeamSlotDecided(home) && isQuinielaTeamSlotDecided(away);
 }
 
 /**
@@ -2714,15 +2734,9 @@ function isPartidosPredictionsCompleteForUser(participantId, official) {
     const predCommitted = pStore.groupScoresConfirmed?.[m.id] === true;
     if (!predictionsLocked && !predCommitted) return false;
   }
-  const labelScoresKo = allFilledOfficialKnockoutScores(official);
   for (const m of getKnockoutMatchesFlat()) {
     const predictionsLocked = isKoMatchPredictionsLocked(official, m);
-    const { ri, mi } = getKoRoundMatchIndex(m.id);
-    const koOfficialHome = resolveKnockoutSlotLabel(ri, mi, "home", labelScoresKo);
-    const koOfficialAway = resolveKnockoutSlotLabel(ri, mi, "away", labelScoresKo);
-    const koOfficialSlotsDecided =
-      isQuinielaTeamSlotDecided(koOfficialHome) && isQuinielaTeamSlotDecided(koOfficialAway);
-    if (!koOfficialSlotsDecided) continue;
+    if (!areQuinielaKnockoutSlotsDecided(m, official)) continue;
     const predCommitted = pStore.knockoutScoresConfirmed?.[m.id] === true;
     if (!predictionsLocked && !predCommitted) return false;
   }
@@ -8026,11 +8040,7 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
   const showPtsColumn = koStage !== "ready";
 
   const { ri, mi } = getKoRoundMatchIndex(m.id);
-  const labelScoresKo = allFilledOfficialKnockoutScores(official);
-  const koOfficialHome = resolveKnockoutSlotLabel(ri, mi, "home", labelScoresKo);
-  const koOfficialAway = resolveKnockoutSlotLabel(ri, mi, "away", labelScoresKo);
-  const koOfficialSlotsDecided =
-    isQuinielaTeamSlotDecided(koOfficialHome) && isQuinielaTeamSlotDecided(koOfficialAway);
+  const koOfficialSlotsDecided = areQuinielaKnockoutSlotsDecided(m, official);
   const koSlotsReadyForEdit = koOfficialSlotsDecided || canEditAll;
   const preliminary = getParticipantsForListDisplay(
     session.participantId,
@@ -8308,15 +8318,8 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
   const accOpenAttr = openAccordionMatchIds?.has(m.id) ? " open" : "";
   const canForceUndecidedMatches = canEditAllParticipantsPredictions(session.participantId);
   const { ri, mi } = getKoRoundMatchIndex(m.id);
-  const labelScores = allFilledOfficialKnockoutScores(official);
-  const liveR32SlotMap = ri === KNOCKOUT_PHASE_ROUND_INDEX.r32 ? buildLiveR32SlotMap() : null;
-  const homeLab =
-    liveR32SlotMap?.[`${m.id}:home`] ??
-    resolveKnockoutSlotLabel(ri, mi, "home", labelScores);
-  const awayLab =
-    liveR32SlotMap?.[`${m.id}:away`] ??
-    resolveKnockoutSlotLabel(ri, mi, "away", labelScores);
-  const officialSlotsDecided = isQuinielaTeamSlotDecided(homeLab) && isQuinielaTeamSlotDecided(awayLab);
+  const { home: homeLab, away: awayLab } = resolveQuinielaKnockoutSlotLabels(m, official);
+  const officialSlotsDecided = areQuinielaKnockoutSlotsDecided(m, official);
   const officialSlotsReadyForAdmin = officialSlotsDecided || canForceUndecidedMatches;
   const off = official.knockoutScores?.[m.id] ?? { home: "", away: "" };
   const koStage = official.knockoutMatchState?.[m.id] ?? "ready";
@@ -8866,13 +8869,11 @@ function bindPartidosAdminHandlers(scope, session) {
       if (!kid) return;
       const o = loadOfficialResults();
       if ((o.knockoutMatchState?.[kid] ?? "ready") !== "started") return;
-      const { ri, mi } = getKoRoundMatchIndex(kid);
-      const labelO = allFilledOfficialKnockoutScores(o);
-      const oh = resolveKnockoutSlotLabel(ri, mi, "home", labelO);
-      const oa = resolveKnockoutSlotLabel(ri, mi, "away", labelO);
+      const mKoConfirm = getKnockoutMatchesFlat().find((x) => x.id === kid);
       const canForceUndecidedMatches2 = canEditAllParticipantsPredictions(session.participantId);
       if (
-        (!isQuinielaTeamSlotDecided(oh) || !isQuinielaTeamSlotDecided(oa)) &&
+        mKoConfirm &&
+        !areQuinielaKnockoutSlotsDecided(mKoConfirm, o) &&
         !canForceUndecidedMatches2
       ) {
         return;
@@ -8899,13 +8900,11 @@ function bindPartidosAdminHandlers(scope, session) {
       if (!kid) return;
       const o = loadOfficialResults();
       if ((o.knockoutMatchState?.[kid] ?? "ready") !== "ready") return;
-      const { ri, mi } = getKoRoundMatchIndex(kid);
-      const labelO = allFilledOfficialKnockoutScores(o);
-      const oh = resolveKnockoutSlotLabel(ri, mi, "home", labelO);
-      const oa = resolveKnockoutSlotLabel(ri, mi, "away", labelO);
+      const mKoStart = getKnockoutMatchesFlat().find((x) => x.id === kid);
       const canForceUndecidedMatches3 = canEditAllParticipantsPredictions(session.participantId);
       if (
-        (!isQuinielaTeamSlotDecided(oh) || !isQuinielaTeamSlotDecided(oa)) &&
+        mKoStart &&
+        !areQuinielaKnockoutSlotsDecided(mKoStart, o) &&
         !canForceUndecidedMatches3
       ) {
         return;
@@ -9066,15 +9065,8 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const offPred = loadOfficialResults();
       if (offPred.knockoutScoresConfirmed?.[kid] === true) return;
       if (isMatchPredictionSaveBlocked(session, offPred, mKo, targetParticipantId, true)) return;
-      const { ri, mi } = getKoRoundMatchIndex(kid);
-      const labelPred = allFilledOfficialKnockoutScores(offPred);
-      const kh = resolveKnockoutSlotLabel(ri, mi, "home", labelPred);
-      const ka = resolveKnockoutSlotLabel(ri, mi, "away", labelPred);
       const canForceUndecidedMatches = canEditAllParticipantsPredictions(session.participantId);
-      if (
-        (!isQuinielaTeamSlotDecided(kh) || !isQuinielaTeamSlotDecided(ka)) &&
-        !canForceUndecidedMatches
-      ) {
+      if (!areQuinielaKnockoutSlotsDecided(mKo, offPred) && !canForceUndecidedMatches) {
         return;
       }
       const latest = loadPredictions(targetParticipantId);
@@ -9519,11 +9511,7 @@ function matchHistoryEstadoPartidoHtml(official, m) {
     const koOk = official.knockoutScoresConfirmed?.[m.id] === true;
     const koBoth = offKo.home !== "" && offKo.away !== "";
     if (koBoth && !koOk) {
-      const { ri, mi } = getKoRoundMatchIndex(m.id);
-      const lab = allFilledOfficialKnockoutScores(official);
-      const kh = resolveKnockoutSlotLabel(ri, mi, "home", lab);
-      const ka = resolveKnockoutSlotLabel(ri, mi, "away", lab);
-      if (isQuinielaTeamSlotDecided(kh) && isQuinielaTeamSlotDecided(ka)) {
+      if (areQuinielaKnockoutSlotsDecided(m, official)) {
         return enJuegoHtml();
       }
     }
