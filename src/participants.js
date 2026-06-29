@@ -155,19 +155,31 @@ export function isPrivadasArenaMirrorId(id) {
   return getPrivadasArenaMirrorParticipants().some((p) => p.id.toLowerCase() === key);
 }
 
+/** Jugadores de Predicciones Amigos excluidos del ranking «Seguidores» en Arena. */
+export const ARENA_FOLLOWERS_EXCLUDED_PARTICIPANT_IDS = [
+  "tivo",
+  "rick",
+  "jonny",
+  "ale",
+  "elcalvo",
+  "ozeb",
+  "akinian",
+];
+
+const ARENA_FOLLOWERS_EXCLUDED_ID_SET = new Set(
+  ARENA_FOLLOWERS_EXCLUDED_PARTICIPANT_IDS.map((id) => id.toLowerCase()),
+);
+
 /** @param {Participant | string | null | undefined} participantOrId */
-export function isArenaPrivadasParticipant(participantOrId) {
-  if (!isArenaMode()) return false;
-  if (participantOrId && typeof participantOrId === "object") {
-    return participantOrId.isPrivadas === true;
-  }
-  const id = String(participantOrId ?? "").trim();
-  if (!id) return false;
-  const p = getParticipants().find((x) => x.id === id);
-  return p?.isPrivadas === true;
+export function isArenaFollowersExcludedParticipant(participantOrId) {
+  const id =
+    participantOrId && typeof participantOrId === "object"
+      ? String(participantOrId.id ?? "").trim().toLowerCase()
+      : String(participantOrId ?? "").trim().toLowerCase();
+  return ARENA_FOLLOWERS_EXCLUDED_ID_SET.has(id);
 }
 
-/** Ranking Arena filtrado a jugadores registrados en Arena (excluye cuentas espejo de privadas). */
+/** Ranking Arena filtrado a jugadores registrados en Arena (excluye la quiniela privada). */
 export function isArenaFollowersRankingActive() {
   return isArenaMode() && getArenaRankingAudience() === "followers";
 }
@@ -175,7 +187,7 @@ export function isArenaFollowersRankingActive() {
 /** @param {Participant[]} participants */
 export function filterParticipantsForArenaRankingAudience(participants) {
   if (!isArenaFollowersRankingActive()) return participants;
-  return participants.filter((p) => !isArenaPrivadasParticipant(p));
+  return participants.filter((p) => !isArenaFollowersExcludedParticipant(p));
 }
 /** Administradores con permisos sobre resultados oficiales/Ajustes. */
 const OFFICIAL_RESULTS_ADMIN_IDS = new Set(["tivo", "admin"]);

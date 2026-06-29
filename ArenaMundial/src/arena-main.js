@@ -17,6 +17,7 @@ import {
 import {
   initArenaSyncPoll,
   pullArenaSync,
+  pullArenaRankings,
   markArenaBootLiteSyncDone,
 } from "./arena-sync.js";
 import { setRemoteSyncActive } from "@shared/remote-sync-flags.js";
@@ -29,6 +30,7 @@ import {
   setArenaBackupApi,
   setArenaSearchPredictions,
   bindArenaInteractionGuard,
+  setArenaPullRankings,
 } from "@shared/arena-mode.js";
 import { initApp, finishBootstrap } from "@shared/app.js";
 import { initArenaChat } from "./arena-chat.js";
@@ -76,6 +78,7 @@ async function bootstrap() {
     });
 
     setArenaSearchPredictions((q) => searchPredictions(q));
+    setArenaPullRankings(pullArenaRankings);
 
     setArenaAccountApi({
       deleteMyAccount: async () => {

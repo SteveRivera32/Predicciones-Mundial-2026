@@ -507,7 +507,8 @@ app.get("/api/arena/official", (req, res) => {
 app.get("/api/arena/rankings", requireArenaAuth, (req, res) => {
   const me = findUserById(req.userId);
   const viewerUsername = me?.username ?? "";
-  const { data, etag } = getCachedArenaRankings(viewerUsername, getArenaAggregatesCacheMs());
+  const audience = req.query.audience === "followers" ? "followers" : "all";
+  const { data, etag } = getCachedArenaRankings(viewerUsername, getArenaAggregatesCacheMs(), audience);
   res.setHeader("Cache-Control", "private, no-store");
   res.setHeader("ETag", etag);
   res.json(data);

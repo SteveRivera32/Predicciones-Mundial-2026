@@ -642,6 +642,17 @@ export function bindArenaInteractionGuard() {
 
 }
 
+/** @type {(() => Promise<void>) | null} */
+let pullRankingsFn = null;
+
+export function setArenaPullRankings(fn) {
+  pullRankingsFn = fn ?? null;
+}
+
+export function arenaPullRankings() {
+  return pullRankingsFn?.() ?? Promise.resolve();
+}
+
 const ARENA_RANKING_AUDIENCE_KEY = "pm26-arena-ranking-audience";
 
 /** @typedef {"all" | "followers"} ArenaRankingAudience */

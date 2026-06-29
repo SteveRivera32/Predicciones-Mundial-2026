@@ -23,7 +23,6 @@ import {
   isAdminParticipantId,
   ADMIN_PARTICIPANT_ID,
   filterParticipantsForArenaRankingAudience,
-  isArenaFollowersRankingActive,
 } from "./participants.js";
 import {
   loadSession,
@@ -76,6 +75,7 @@ import {
   getArenaGeneralesVoteCountsBySlot,
   setArenaRankingAudience,
   getArenaRankingAudience,
+  arenaPullRankings,
 } from "./arena-mode.js";
 import { decorateArenaNonLoginInput } from "./arena-ios-autofill.js";
 import {
@@ -319,30 +319,22 @@ function getMatchScoringForQuiniela(m) {
   return MATCH_SCORING.group;
 }
 
-/** Votos confirmados de resultado (local / empate / visitante) en un partido de grupos. */
-function participantsForArenaVoteCounts() {
-  return isArenaFollowersRankingActive()
-    ? filterParticipantsForArenaRankingAudience(getParticipantsForDisplay())
-    : getParticipantsForDisplay();
-}
-
-function useArenaServerVoteAggregates() {
-  return isArenaMode() && hasArenaMatchVoteData() && !isArenaFollowersRankingActive();
-}
-
 /** @param {string | null | undefined} sessionParticipantId */
 function getParticipantsForArenaRanking(sessionParticipantId) {
   if (!isArenaMode()) return getParticipantsForDisplay();
-  const base = isArenaFollowersRankingActive()
-    ? getParticipantsForDisplay()
-    : getParticipantsForListDisplay(sessionParticipantId);
-  return filterParticipantsForArenaRankingAudience(base);
+  return filterParticipantsForArenaRankingAudience(
+    getParticipantsForListDisplay(sessionParticipantId),
+  );
+}
+
+function useArenaServerVoteAggregates() {
+  return isArenaMode() && hasArenaMatchVoteData();
 }
 
 function collectOutcomeVotesForMatch(matchId) {
-  if (isArenaMode() && !isArenaFollowersRankingActive() && !hasArenaMatchVoteData()) return [];
+  if (isArenaMode() && !hasArenaMatchVoteData()) return [];
   const votes = [];
-  for (const part of participantsForArenaVoteCounts()) {
+  for (const part of getParticipantsForDisplay()) {
     const store = loadPredictions(part.id);
     if (store.groupScoresConfirmed?.[matchId] !== true) continue;
     const pred = store.groupScores[matchId] ?? {};
@@ -362,12 +354,12 @@ function getGroupOrderVoteCountsByPosition(groupId) {
   if (useArenaServerVoteAggregates()) {
     return getArenaGroupOrderVoteCountsByPosition(groupId);
   }
-  if (isArenaMode() && !isArenaFollowersRankingActive()) {
+  if (isArenaMode()) {
     return [new Map(), new Map(), new Map(), new Map()];
   }
   /** @type {Map<string, number>[]} */
   const countsByPos = [new Map(), new Map(), new Map(), new Map()];
-  for (const part of participantsForArenaVoteCounts()) {
+  for (const part of getParticipantsForDisplay()) {
     const store = loadPredictions(part.id);
     const ord = store.groupOrder?.[groupId];
     if (!Array.isArray(ord) || ord.length < 4) continue;
@@ -382,9 +374,9 @@ function getGroupOrderVoteCountsByPosition(groupId) {
 }
 
 function collectKnockoutOutcomeVotesForMatch(matchId) {
-  if (isArenaMode() && !isArenaFollowersRankingActive() && !hasArenaMatchVoteData()) return [];
+  if (isArenaMode() && !hasArenaMatchVoteData()) return [];
   const votes = [];
-  for (const part of participantsForArenaVoteCounts()) {
+  for (const part of getParticipantsForDisplay()) {
     const store = loadPredictions(part.id);
     if (store.knockoutScoresConfirmed?.[matchId] !== true) continue;
     const pred = store.knockoutScores?.[matchId] ?? {};
@@ -418,7 +410,7 @@ function getKnockoutPenaltyVoteCounts(matchId) {
 function collectKnockoutPenaltyVotesForMatch(matchId) {
   /** @type {{ home: number, away: number }} */
   const counts = { home: 0, away: 0 };
-  for (const part of participantsForArenaVoteCounts()) {
+  for (const part of getParticipantsForDisplay()) {
     const store = loadPredictions(part.id);
     if (store.knockoutScoresConfirmed?.[matchId] !== true) continue;
     const pred = store.knockoutScores?.[matchId] ?? {};
@@ -544,10 +536,10 @@ function getImprobableOutcomeSignForKoMatch(matchId, officialScore) {
 
 /** Predicciones confirmadas con marcador completo en un partido. */
 function collectCommittedMatchScoreEntries(matchId, isKo) {
-  if (isArenaMode() && !isArenaFollowersRankingActive() && !hasArenaMatchVoteData()) return [];
+  if (isArenaMode() && !hasArenaMatchVoteData()) return [];
   /** @type {Array<{ id: string, pred: { home: unknown, away: unknown } }>} */
   const entries = [];
-  for (const part of participantsForArenaVoteCounts()) {
+  for (const part of getParticipantsForDisplay()) {
     const store = loadPredictions(part.id);
     const confirmed = isKo
       ? store.knockoutScoresConfirmed?.[matchId] === true
@@ -753,7 +745,7 @@ function ensureArenaRankingAudienceToggle(bar) {
 }
 
 function arenaRankingsHintText() {
-  if (!isArenaMode() || isArenaFollowersRankingActive()) return "";
+  if (!isArenaMode()) return "";
   const data = getArenaServerRankings();
   if (!data?.truncated || data.totalUsers <= data.limit) return "";
   const hasSelfOutsideTop = data.rows?.some((r) => r.self && Number(r.rank) > Number(data.limit));
@@ -907,21 +899,10 @@ function sortRankingRows(rows) {
 
 /** @param {string | null | undefined} currentParticipantId */
 function getLiveRankingRows(currentParticipantId) {
-  if (isArenaMode() && !isArenaFollowersRankingActive()) {
+  if (isArenaMode()) {
     const serverRows = mapArenaServerRankingRows(currentParticipantId);
     if (serverRows) return serverRows;
     return [];
-  }
-  if (isArenaMode()) {
-    return sortRankingRows(
-      computeLiveParticipantRowsFromData(
-        filterParticipantsForArenaRankingAudience(getParticipantsForDisplay()),
-        getAllPredictionsMap(),
-        loadOfficialResults(),
-        currentParticipantId,
-        { arenaScoring: true },
-      ),
-    );
   }
   return sortRankingRows(
     computeLiveParticipantRowsFromData(
@@ -3251,8 +3232,10 @@ function initParticipantSearch(onSearchChange) {
     if (getArenaRankingAudience() === mode) return;
     setArenaRankingAudience(mode);
     syncArenaRankingAudienceButtons();
-    syncArenaTruncationHints();
-    runGlobalRankingsRefresh(loadSession());
+    void arenaPullRankings().then(() => {
+      syncArenaTruncationHints();
+      runGlobalRankingsRefresh(loadSession());
+    });
   });
 }
 

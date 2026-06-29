@@ -3,33 +3,45 @@
  */
 
 import { ARENA_RANKINGS_DISPLAY_LIMIT } from "../../src/live-ranking.js";
+import { isArenaFollowersExcludedParticipant } from "../../src/participants.js";
 import { getCachedArenaAggregates, invalidateArenaAggregatesCache } from "./arena-aggregates.mjs";
 
 const RANKINGS_LIMIT = Number(process.env.ARENA_RANKINGS_LIMIT || ARENA_RANKINGS_DISPLAY_LIMIT);
 
 /**
+ * @param {Array<Record<string, unknown>>} sorted
+ * @param {"all"|"followers"} audience
+ */
+function filterSortedForAudience(sorted, audience) {
+  if (audience !== "followers") return sorted;
+  return sorted.filter((r) => !isArenaFollowersExcludedParticipant(r.p.id));
+}
+
+/**
  * @param {string | null | undefined} viewerUsername
  * @param {number} cacheMs
+ * @param {"all"|"followers"} [audience]
  */
-export function getCachedArenaRankings(viewerUsername, cacheMs) {
+export function getCachedArenaRankings(viewerUsername, cacheMs, audience = "all") {
   const cached = getCachedArenaAggregates(cacheMs);
   const viewer = String(viewerUsername ?? "");
   const lim = Math.max(1, RANKINGS_LIMIT);
-  const top = cached.sorted.slice(0, lim);
+  const filtered = filterSortedForAudience(cached.sorted, audience);
+  const top = filtered.slice(0, lim);
   const topIds = new Set(top.map((r) => r.p.id));
-  const viewerRow = viewer ? cached.sorted.find((r) => r.p.id === viewer) : null;
+  const viewerRow = viewer ? filtered.find((r) => r.p.id === viewer) : null;
   const rows =
     viewerRow && !topIds.has(viewerRow.p.id) ? [...top, viewerRow] : top;
 
   return {
     etag: cached.etag,
     data: {
-      totalUsers: cached.totalUsers,
+      totalUsers: filtered.length,
       limit: lim,
-      truncated: cached.totalUsers > lim,
+      truncated: filtered.length > lim,
       matchVoteData: cached.matchVoteData,
       rows: rows.map((r) => {
-        const globalRank = cached.sorted.findIndex((x) => x.p.id === r.p.id) + 1;
+        const globalRank = filtered.findIndex((x) => x.p.id === r.p.id) + 1;
         return {
           rank: globalRank,
           username: r.p.id,
