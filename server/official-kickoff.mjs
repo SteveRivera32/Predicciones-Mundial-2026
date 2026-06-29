@@ -5,51 +5,16 @@
 
 import { normalizeOfficialResultsData } from "../src/official-results-store.js";
 import {
-  GROUP_MATCHES,
-  getKnockoutMatchesFlat,
-  isPlaceholderTeam,
-  normalizeTeamName,
-  resolveKnockoutSlotLabel,
-  KNOCKOUT_ROUNDS,
-  GROUPS,
-} from "../src/tournament.js";
-
-const BRACKET_KNOWN_TEAMS = new Set(GROUPS.flatMap((g) => g.teams));
+  areQuinielaKnockoutSlotsDecided,
+  isQuinielaTeamSlotDecided,
+} from "../src/quiniela-knockout-slots.js";
+import { GROUP_MATCHES, getKnockoutMatchesFlat } from "../src/tournament.js";
 
 /** @param {string | null | undefined} isoKickoff */
 function isPastKickoff(isoKickoff) {
   if (!isoKickoff) return false;
   const t = Date.parse(isoKickoff);
   return !Number.isNaN(t) && Date.now() >= t;
-}
-
-/** @param {unknown} teamName */
-function isQuinielaTeamSlotDecided(teamName) {
-  const name = normalizeTeamName(teamName);
-  return BRACKET_KNOWN_TEAMS.has(name) && !isPlaceholderTeam(name);
-}
-
-/** @param {string} matchId */
-function getKoRoundMatchIndex(matchId) {
-  for (let ri = 0; ri < KNOCKOUT_ROUNDS.length; ri++) {
-    const mi = KNOCKOUT_ROUNDS[ri].matches.findIndex((x) => x.id === matchId);
-    if (mi >= 0) return { ri, mi };
-  }
-  return { ri: -1, mi: -1 };
-}
-
-/** @param {ReturnType<typeof normalizeOfficialResultsData>} official */
-function allFilledOfficialKnockoutScores(official) {
-  /** @type {Record<string, { home: number|string|"", away: number|string|"" }>} */
-  const out = {};
-  const scores = official.knockoutScores ?? {};
-  for (const round of KNOCKOUT_ROUNDS) {
-    for (const m of round.matches) {
-      const s = scores[m.id];
-      if (s && s.home !== "" && s.away !== "") out[m.id] = s;
-    }
-  }
-  return out;
 }
 
 /**
@@ -76,14 +41,9 @@ export function applyServerKickoffStarts(readOfficial, writeOfficial) {
     groupScores[m.id] = { home: 0, away: 0 };
   }
 
-  const labelO = allFilledOfficialKnockoutScores(official);
   for (const m of getKnockoutMatchesFlat()) {
     if (!isPastKickoff(m.kickoff)) continue;
-    const { ri, mi } = getKoRoundMatchIndex(m.id);
-    if (ri < 0) continue;
-    const oh = resolveKnockoutSlotLabel(ri, mi, "home", labelO);
-    const oa = resolveKnockoutSlotLabel(ri, mi, "away", labelO);
-    if (!isQuinielaTeamSlotDecided(oh) || !isQuinielaTeamSlotDecided(oa)) continue;
+    if (!areQuinielaKnockoutSlotsDecided(m, official)) continue;
     if ((official.knockoutMatchState?.[m.id] ?? "ready") !== "ready") continue;
     knockoutMatchState[m.id] = "started";
     knockoutScores[m.id] = { home: 0, away: 0, penaltyWinner: "" };

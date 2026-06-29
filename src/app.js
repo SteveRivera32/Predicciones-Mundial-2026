@@ -129,9 +129,7 @@ import {
   KNOCKOUT_PHASE_ROUND_INDEX,
   knockoutRoundRequiresPenaltyPickOnDraw,
   normalizeTeamName,
-  R32_THIRD_WINNER_FOR_MATCH_ID,
 } from "./tournament.js";
-import { resolveThirdPlaceTeamForWinner } from "./third-place-assignments.js";
 import {
   isLockedAtKickoff,
   isGroupMatchPredictionsLocked,
@@ -145,6 +143,14 @@ import {
   confirmPendingPredictionsForKoMatch,
   scheduleKickoffAutoStartRefresh,
 } from "./kickoff-autostart.js";
+import {
+  areQuinielaKnockoutSlotsDecided,
+  buildLiveR32SlotMapFromOfficial,
+  getKoRoundMatchIndex,
+  isQuinielaTeamSlotDecided,
+  resolveLiveR32SeedLabel,
+  resolveQuinielaKnockoutSlotLabels,
+} from "./quiniela-knockout-slots.js";
 import {
   formatKickoffShortSpanish,
   formatKickoffDayLabelSpanish,
@@ -303,12 +309,6 @@ function dismissStatsColorHint() {
 
 /** Nombres de equipo conocidos en fase de grupos (para banderas en la llave). */
 const BRACKET_KNOWN_TEAMS = new Set(GROUPS.flatMap((g) => g.teams));
-
-/** Equipo conocido y ya definido (no placeholder «Por determinar»). */
-function isQuinielaTeamSlotDecided(teamName) {
-  const name = normalizeTeamName(teamName);
-  return BRACKET_KNOWN_TEAMS.has(name) && !isPlaceholderTeam(name);
-}
 
 /**
  * Reglas por partido en quiniela: por defecto fase de grupos.
@@ -1566,62 +1566,11 @@ function getLiveOfficialGroupSnapshot() {
 }
 
 /**
- * Resuelve una banda semilla de 16vos contra el estado oficial en vivo.
- * @param {string} label
- * @param {string} matchId
- * @param {Record<string, string[]>} orderByGroup
- * @param {Record<string, boolean>} groupCompletedByGroup
- * @param {Record<string, boolean>} thirdAdvanceByGroup
- */
-function resolveLiveR32SeedLabel(label, matchId, orderByGroup, groupCompletedByGroup, thirdAdvanceByGroup) {
-  const txt = String(label ?? "").trim();
-  const m = /^([12])º Grupo ([A-L])$/.exec(txt);
-  if (m) {
-    const pos = m[1] === "1" ? 0 : 1;
-    const groupId = m[2];
-    if (groupCompletedByGroup[groupId] !== true) return txt;
-    return orderByGroup[groupId]?.[pos] ?? txt;
-  }
-  const winnerGroupId = R32_THIRD_WINNER_FOR_MATCH_ID[matchId];
-  if (winnerGroupId && txt.startsWith("3º")) {
-    const qualifyingThirdGroupIds = GROUPS.filter((g) => thirdAdvanceByGroup[g.id] === true).map((g) => g.id);
-    if (qualifyingThirdGroupIds.length !== MAX_BEST_THIRD_TEAMS) return txt;
-    return (
-      resolveThirdPlaceTeamForWinner(winnerGroupId, qualifyingThirdGroupIds, orderByGroup) ?? txt
-    );
-  }
-  return txt;
-}
-
-/**
  * Mapa por banda de 16vos: `matchId:home|away` -> equipo resuelto.
  * @returns {Record<string, string>}
  */
 function buildLiveR32SlotMap() {
-  const snap = getLiveOfficialGroupSnapshot();
-  const orderByGroup = snap.orderByGroup ?? {};
-  const groupCompletedByGroup = snap.groupCompletedByGroup ?? {};
-  const thirdAdvanceByGroup = snap.thirdAdvanceByGroup ?? {};
-  /** @type {Record<string, string>} */
-  const out = {};
-  const r32 = KNOCKOUT_ROUNDS[KNOCKOUT_PHASE_ROUND_INDEX.r32];
-  for (const m of r32.matches) {
-    out[`${m.id}:home`] = resolveLiveR32SeedLabel(
-      m.homeLabel,
-      m.id,
-      orderByGroup,
-      groupCompletedByGroup,
-      thirdAdvanceByGroup,
-    );
-    out[`${m.id}:away`] = resolveLiveR32SeedLabel(
-      m.awayLabel,
-      m.id,
-      orderByGroup,
-      groupCompletedByGroup,
-      thirdAdvanceByGroup,
-    );
-  }
-  return out;
+  return buildLiveR32SlotMapFromOfficial(loadOfficialResults());
 }
 
 /**
@@ -2509,54 +2458,6 @@ function officialKnockoutScoresMapForResolution(official) {
     }
   }
   return out;
-}
-
-/** Marcadores KO rellenados (aunque no confirmados) para etiquetas en Partidos. */
-function allFilledOfficialKnockoutScores(official) {
-  /** @type {Record<string, { home: number|string|"", away: number|string|"" }>} */
-  const out = {};
-  const scores = official.knockoutScores ?? {};
-  for (const round of KNOCKOUT_ROUNDS) {
-    for (const m of round.matches) {
-      const s = scores[m.id];
-      if (s && s.home !== "" && s.away !== "") out[m.id] = s;
-    }
-  }
-  return out;
-}
-
-function getKoRoundMatchIndex(matchId) {
-  for (let ri = 0; ri < KNOCKOUT_ROUNDS.length; ri++) {
-    const mi = KNOCKOUT_ROUNDS[ri].matches.findIndex((x) => x.id === matchId);
-    if (mi >= 0) return { ri, mi };
-  }
-  return { ri: 0, mi: 0 };
-}
-
-/**
- * Etiquetas de equipos para un cruce KO en Partidos/Quiniela (16vos desde grupos en vivo + eliminatoria).
- * @param {ReturnType<typeof getKnockoutMatchesFlat>[number]} m
- * @param {ReturnType<typeof loadOfficialResults>} official
- * @returns {{ home: string, away: string }}
- */
-function resolveQuinielaKnockoutSlotLabels(m, official) {
-  const { ri, mi } = getKoRoundMatchIndex(m.id);
-  const labelScores = allFilledOfficialKnockoutScores(official);
-  const liveR32SlotMap = ri === KNOCKOUT_PHASE_ROUND_INDEX.r32 ? buildLiveR32SlotMap() : null;
-  return {
-    home:
-      liveR32SlotMap?.[`${m.id}:home`] ??
-      resolveKnockoutSlotLabel(ri, mi, "home", labelScores),
-    away:
-      liveR32SlotMap?.[`${m.id}:away`] ??
-      resolveKnockoutSlotLabel(ri, mi, "away", labelScores),
-  };
-}
-
-/** @param {ReturnType<typeof getKnockoutMatchesFlat>[number]} m @param {ReturnType<typeof loadOfficialResults>} official */
-function areQuinielaKnockoutSlotsDecided(m, official) {
-  const { home, away } = resolveQuinielaKnockoutSlotLabels(m, official);
-  return isQuinielaTeamSlotDecided(home) && isQuinielaTeamSlotDecided(away);
 }
 
 /**
@@ -7591,26 +7492,28 @@ function partidosOfficialPreviewLineGroup(m, official) {
  */
 function partidosOfficialPreviewLineKo(m, official, officialSlotsDecided) {
   const off = official.knockoutScores?.[m.id] ?? { home: "", away: "" };
+  const koStage = official.knockoutMatchState?.[m.id] ?? "ready";
   const offOk = official.knockoutScoresConfirmed?.[m.id] === true;
-  if (offOk && off.home !== "" && off.away !== "") {
+  const bothFilled = off.home !== "" && off.away !== "";
+  if (offOk && bothFilled) {
     let line = `Resultado oficial: <strong>${escapeHtml(String(off.home))} — ${escapeHtml(String(off.away))}</strong>`;
     if (knockoutRoundRequiresPenaltyPickOnDraw(m.roundId) && isKnockoutScoreDrawNumbers(off.home, off.away)) {
       const pw = off.penaltyWinner;
       if (pw === "home" || pw === "away") {
-        const { ri, mi } = getKoRoundMatchIndex(m.id);
-        const lab = allFilledOfficialKnockoutScores(official);
-        const hn = resolveKnockoutSlotLabel(ri, mi, "home", lab);
-        const an = resolveKnockoutSlotLabel(ri, mi, "away", lab);
+        const { home: hn, away: an } = resolveQuinielaKnockoutSlotLabels(m, official);
         const nm = pw === "home" ? hn : an;
         line += ` <span class="muted">(penales: ${escapeHtml(nm)})</span>`;
       }
     }
     return line;
   }
+  if (koStage === "started" && bothFilled) {
+    return `En juego: <strong>${escapeHtml(String(off.home))} — ${escapeHtml(String(off.away))}</strong> <span class="muted">(provisional)</span>`;
+  }
   if (!officialSlotsDecided) {
     return `<span class="muted">Equipos por definir — oficial pendiente</span>`;
   }
-  if (off.home !== "" && off.away !== "") {
+  if (bothFilled) {
     return `Marcador cargado: <strong>${escapeHtml(String(off.home))} — ${escapeHtml(String(off.away))}</strong> <span class="muted">(sin confirmar)</span>`;
   }
   return `<span class="muted">Resultado oficial: pendiente</span>`;
@@ -8603,9 +8506,11 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
   const off = official.knockoutScores?.[m.id] ?? { home: "", away: "" };
   const koStage = official.knockoutMatchState?.[m.id] ?? "ready";
   const offOk = official.knockoutScoresConfirmed?.[m.id] === true;
-  const vh = off.home === "" ? "—" : escapeHtml(String(off.home));
-  const va = off.away === "" ? "—" : escapeHtml(String(off.away));
-  const koOutcomeStyled = offOk && off.home !== "" && off.away !== "";
+  const bothFilledKo = off.home !== "" && off.away !== "";
+  const showPublicOfficialScoreKo = bothFilledKo && (koStage === "started" || offOk);
+  const vh = !showPublicOfficialScoreKo ? "—" : escapeHtml(String(off.home));
+  const va = !showPublicOfficialScoreKo ? "—" : escapeHtml(String(off.away));
+  const koOutcomeStyled = offOk && bothFilledKo;
   const koOffHomeCls = koOutcomeStyled ? officialScoreOutcomeClass(off.home, off.away, "home") : "";
   const koOffAwayCls = koOutcomeStyled ? officialScoreOutcomeClass(off.home, off.away, "away") : "";
   const pStoreKo = loadPredictions(session.participantId);
@@ -9087,6 +8992,7 @@ function bindPartidosAdminHandlers(scope, session) {
       const kid = ed.dataset.koMid;
       if (!kid || !partial[kid]) return;
       const latest = loadOfficialResults();
+      if ((latest.knockoutMatchState?.[kid] ?? "ready") !== "started") return;
       const prev = latest.knockoutScores?.[kid] ?? {};
       const merged = { ...prev, ...partial[kid] };
       const mKo = getKnockoutMatchesFlat().find((x) => x.id === kid);
@@ -9098,13 +9004,12 @@ function bindPartidosAdminHandlers(scope, session) {
       } else {
         merged.penaltyWinner = prev.penaltyWinner === "home" || prev.penaltyWinner === "away" ? prev.penaltyWinner : "";
       }
-      const next = { ...latest.knockoutScores, [kid]: merged };
       const changed =
         String(prev.home ?? "") !== String(merged.home ?? "") ||
         String(prev.away ?? "") !== String(merged.away ?? "") ||
         String(prev.penaltyWinner ?? "") !== String(merged.penaltyWinner ?? "");
       saveOfficialResults({
-        knockoutScores: next,
+        knockoutScores: { [kid]: merged },
         ...(changed && latest.knockoutScoresConfirmed?.[kid] === true
           ? { knockoutScoresConfirmed: { [kid]: false } }
           : {}),
