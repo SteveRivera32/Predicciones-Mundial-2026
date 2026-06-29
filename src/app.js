@@ -2478,6 +2478,94 @@ function areQuinielaKnockoutSlotsDecided(m, official) {
 }
 
 /**
+ * Orden de grupos y terceros previstos por un participante (para resolver 16vos en historial).
+ * @param {ReturnType<typeof loadPredictions>} pStore
+ */
+function getPredictedGroupOrderSnapshot(pStore) {
+  /** @type {Record<string, string[]>} */
+  const orderByGroup = {};
+  /** @type {Record<string, boolean>} */
+  const groupCompletedByGroup = {};
+  /** @type {Record<string, boolean>} */
+  const thirdAdvanceByGroup = {};
+  for (const grp of GROUPS) {
+    const ord = pStore.groupOrder?.[grp.id];
+    const orderArr =
+      Array.isArray(ord) && ord.length >= 4
+        ? ord.map((x) => (typeof x === "string" ? x.trim() : ""))
+        : [];
+    const orderConfirmed = pStore.groupOrderConfirmed?.[grp.id] === true;
+    orderByGroup[grp.id] = orderArr;
+    groupCompletedByGroup[grp.id] =
+      orderConfirmed && [0, 1, 2, 3].every((i) => Boolean(orderArr[i]));
+    const third = pStore.groupThirdAdvances?.[grp.id];
+    if (third === true || third === false) {
+      thirdAdvanceByGroup[grp.id] = third;
+    }
+  }
+  return { orderByGroup, groupCompletedByGroup, thirdAdvanceByGroup };
+}
+
+/**
+ * Mapa de 16vos según predicciones de fase de grupos del participante.
+ * @param {ReturnType<typeof loadPredictions>} pStore
+ * @returns {Record<string, string>}
+ */
+function buildPredictedR32SlotMap(pStore) {
+  const { orderByGroup, groupCompletedByGroup, thirdAdvanceByGroup } =
+    getPredictedGroupOrderSnapshot(pStore);
+  /** @type {Record<string, string>} */
+  const out = {};
+  const r32 = KNOCKOUT_ROUNDS[KNOCKOUT_PHASE_ROUND_INDEX.r32];
+  for (const m of r32.matches) {
+    out[`${m.id}:home`] = resolveLiveR32SeedLabel(
+      m.homeLabel,
+      m.id,
+      orderByGroup,
+      groupCompletedByGroup,
+      thirdAdvanceByGroup,
+    );
+    out[`${m.id}:away`] = resolveLiveR32SeedLabel(
+      m.awayLabel,
+      m.id,
+      orderByGroup,
+      groupCompletedByGroup,
+      thirdAdvanceByGroup,
+    );
+  }
+  return out;
+}
+
+/**
+ * Equipos de un cruce KO en historial: oficiales si ya están definidos; si no, cadena de predicciones del participante.
+ * @param {ReturnType<typeof getKnockoutMatchesFlat>[number]} m
+ * @param {ReturnType<typeof loadOfficialResults>} official
+ * @param {ReturnType<typeof loadPredictions>} pStore
+ * @returns {{ home: string, away: string }}
+ */
+function resolveKnockoutSlotLabelsForHistory(m, official, pStore) {
+  const { home: offHome, away: offAway } = resolveQuinielaKnockoutSlotLabels(m, official);
+  const { ri, mi } = getKoRoundMatchIndex(m.id);
+  const predScores = pStore.knockoutScores ?? {};
+  const r32PredMap =
+    ri === KNOCKOUT_PHASE_ROUND_INDEX.r32 ? buildPredictedR32SlotMap(pStore) : null;
+
+  const resolveSide = (side, officialName) => {
+    if (isQuinielaTeamSlotDecided(officialName)) return officialName;
+    if (r32PredMap) {
+      const fromR32 = r32PredMap[`${m.id}:${side}`];
+      if (fromR32) return fromR32;
+    }
+    return resolveKnockoutSlotLabel(ri, mi, side, predScores);
+  };
+
+  return {
+    home: resolveSide("home", offHome),
+    away: resolveSide("away", offAway),
+  };
+}
+
+/**
  * @param {string} label
  * @param {{ winner?: boolean }} opts
  */
@@ -9755,9 +9843,7 @@ function buildMatchHistory(participantId) {
         totalPossible += scoring.maxPerMatch;
       }
 
-      const { ri, mi } = getKoRoundMatchIndex(m.id);
-      const homeLab = resolveKnockoutSlotLabel(ri, mi, "home", pStore.knockoutScores ?? {});
-      const awayLab = resolveKnockoutSlotLabel(ri, mi, "away", pStore.knockoutScores ?? {});
+      const { home: homeLab, away: awayLab } = resolveKnockoutSlotLabelsForHistory(m, official, pStore);
       const predEnviada = matchHistoryPrediccionEnviadaHtml(predConfirmed);
       const ptsTd =
         pts == null
@@ -9819,8 +9905,10 @@ function syncMatchHistoryViewRadios() {
  * @param {string} awayTeamHtml
  * @param {{ home?: string | number, away?: string | number, penaltyWinner?: string }} pred
  * @param {string} [roundId]
+ * @param {string} [homeLab]
+ * @param {string} [awayLab]
  */
-function predictionHistoryScoreGridHtml(homeTeamHtml, awayTeamHtml, pred, roundId) {
+function predictionHistoryScoreGridHtml(homeTeamHtml, awayTeamHtml, pred, roundId, homeLab, awayLab) {
   const h = pred?.home === "" || pred?.home == null ? "—" : escapeHtml(String(pred.home));
   const a = pred?.away === "" || pred?.away == null ? "—" : escapeHtml(String(pred.away));
   const bothFilled = pred?.home !== "" && pred?.home != null && pred?.away !== "" && pred?.away != null;
@@ -9836,8 +9924,8 @@ function predictionHistoryScoreGridHtml(homeTeamHtml, awayTeamHtml, pred, roundI
   ) {
     penHtml =
       pred.penaltyWinner === "home"
-        ? '<p class="pred-history-match__pen muted">Ganador en penales: local</p>'
-        : '<p class="pred-history-match__pen muted">Ganador en penales: visitante</p>';
+        ? `<p class="pred-history-match__pen muted">Penales: ${homeLab ? bracketTeamLineHtml(homeLab) : "local"}</p>`
+        : `<p class="pred-history-match__pen muted">Penales: ${awayLab ? bracketTeamLineHtml(awayLab) : "visitante"}</p>`;
   }
   return `<div class="quiniela-official-grid quiniela-official-grid--readonly pred-history-match-grid" role="group" aria-label="Tu predicción">
     <div class="quiniela-cell quiniela-cell--team">${homeTeamHtml}</div>
@@ -9853,6 +9941,7 @@ function predictionHistoryScoreGridHtml(homeTeamHtml, awayTeamHtml, pred, roundI
  */
 function buildPredictionHistoryHtml(participantId) {
   const pStore = loadPredictions(participantId);
+  const official = loadOfficialResults();
   /** @type {Array<{ m: (typeof GROUP_MATCHES)[number] | ReturnType<typeof getKnockoutMatchesFlat>[number], kind: "group" | "ko", dayKey: string, sortT: number }>} */
   const items = [
     ...GROUP_MATCHES.map((m) => ({
@@ -9889,15 +9978,15 @@ function buildPredictionHistoryHtml(participantId) {
     let awayHtml;
     let pred;
     let roundId;
+    let homeLab;
+    let awayLab;
     if (kind === "group") {
       contextLabel = `Grupo ${m.groupId}`;
       homeHtml = teamLabelHtml(m.home);
       awayHtml = teamLabelHtml(m.away);
       pred = pStore.groupScores?.[m.id] ?? { home: "", away: "" };
     } else {
-      const { ri, mi } = getKoRoundMatchIndex(m.id);
-      const homeLab = resolveKnockoutSlotLabel(ri, mi, "home", pStore.knockoutScores ?? {});
-      const awayLab = resolveKnockoutSlotLabel(ri, mi, "away", pStore.knockoutScores ?? {});
+      ({ home: homeLab, away: awayLab } = resolveKnockoutSlotLabelsForHistory(m, official, pStore));
       contextLabel = knockoutPhaseTitle(m.roundId);
       homeHtml = bracketTeamLineHtml(homeLab);
       awayHtml = bracketTeamLineHtml(awayLab);
@@ -9912,7 +10001,7 @@ function buildPredictionHistoryHtml(participantId) {
         <span class="pred-history-match__context">${escapeHtml(contextLabel)}</span>
         ${kickoffMeta}
       </div>
-      ${predictionHistoryScoreGridHtml(homeHtml, awayHtml, pred, roundId)}
+      ${predictionHistoryScoreGridHtml(homeHtml, awayHtml, pred, roundId, kind === "ko" ? homeLab : undefined, kind === "ko" ? awayLab : undefined)}
     </article>`;
     byDay.get(key).push(matchHtml);
   }
