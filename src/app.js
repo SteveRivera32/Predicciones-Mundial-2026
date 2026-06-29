@@ -9224,13 +9224,13 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const mKo = getKnockoutMatchesFlat().find((x) => x.id === kid);
       if (!mKo) return;
       const offPred = loadOfficialResults();
-      if (offPred.knockoutScoresConfirmed?.[kid] === true) return;
+      const latest = loadPredictions(targetParticipantId);
+      if (latest.knockoutScoresConfirmed?.[kid] === true) return;
       if (isMatchPredictionSaveBlocked(session, offPred, mKo, targetParticipantId, true)) return;
       const canForceUndecidedMatches = canEditAllParticipantsPredictions(session.participantId);
       if (!areQuinielaKnockoutSlotsDecided(mKo, offPred) && !canForceUndecidedMatches) {
         return;
       }
-      const latest = loadPredictions(targetParticipantId);
       const sc = latest.knockoutScores?.[kid] ?? { home: "", away: "" };
       if (sc.home === "" || sc.away === "") return;
       const mR = getKnockoutMatchesFlat().find((x) => x.id === kid);
@@ -9256,9 +9256,9 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
       const mKo = getKnockoutMatchesFlat().find((x) => x.id === kid);
       if (!mKo) return;
       const offNow = loadOfficialResults();
-      if (offNow.knockoutScoresConfirmed?.[kid] === true) return;
-      if (isMatchPredictionSaveBlocked(session, offNow, mKo, targetParticipantId, true)) return;
       const latest = loadPredictions(targetParticipantId);
+      if (latest.knockoutScoresConfirmed?.[kid] !== true) return;
+      if (isMatchPredictionSaveBlocked(session, offNow, mKo, targetParticipantId, true)) return;
       const { [kid]: _r, ...rest } = latest.knockoutScoresConfirmed ?? {};
       savePredictions(targetParticipantId, {
         knockoutScoresConfirmed: rest,
