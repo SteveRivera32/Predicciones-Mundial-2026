@@ -440,39 +440,42 @@ export function getKnockoutFeeder(roundIndex, matchIndex, side) {
  * @param {number} matchIndex
  * @param {"home"|"away"} side
  * @param {Record<string, { home?: string|number|"", away?: string|number|"" }>} scoresById
+ * @param {Record<string, string>} [r32SlotMap] `matchId:home|away` → equipo resuelto en 16vos
  */
-export function resolveKnockoutSlotLabel(roundIndex, matchIndex, side, scoresById) {
+export function resolveKnockoutSlotLabel(roundIndex, matchIndex, side, scoresById, r32SlotMap) {
   const round = KNOCKOUT_ROUNDS[roundIndex];
   if (!round) return "";
 
   if (round.id === "final" && matchIndex === 0) {
-    return resolveFinalOrThirdSlot("final", side, scoresById);
+    return resolveFinalOrThirdSlot("final", side, scoresById, r32SlotMap);
   }
   if (round.id === "tp" && matchIndex === 0) {
-    return resolveFinalOrThirdSlot("tp", side, scoresById);
+    return resolveFinalOrThirdSlot("tp", side, scoresById, r32SlotMap);
   }
 
   if (roundIndex === 0) {
     const m = round.matches[matchIndex];
+    const fromMap = r32SlotMap?.[`${m.id}:${side}`];
+    if (fromMap) return fromMap;
     return side === "home" ? m.homeLabel : m.awayLabel;
   }
 
   const feeder = getKnockoutFeeder(roundIndex, matchIndex, side);
   if (!feeder) return "";
-  const fm = KNOCKOUT_ROUNDS[feeder.roundIndex].matches[feeder.matchIndex];
   const ws = winnerSideFromKnockoutScore(scoresById[feeder.matchId] ?? {});
   if (!ws) {
     const m = round.matches[matchIndex];
     return side === "home" ? m.homeLabel : m.awayLabel;
   }
-  return resolveKnockoutSlotLabel(feeder.roundIndex, feeder.matchIndex, ws, scoresById);
+  return resolveKnockoutSlotLabel(feeder.roundIndex, feeder.matchIndex, ws, scoresById, r32SlotMap);
 }
 
 /**
  * @param {"final"|"tp"} kind
  * @param {"home"|"away"} side — home = cruce asociado a SF·1, away = SF·2
+ * @param {Record<string, string>} [r32SlotMap]
  */
-function resolveFinalOrThirdSlot(kind, side, scoresById) {
+function resolveFinalOrThirdSlot(kind, side, scoresById, r32SlotMap) {
   const sfRi = KNOCKOUT_ROUNDS.findIndex((r) => r.id === "sf");
   const sfRound = KNOCKOUT_ROUNDS[sfRi];
   const semiIdx = side === "home" ? 0 : 1;
@@ -487,7 +490,7 @@ function resolveFinalOrThirdSlot(kind, side, scoresById) {
   }
   const wantWinner = kind === "final";
   const lineSide = wantWinner ? w : w === "home" ? "away" : "home";
-  return resolveKnockoutSlotLabel(sfRi, semiIdx, lineSide, scoresById);
+  return resolveKnockoutSlotLabel(sfRi, semiIdx, lineSide, scoresById, r32SlotMap);
 }
 
 /**

@@ -24,13 +24,15 @@ export function isQuinielaTeamSlotDecided(teamName) {
   return BRACKET_KNOWN_TEAMS.has(name) && !isPlaceholderTeam(name);
 }
 
-/** @param {import("./official-results-store.js").OfficialResults} official */
-export function allFilledOfficialKnockoutScores(official) {
+/** Marcadores KO oficiales confirmados (para propagar ganadores a la siguiente ronda). */
+export function confirmedOfficialKnockoutScores(official) {
   /** @type {Record<string, { home: number|string|"", away: number|string|"" }>} */
   const out = {};
   const scores = official.knockoutScores ?? {};
+  const conf = official.knockoutScoresConfirmed ?? {};
   for (const round of KNOCKOUT_ROUNDS) {
     for (const m of round.matches) {
+      if (conf[m.id] !== true) continue;
       const s = scores[m.id];
       if (s && s.home !== "" && s.away !== "") out[m.id] = s;
     }
@@ -107,14 +109,11 @@ export function buildLiveR32SlotMapFromOfficial(official) {
  */
 export function resolveQuinielaKnockoutSlotLabels(m, official) {
   const { ri, mi } = getKoRoundMatchIndex(m.id);
-  const labelScores = allFilledOfficialKnockoutScores(official);
-  const liveR32SlotMap =
-    ri === KNOCKOUT_PHASE_ROUND_INDEX.r32 ? buildLiveR32SlotMapFromOfficial(official) : null;
+  const labelScores = confirmedOfficialKnockoutScores(official);
+  const liveR32SlotMap = buildLiveR32SlotMapFromOfficial(official);
   return {
-    home:
-      liveR32SlotMap?.[`${m.id}:home`] ?? resolveKnockoutSlotLabel(ri, mi, "home", labelScores),
-    away:
-      liveR32SlotMap?.[`${m.id}:away`] ?? resolveKnockoutSlotLabel(ri, mi, "away", labelScores),
+    home: resolveKnockoutSlotLabel(ri, mi, "home", labelScores, liveR32SlotMap),
+    away: resolveKnockoutSlotLabel(ri, mi, "away", labelScores, liveR32SlotMap),
   };
 }
 

@@ -2094,9 +2094,10 @@ function tryLightPartidosSelfPredPatch(wrap, matchId, isKo, focusEl) {
     if (isKo) {
       const { ri, mi } = getKoRoundMatchIndex(m.id);
       const pScores = preds.knockoutScores ?? {};
+      const r32PredMap = buildPredictedR32SlotMap(preds);
       const vm = {
-        home: resolveKnockoutSlotLabel(ri, mi, "home", pScores),
-        away: resolveKnockoutSlotLabel(ri, mi, "away", pScores),
+        home: resolveKnockoutSlotLabel(ri, mi, "home", pScores, r32PredMap),
+        away: resolveKnockoutSlotLabel(ri, mi, "away", pScores, r32PredMap),
       };
       const koPenaltyPhase = knockoutRoundRequiresPenaltyPickOnDraw(m.roundId);
       const showPenControls = koPenaltyPhase && predictionOutcomeSign(pred) === "d";
@@ -2530,16 +2531,11 @@ function resolveKnockoutSlotLabelsForHistory(m, official, pStore) {
   const { home: offHome, away: offAway } = resolveQuinielaKnockoutSlotLabels(m, official);
   const { ri, mi } = getKoRoundMatchIndex(m.id);
   const predScores = pStore.knockoutScores ?? {};
-  const r32PredMap =
-    ri === KNOCKOUT_PHASE_ROUND_INDEX.r32 ? buildPredictedR32SlotMap(pStore) : null;
+  const r32PredMap = buildPredictedR32SlotMap(pStore);
 
   const resolveSide = (side, officialName) => {
     if (isQuinielaTeamSlotDecided(officialName)) return officialName;
-    if (r32PredMap) {
-      const fromR32 = r32PredMap[`${m.id}:${side}`];
-      if (fromR32) return fromR32;
-    }
-    return resolveKnockoutSlotLabel(ri, mi, side, predScores);
+    return resolveKnockoutSlotLabel(ri, mi, side, predScores, r32PredMap);
   };
 
   return {
@@ -5995,16 +5991,10 @@ function bracketPairBlockHtml(official, roundIndex, matchIndex, isAdmin, offReso
   const m = KNOCKOUT_ROUNDS[roundIndex].matches[matchIndex];
   const offSc = official.knockoutScores?.[m.id] ?? { home: "", away: "" };
   const offOk = official.knockoutScoresConfirmed?.[m.id] === true;
-  const homeResolved = resolveKnockoutSlotLabel(roundIndex, matchIndex, "home", offResolveMap);
-  const awayResolved = resolveKnockoutSlotLabel(roundIndex, matchIndex, "away", offResolveMap);
-  const homeL =
-    roundIndex === KNOCKOUT_PHASE_ROUND_INDEX.r32
-      ? (liveR32SlotMap?.[`${m.id}:home`] ?? homeResolved)
-      : homeResolved;
-  const awayL =
-    roundIndex === KNOCKOUT_PHASE_ROUND_INDEX.r32
-      ? (liveR32SlotMap?.[`${m.id}:away`] ?? awayResolved)
-      : awayResolved;
+  const homeResolved = resolveKnockoutSlotLabel(roundIndex, matchIndex, "home", offResolveMap, liveR32SlotMap);
+  const awayResolved = resolveKnockoutSlotLabel(roundIndex, matchIndex, "away", offResolveMap, liveR32SlotMap);
+  const homeL = homeResolved;
+  const awayL = awayResolved;
   const win =
     offSc.home !== "" && offSc.away !== "" ? winnerSideFromKnockoutScore(offSc) : null;
   const gh = offSc.home !== "" ? escapeHtml(String(offSc.home)) : "—";
