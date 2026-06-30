@@ -401,20 +401,21 @@ export const KNOCKOUT_PHASE_ROUND_INDEX = {
 
 /**
  * Índices de partido por columna en cada mitad (orden del árbol del cuadro, no M73…M88 lineal).
- * Arriba en cada banda alimenta la semi de Dallas (M101: W97 vs W98); abajo, la de Atlanta (M102).
- * En la derecha, M81–M84 (índ. 8–11) van arriba hacia M98 y M85–M88 (índ. 12–15) abajo hacia M100.
+ * El cuadro FIFA 2026 cruza mitades en cuartos: M101 (Dallas) = W97∪W98 y M102 (Atlanta) = W99∪W100.
+ * Por eso M81–M84 (16vos) se muestran abajo a la izquierda (alimentan M98) y M76–M80 abajo a la derecha (M99).
+ * Así Brasil (M76) y Francia (M77) no comparten la misma columna de semis.
  */
 export const BRACKET_SIDE_MATCH_INDICES = {
   left: {
-    r32: [0, 2, 1, 4, 3, 5, 6, 7],
-    r16: [0, 1, 2, 3],
-    qf: [0, 1],
+    r32: [0, 2, 1, 4, 10, 11, 8, 9],
+    r16: [0, 1, 4, 5],
+    qf: [0, 2],
     sf: [0],
   },
   right: {
-    r32: [10, 11, 8, 9, 14, 12, 15, 13],
-    r16: [4, 5, 6, 7],
-    qf: [2, 3],
+    r32: [14, 12, 15, 13, 3, 5, 6, 7],
+    r16: [7, 6, 2, 3],
+    qf: [3, 1],
     sf: [1],
   },
 };
