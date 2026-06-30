@@ -8582,7 +8582,9 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
             <button type="button" class="btn btn-sm ko-official-pen-pick${off.penaltyWinner === "away" ? " btn-primary" : ""}" data-okid-pen="${escapeHtml(m.id)}" data-pen-side="away">${bracketTeamLineHtml(awayLab)}</button>
           </div>
         </div>`
-            : ""
+            : koStage === "finished" && offOk && koPenNeeded && koPenReady
+              ? koPenaltyWinnerBelowScoreHtml(off.penaltyWinner, homeLab, awayLab)
+              : ""
         }
         <div class="quiniela-official-actions">
           ${
@@ -8612,7 +8614,7 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
         </div>
         ${
           offOk && koPenNeeded && koPenReady
-            ? `<p class="muted quiniela-official-penalty-readonly">Penales: <strong>${escapeHtml(off.penaltyWinner === "home" ? homeLab : awayLab)}</strong></p>`
+            ? koPenaltyWinnerBelowScoreHtml(off.penaltyWinner, homeLab, awayLab)
             : ""
         }
       </div>`;
@@ -9982,6 +9984,22 @@ function syncMatchHistoryViewRadios() {
 }
 
 /**
+ * Ganador en penales bajo el marcador (centrado, con bandera).
+ * @param {"home"|"away"|string} penaltyWinner
+ * @param {string} [homeLab]
+ * @param {string} [awayLab]
+ */
+function koPenaltyWinnerBelowScoreHtml(penaltyWinner, homeLab, awayLab) {
+  if (penaltyWinner !== "home" && penaltyWinner !== "away") return "";
+  const penWinnerLab = penaltyWinner === "home" ? homeLab : awayLab;
+  const penWinnerFallback = penaltyWinner === "home" ? "local" : "visitante";
+  const penWinnerHtml = penWinnerLab
+    ? bracketTeamLineHtml(penWinnerLab, { inline: true })
+    : escapeHtml(penWinnerFallback);
+  return `<div class="pred-history-match__pen muted"><span class="pred-history-match__pen-inner">Penales: ${penWinnerHtml}</span></div>`;
+}
+
+/**
  * Marcador de predicción con el mismo layout que Partidos: bandera país · goles · goles · país bandera.
  * @param {string} homeTeamHtml
  * @param {string} awayTeamHtml
@@ -10004,12 +10022,7 @@ function predictionHistoryScoreGridHtml(homeTeamHtml, awayTeamHtml, pred, roundI
     predictionOutcomeSign(pred) === "d" &&
     (pred?.penaltyWinner === "home" || pred?.penaltyWinner === "away")
   ) {
-    const penWinnerLab = pred.penaltyWinner === "home" ? homeLab : awayLab;
-    const penWinnerFallback = pred.penaltyWinner === "home" ? "local" : "visitante";
-    const penWinnerHtml = penWinnerLab
-      ? bracketTeamLineHtml(penWinnerLab, { inline: true })
-      : escapeHtml(penWinnerFallback);
-    penHtml = `<div class="pred-history-match__pen muted"><span class="pred-history-match__pen-inner">Penales: ${penWinnerHtml}</span></div>`;
+    penHtml = koPenaltyWinnerBelowScoreHtml(pred.penaltyWinner, homeLab, awayLab);
   }
   return `<div class="quiniela-official-grid quiniela-official-grid--readonly pred-history-match-grid" role="group" aria-label="Tu predicción">
     <div class="quiniela-cell quiniela-cell--team">${homeTeamHtml}</div>

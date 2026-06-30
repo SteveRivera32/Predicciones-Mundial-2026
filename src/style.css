@@ -6009,6 +6009,10 @@ span.td-muted {
   align-items: center;
 }
 
+.quiniela-official .pred-history-match__pen {
+  padding: 0 1rem 0.65rem;
+}
+
 .match-history-pts-max {
   color: #81c995;
   text-shadow:
@@ -12773,11 +12777,27 @@ body.app-booting .app-shell {
     padding: 0 0.08rem;
   }
 
-  #panel-partidos .partidos-acc[open] .partidos-acc__body .quiniela-official-hint,
-  #panel-partidos .partidos-acc[open] .partidos-acc__body .quiniela-official-penalty-readonly {
+  #panel-partidos .partidos-acc[open] .partidos-acc__body .quiniela-official-hint {
     padding: 0.32rem 0.52rem 0.42rem;
     font-size: 0.72rem;
     line-height: 1.32;
+  }
+
+  #panel-partidos .partidos-acc[open] .partidos-acc__body .pred-history-match__pen {
+    font-size: 0.72rem;
+    margin-top: 0.25rem;
+    padding: 0 0.52rem 0.42rem;
+    line-height: 1.32;
+  }
+
+  #panel-partidos .partidos-acc[open] .partidos-acc__body .pred-history-match__pen-inner {
+    gap: 0.2rem;
+  }
+
+  #panel-partidos .partidos-acc[open] .partidos-acc__body .pred-history-match__pen .team-flag-img,
+  #panel-partidos .partidos-acc[open] .partidos-acc__body .pred-history-match__pen .team-flag-placeholder {
+    width: 0.9rem;
+    height: 0.68rem;
   }
 
   #panel-partidos .partidos-acc[open] .partidos-acc__body .quiniela-official-actions {
