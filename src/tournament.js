@@ -399,7 +399,11 @@ export const KNOCKOUT_PHASE_ROUND_INDEX = {
   final: 5,
 };
 
-/** Índices de partido por columna en cada mitad (orden del árbol del cuadro, no M73…M88 lineal). */
+/**
+ * Índices de partido por columna en cada mitad (orden del árbol del cuadro, no M73…M88 lineal).
+ * Arriba en cada banda alimenta la semi de Dallas (M101: W97 vs W98); abajo, la de Atlanta (M102).
+ * En la derecha, M81–M84 (índ. 8–11) van arriba hacia M98 y M85–M88 (índ. 12–15) abajo hacia M100.
+ */
 export const BRACKET_SIDE_MATCH_INDICES = {
   left: {
     r32: [0, 2, 1, 4, 3, 5, 6, 7],
@@ -408,9 +412,9 @@ export const BRACKET_SIDE_MATCH_INDICES = {
     sf: [0],
   },
   right: {
-    r32: [14, 12, 15, 13, 9, 8, 11, 10],
-    r16: [7, 6, 5, 4],
-    qf: [3, 2],
+    r32: [10, 11, 8, 9, 14, 12, 15, 13],
+    r16: [4, 5, 6, 7],
+    qf: [2, 3],
     sf: [1],
   },
 };
