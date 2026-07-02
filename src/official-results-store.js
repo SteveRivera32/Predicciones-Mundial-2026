@@ -101,6 +101,18 @@ function localExplicitFinishWouldBeLost(
       merged.groupScoresConfirmed?.[id] === true;
     if (wasFinished && !staysFinished) return true;
   }
+  for (const id of new Set([
+    ...Object.keys(local.knockoutMatchState ?? {}),
+    ...Object.keys(local.knockoutScoresConfirmed ?? {}),
+  ])) {
+    const wasFinished =
+      (local.knockoutMatchState?.[id] ?? "ready") === "finished" &&
+      local.knockoutScoresConfirmed?.[id] === true;
+    const staysFinished =
+      (merged.knockoutMatchState?.[id] ?? "ready") === "finished" &&
+      merged.knockoutScoresConfirmed?.[id] === true;
+    if (wasFinished && !staysFinished) return true;
+  }
   return false;
 }
 

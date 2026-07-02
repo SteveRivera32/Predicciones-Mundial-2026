@@ -8953,10 +8953,8 @@ function bindPartidosAdminHandlers(scope, session) {
       if (!mid) return;
       const cur = loadOfficialResults();
       if ((cur.groupMatchState?.[mid] ?? "ready") !== "finished") return;
-      const { [mid]: _r, ...rest } = cur.groupScoresConfirmed ?? {};
       saveOfficialResults({
-        groupScoresConfirmed: rest,
-        replaceGroupScoresConfirmed: true,
+        groupScoresConfirmed: { [mid]: false },
         groupMatchState: { [mid]: "started" },
       });
       refreshAll(loadSession());

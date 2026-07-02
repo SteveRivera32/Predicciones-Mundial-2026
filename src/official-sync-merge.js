@@ -34,15 +34,28 @@ function isExplicitMatchFinish(side, id, kind) {
   return is === "finished" && ic;
 }
 
-/** Admin desconfirmó: vuelve a «en juego» con marcador pero sin confirmar. */
-function isExplicitMatchDesconfirm(side, id, kind) {
+/**
+ * Admin desconfirmó frente a un baseline ya terminado y confirmado.
+ * Un partido «en juego» con marcador (sin clave confirmada=false) NO cuenta: evita que
+ * pestañas obsoletas pisen un resultado ya confirmado en otro cliente.
+ */
+function isExplicitMatchUnconfirm(incoming, baseline, id, kind) {
+  if (!isExplicitMatchFinish(baseline, id, kind)) return false;
   const stateKey = kind === "group" ? "groupMatchState" : "knockoutMatchState";
   const confirmedKey = kind === "group" ? "groupScoresConfirmed" : "knockoutScoresConfirmed";
   const scoresKey = kind === "group" ? "groupScores" : "knockoutScores";
-  const is = /** @type {Record<string, string>} */ (side[stateKey] ?? {})[id] ?? "ready";
-  const ic = /** @type {Record<string, boolean>} */ (side[confirmedKey] ?? {})[id] === true;
-  const sc = /** @type {Record<string, { home?: unknown, away?: unknown }>} */ (side[scoresKey] ?? {})[id];
-  return is === "started" && !ic && !scoreIsEmpty(sc) && !isKickoffPlaceholder(sc);
+  const incomingConfirmed = /** @type {Record<string, boolean>} */ (incoming[confirmedKey] ?? {});
+  const is = /** @type {Record<string, string>} */ (incoming[stateKey] ?? {})[id] ?? "ready";
+  const sc = /** @type {Record<string, { home?: unknown, away?: unknown }>} */ (
+    incoming[scoresKey] ?? {}
+  )[id];
+  return (
+    is === "started" &&
+    incomingConfirmed[id] === false &&
+    Object.prototype.hasOwnProperty.call(incomingConfirmed, id) &&
+    !scoreIsEmpty(sc) &&
+    !isKickoffPlaceholder(sc)
+  );
 }
 
 /**
@@ -104,13 +117,13 @@ function sliceFrom(side, id, kind) {
 function pickGroupMatchSlice(local, remote, id) {
   const localFinish = isExplicitMatchFinish(local, id, "group");
   const remoteFinish = isExplicitMatchFinish(remote, id, "group");
-  const localDesconfirm = isExplicitMatchDesconfirm(local, id, "group");
-  const remoteDesconfirm = isExplicitMatchDesconfirm(remote, id, "group");
+  const localUnconfirm = isExplicitMatchUnconfirm(local, remote, id, "group");
+  const remoteUnconfirm = isExplicitMatchUnconfirm(remote, local, id, "group");
 
-  if (localDesconfirm && remoteFinish) return sliceFrom(local, id, "group");
+  if (localUnconfirm && remoteFinish) return sliceFrom(local, id, "group");
   if (localFinish && !remoteFinish) return sliceFrom(local, id, "group");
   if (remoteFinish && !localFinish) return sliceFrom(remote, id, "group");
-  if (remoteDesconfirm && localFinish) return sliceFrom(remote, id, "group");
+  if (remoteUnconfirm && localFinish) return sliceFrom(remote, id, "group");
 
   if (isExplicitMatchDowngrade(remote, local, id, "group")) {
     return sliceFrom(remote, id, "group");
@@ -180,13 +193,13 @@ function pickGroupMatchSlice(local, remote, id) {
 function pickKnockoutMatchSlice(local, remote, id) {
   const localFinish = isExplicitMatchFinish(local, id, "ko");
   const remoteFinish = isExplicitMatchFinish(remote, id, "ko");
-  const localDesconfirm = isExplicitMatchDesconfirm(local, id, "ko");
-  const remoteDesconfirm = isExplicitMatchDesconfirm(remote, id, "ko");
+  const localUnconfirm = isExplicitMatchUnconfirm(local, remote, id, "ko");
+  const remoteUnconfirm = isExplicitMatchUnconfirm(remote, local, id, "ko");
 
-  if (localDesconfirm && remoteFinish) return sliceFrom(local, id, "ko");
+  if (localUnconfirm && remoteFinish) return sliceFrom(local, id, "ko");
   if (localFinish && !remoteFinish) return sliceFrom(local, id, "ko");
   if (remoteFinish && !localFinish) return sliceFrom(remote, id, "ko");
-  if (remoteDesconfirm && localFinish) return sliceFrom(remote, id, "ko");
+  if (remoteUnconfirm && localFinish) return sliceFrom(remote, id, "ko");
 
   if (isExplicitMatchDowngrade(remote, local, id, "ko")) {
     return sliceFrom(remote, id, "ko");
