@@ -2092,19 +2092,17 @@ function tryLightPartidosSelfPredPatch(wrap, matchId, isKo, focusEl) {
   if (ganadorTd) {
     let ganadorInner;
     if (isKo) {
-      const { ri, mi } = getKoRoundMatchIndex(m.id);
-      const pScores = preds.knockoutScores ?? {};
-      const r32PredMap = buildPredictedR32SlotMap(preds);
-      const vm = {
-        home: resolveKnockoutSlotLabel(ri, mi, "home", pScores, r32PredMap),
-        away: resolveKnockoutSlotLabel(ri, mi, "away", pScores, r32PredMap),
-      };
+      const officialNow = loadOfficialResults();
+      const { home: homeName, away: awayName } = resolveKnockoutSlotLabelsForHistory(m, officialNow, preds);
+      const vm = { home: homeName, away: awayName };
+      const matchTeams = resolveQuinielaKnockoutSlotLabels(m, officialNow);
       const koPenaltyPhase = knockoutRoundRequiresPenaltyPickOnDraw(m.roundId);
       const showPenControls = koPenaltyPhase && predictionOutcomeSign(pred) === "d";
       ganadorInner = quinielaKoGanadorCellHtml(vm, pred, m.roundId, {
         selfEditing: showPenControls,
         matchId: showPenControls ? m.id : "",
         targetParticipantId: showPenControls ? session.participantId : "",
+        penaltyTeams: matchTeams,
       });
     } else {
       ganadorInner = quinielaGanadorPickLabel(m, pred);
@@ -7773,9 +7771,16 @@ function isKnockoutScoreDrawNumbers(homeVal, awayVal) {
  * Columna «Ganador» en eliminatoria: empate + ganador en penales (misma celda).
  * @param {{ home: string, away: string }} vm equipos resueltos para la fila
  * @param {{ home: unknown, away: unknown, penaltyWinner?: string }} pred
+ * @param {{ hideDraft?: boolean, selfEditing?: boolean, matchId?: string, targetParticipantId?: string, penaltyTeams?: { home: string, away: string } }} [opts]
  */
 function quinielaKoGanadorCellHtml(vm, pred, roundId, opts = {}) {
-  const { hideDraft = false, selfEditing = false, matchId = "", targetParticipantId = "" } = opts;
+  const {
+    hideDraft = false,
+    selfEditing = false,
+    matchId = "",
+    targetParticipantId = "",
+    penaltyTeams = vm,
+  } = opts;
   if (hideDraft) return '<span class="muted">—</span>';
   const s = predictionOutcomeSign(pred);
   if (!s) return '<span class="muted">—</span>';
@@ -7795,8 +7800,8 @@ function quinielaKoGanadorCellHtml(vm, pred, roundId, opts = {}) {
       <div class="ko-ganador-stack__main">${main}</div>
       <div class="ko-penalty-pick-actions" role="group" aria-label="Ganador en penales">
         <span class="ko-penalty-pick-actions__l muted">Penales</span>
-        <button type="button" class="btn btn-sm ko-user-pen-pick${hCls}" data-kid-pen="${escapeHtml(matchId)}" data-pid="${escapeHtml(targetParticipantId)}" data-pen-pick="home">${escapeHtml(vm.home)}</button>
-        <button type="button" class="btn btn-sm ko-user-pen-pick${aCls}" data-kid-pen="${escapeHtml(matchId)}" data-pid="${escapeHtml(targetParticipantId)}" data-pen-pick="away">${escapeHtml(vm.away)}</button>
+        <button type="button" class="btn btn-sm ko-user-pen-pick${hCls}" data-kid-pen="${escapeHtml(matchId)}" data-pid="${escapeHtml(targetParticipantId)}" data-pen-pick="home">${escapeHtml(penaltyTeams.home)}</button>
+        <button type="button" class="btn btn-sm ko-user-pen-pick${aCls}" data-kid-pen="${escapeHtml(matchId)}" data-pid="${escapeHtml(targetParticipantId)}" data-pen-pick="away">${escapeHtml(penaltyTeams.away)}</button>
       </div>
     </div>`;
   }
@@ -7805,7 +7810,7 @@ function quinielaKoGanadorCellHtml(vm, pred, roundId, opts = {}) {
   if (pw !== "home" && pw !== "away") {
     return `${main}<div class="ko-pen-pick-inline muted">Penales: —</div>`;
   }
-  const nm = pw === "home" ? vm.home : vm.away;
+  const nm = pw === "home" ? penaltyTeams.home : penaltyTeams.away;
   return `${main}<div class="ko-pen-pick-inline">Penales: <span class="quiniela-ganador-name">${escapeHtml(nm)}</span></div>`;
 }
 
@@ -8212,9 +8217,9 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
   const predictionsLocked = isKoMatchPredictionsLocked(official, m);
   const showPtsColumn = koStage !== "ready";
 
-  const { ri, mi } = getKoRoundMatchIndex(m.id);
   const koOfficialSlotsDecided = areQuinielaKnockoutSlotsDecided(m, official);
   const koSlotsReadyForEdit = koOfficialSlotsDecided || canEditAll;
+  const matchTeams = resolveQuinielaKnockoutSlotLabels(m, official);
   const preliminary = getParticipantsForListDisplay(
     session.participantId,
     getParticipantSearchQuery(),
@@ -8374,6 +8379,7 @@ function buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin) {
             selfEditing: showPenControls,
             matchId: showPenControls ? m.id : "",
             targetParticipantId: showPenControls ? d.p.id : "",
+            penaltyTeams: matchTeams,
           });
       const ganadorCellInner =
         ganadorBadges !== ""
@@ -10065,6 +10071,8 @@ function buildPredictionHistoryHtml(participantId) {
     let roundId;
     let homeLab;
     let awayLab;
+    let penHomeLab;
+    let penAwayLab;
     if (kind === "group") {
       contextLabel = `Grupo ${m.groupId}`;
       homeHtml = teamLabelHtml(m.home);
@@ -10072,6 +10080,7 @@ function buildPredictionHistoryHtml(participantId) {
       pred = pStore.groupScores?.[m.id] ?? { home: "", away: "" };
     } else {
       ({ home: homeLab, away: awayLab } = resolveKnockoutSlotLabelsForHistory(m, official, pStore));
+      ({ home: penHomeLab, away: penAwayLab } = resolveQuinielaKnockoutSlotLabels(m, official));
       contextLabel = knockoutPhaseTitle(m.roundId);
       homeHtml = bracketTeamLineHtml(homeLab);
       awayHtml = bracketTeamLineHtml(awayLab);
@@ -10086,7 +10095,14 @@ function buildPredictionHistoryHtml(participantId) {
         <span class="pred-history-match__context">${escapeHtml(contextLabel)}</span>
         ${kickoffMeta}
       </div>
-      ${predictionHistoryScoreGridHtml(homeHtml, awayHtml, pred, roundId, kind === "ko" ? homeLab : undefined, kind === "ko" ? awayLab : undefined)}
+      ${predictionHistoryScoreGridHtml(
+        homeHtml,
+        awayHtml,
+        pred,
+        roundId,
+        kind === "ko" ? penHomeLab : undefined,
+        kind === "ko" ? penAwayLab : undefined,
+      )}
     </article>`;
     byDay.get(key).push(matchHtml);
   }
