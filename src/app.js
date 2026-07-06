@@ -40,6 +40,8 @@ import {
   deletePredictionsStorage,
   clearAllParticipantsPredictions,
   mergePredictionsFromRemote,
+  pinArenaPredictionsFromSearch,
+  clearArenaPinnedPredictionIds,
   getAllPredictionsMap,
 } from "./predictions-store.js";
 import { loadOfficialResults, saveOfficialResults, clearOfficialResultsStorage } from "./official-results-store.js";
@@ -3138,12 +3140,13 @@ function initParticipantSearch(onSearchChange) {
     if (q.length >= ARENA_REMOTE_SEARCH_MIN_LEN) {
       void arenaSearchPredictions(q)
         .then((res) => {
-          if (res?.predictions) mergePredictionsFromRemote(res.predictions);
+          if (res?.predictions) pinArenaPredictionsFromSearch(res.predictions);
           finish();
         })
         .catch(finish);
       return;
     }
+    clearArenaPinnedPredictionIds();
     finish();
   };
 

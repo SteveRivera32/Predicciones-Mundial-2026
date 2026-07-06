@@ -118,11 +118,33 @@ let pushPredictionsTimer = null;
 
 let pendingPredictionsPayload = null;
 
+let arenaBeforeUnloadBound = false;
+
+function flushArenaPendingPredictions() {
+  if (pushPredictionsTimer != null) {
+    window.clearTimeout(pushPredictionsTimer);
+    pushPredictionsTimer = null;
+  }
+  const payload = pendingPredictionsPayload;
+  pendingPredictionsPayload = null;
+  if (payload && pushMyPredictionsFn) {
+    void pushMyPredictionsFn(payload);
+  }
+}
+
+function ensureArenaBeforeUnloadFlush() {
+  if (arenaBeforeUnloadBound || typeof window === "undefined") return;
+  arenaBeforeUnloadBound = true;
+  window.addEventListener("pagehide", flushArenaPendingPredictions);
+}
+
 
 
 export function pushArenaMyPredictions(data) {
 
   if (!pushMyPredictionsFn) return Promise.resolve();
+
+  ensureArenaBeforeUnloadFlush();
 
   pendingPredictionsPayload = data;
 

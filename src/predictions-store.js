@@ -99,17 +99,86 @@ export function loadPredictions(participantId) {
 /** En Arena solo conservamos predicciones cargadas (vista previa, búsqueda o las propias). */
 /** @type {Set<string>} */
 let arenaLoadedParticipantIds = new Set();
+/** IDs cargados por búsqueda remota; no se podan en el sync periódico. */
+/** @type {Set<string>} */
+let arenaPinnedParticipantIds = new Set();
+
+/**
+ * Predicciones enviadas al servidor pero aún no reflejadas en el estado remoto recibido.
+ * Evita que un WS/poll con estado viejo borre cambios locales (condición de carrera).
+ * @type {Map<string, Predictions>}
+ */
+const pendingPushByParticipant = new Map();
+
+/** @param {Predictions} data */
+function predictionsFingerprint(data) {
+  try {
+    return JSON.stringify(data);
+  } catch {
+    return "";
+  }
+}
+
+/** Tras hidratar desde remoto, conserva pendientes hasta que el servidor coincida. */
+function reconcilePendingPushOnHydrate() {
+  for (const [id, pending] of pendingPushByParticipant) {
+    const remote = predictionsRemoteMap[id];
+    if (predictionsFingerprint(remote) === predictionsFingerprint(pending)) {
+      pendingPushByParticipant.delete(id);
+    } else {
+      predictionsRemoteMap[id] = pending;
+    }
+  }
+}
+
+/** @type {Map<string, ReturnType<typeof setTimeout>>} */
+const pushRetryTimers = new Map();
+
+function queuePrivadasPredictionsPush(participantId, data) {
+  pendingPushByParticipant.set(participantId, data);
+  const existingTimer = pushRetryTimers.get(participantId);
+  if (existingTimer != null) window.clearTimeout(existingTimer);
+  return pushPredictions(participantId, data)
+    .then((res) => {
+      if (!res.ok) throw new Error(`push failed ${res.status}`);
+    })
+    .catch((e) => {
+      console.error("[pm26 sync]", e);
+      const timer = window.setTimeout(() => {
+        pushRetryTimers.delete(participantId);
+        const latest = pendingPushByParticipant.get(participantId);
+        if (latest) void queuePrivadasPredictionsPush(participantId, latest);
+      }, 4000);
+      pushRetryTimers.set(participantId, timer);
+    });
+}
 
 function pruneArenaPredictionsCache() {
   if (!isArenaMode()) return;
   for (const id of Object.keys(predictionsRemoteMap)) {
-    if (!arenaLoadedParticipantIds.has(id)) delete predictionsRemoteMap[id];
+    if (!arenaLoadedParticipantIds.has(id) && !arenaPinnedParticipantIds.has(id)) {
+      delete predictionsRemoteMap[id];
+    }
   }
 }
 
 /** @param {Iterable<string>} ids */
 export function resetArenaLoadedPredictionIds(ids) {
   arenaLoadedParticipantIds = new Set(ids);
+  for (const id of arenaPinnedParticipantIds) arenaLoadedParticipantIds.add(id);
+  pruneArenaPredictionsCache();
+}
+
+/** Conserva predicciones de búsqueda Arena entre ciclos de sync. */
+export function pinArenaPredictionsFromSearch(map) {
+  arenaPinnedParticipantIds = new Set(Object.keys(map && typeof map === "object" ? map : {}));
+  mergePredictionsFromRemote(map);
+}
+
+/** Al limpiar la búsqueda, deja de fijar esos participantes en caché. */
+export function clearArenaPinnedPredictionIds() {
+  if (arenaPinnedParticipantIds.size === 0) return;
+  arenaPinnedParticipantIds.clear();
   pruneArenaPredictionsCache();
 }
 
@@ -156,6 +225,7 @@ export function hydratePredictionsFromRemote(map) {
   for (const [id, raw] of Object.entries(src)) {
     predictionsRemoteMap[id] = normalizePredictionsData(raw);
   }
+  reconcilePendingPushOnHydrate();
 }
 
 export function disableRemotePredictions() {
@@ -205,7 +275,7 @@ export function savePredictions(participantId, patch) {
         pushArenaMyPredictions(next).catch((e) => console.error("[arena sync]", e));
       }
     } else if (isRemoteSyncActive()) {
-      pushPredictions(participantId, next).catch((e) => console.error("[pm26 sync]", e));
+      void queuePrivadasPredictionsPush(participantId, next);
     }
   } else {
     predictionsLocalMap[participantId] = next;
