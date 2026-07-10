@@ -9783,6 +9783,12 @@ function matchHistoryPrediccionEnviadaHtml(predConfirmed) {
     : '<span class="match-history-sent">Faltante</span>';
 }
 
+/** @param {{ kickoff?: string | null }} m */
+function matchHistoryKickoffTdHtml(m) {
+  if (!m.kickoff) return '<td><span class="muted">—</span></td>';
+  return `<td class="match-history-kickoff">${escapeHtml(formatKickoffShortSpanish(m.kickoff))}</td>`;
+}
+
 /** Máximo de puntos entre todos los participantes con predicción confirmada (misma lógica que la quiniela). */
 function maxGroupMatchPtsAmongParticipants(m, official) {
   const off = official.groupScores?.[m.id] ?? { home: "", away: "" };
@@ -9921,6 +9927,7 @@ function buildMatchHistory(participantId) {
       rows.push(`<tr>
       <td>Grupo ${escapeHtml(m.groupId)}</td>
       <td>${teamLabelHtml(m.home)} <span class="vs">vs</span> ${teamLabelHtml(m.away)}</td>
+      ${matchHistoryKickoffTdHtml(m)}
       <td>${estadoPartido}</td>
       <td>${predEnviada}</td>
       <td>${formatPredScoreCell(pred)}</td>
@@ -9972,6 +9979,7 @@ function buildMatchHistory(participantId) {
       rows.push(`<tr>
       <td>${escapeHtml(knockoutPhaseTitle(m.roundId))}</td>
       <td>${bracketTeamLineHtml(homeLab)} <span class="vs">vs</span> ${bracketTeamLineHtml(awayLab)}</td>
+      ${matchHistoryKickoffTdHtml(m)}
       <td>${estadoPartido}</td>
       <td>${predEnviada}</td>
       <td>${formatPredScoreCell(pred, m.roundId)}</td>

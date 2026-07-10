@@ -379,7 +379,7 @@ export function getKnockoutMatchesFlat() {
       home: m.homeLabel,
       away: m.awayLabel,
       roundId: round.id,
-      kickoff: m.kickoff,
+      kickoff: koKick(m.id) ?? m.kickoff,
       matchScoringKey: m.matchScoringKey,
     })),
   );
