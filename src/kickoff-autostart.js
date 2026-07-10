@@ -7,7 +7,11 @@ import {
   areQuinielaKnockoutSlotsDecided,
   isQuinielaTeamSlotDecided,
 } from "./quiniela-knockout-slots.js";
-import { GROUP_MATCHES, getKnockoutMatchesFlat } from "./tournament.js";
+import {
+  GROUP_MATCHES,
+  getKnockoutMatchesFlat,
+  knockoutRoundRequiresPenaltyPickOnDraw,
+} from "./tournament.js";
 
 /**
  * Convierte borrador en marcador confirmable. Sin borrador → null (no cuenta).
@@ -30,14 +34,33 @@ function draftToConfirmedGroupScore(draft, opts = {}) {
   };
 }
 
-/** @param {{ home?: string|number|"", away?: string|number|"", penaltyWinner?: string } | undefined} draft @param {{ allowPartialDraft?: boolean }} [opts] */
+/** @param {string|number|""|undefined} home @param {string|number|""|undefined} away */
+function isDrawScoreNumbers(home, away) {
+  const h = typeof home === "number" ? home : parseInt(String(home), 10);
+  const a = typeof away === "number" ? away : parseInt(String(away), 10);
+  return Number.isFinite(h) && Number.isFinite(a) && h === a;
+}
+
+/**
+ * @param {{ home?: string|number|"", away?: string|number|"", penaltyWinner?: string } | undefined} draft
+ * @param {{ allowPartialDraft?: boolean, roundId?: string }} [opts]
+ */
 function draftToConfirmedKoScore(draft, opts = {}) {
   const base = draftToConfirmedGroupScore(draft, opts);
   if (!base) return null;
   const pw = draft?.penaltyWinner;
+  const penaltyWinner = pw === "home" || pw === "away" ? pw : "";
+  // Empate en ronda con penales sin ganador elegido → no auto-confirmar (queda incompleto).
+  if (
+    knockoutRoundRequiresPenaltyPickOnDraw(opts.roundId) &&
+    isDrawScoreNumbers(base.home, base.away) &&
+    !penaltyWinner
+  ) {
+    return null;
+  }
   return {
     ...base,
-    penaltyWinner: pw === "home" || pw === "away" ? pw : "",
+    penaltyWinner,
   };
 }
 
@@ -61,10 +84,15 @@ export function confirmPendingPredictionsForGroupMatch(matchId, opts = {}) {
 /** @param {string} matchId @param {{ allowPartialDraft?: boolean }} [opts] @returns {boolean} */
 export function confirmPendingPredictionsForKoMatch(matchId, opts = {}) {
   let changed = false;
+  const mKo = getKnockoutMatchesFlat().find((x) => x.id === matchId);
+  const roundId = mKo?.roundId;
   for (const p of getParticipantsForDisplay()) {
     const store = loadPredictions(p.id);
     if (store.knockoutScoresConfirmed?.[matchId] === true) continue;
-    const confirmed = draftToConfirmedKoScore(store.knockoutScores?.[matchId], opts);
+    const confirmed = draftToConfirmedKoScore(store.knockoutScores?.[matchId], {
+      ...opts,
+      roundId,
+    });
     if (!confirmed) continue;
     savePredictions(p.id, {
       knockoutScores: {

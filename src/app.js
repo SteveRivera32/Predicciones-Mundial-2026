@@ -1067,6 +1067,7 @@ async function clearParticipantMatchPrediction(participantId, matchId, isKo) {
  * @param {boolean} isKo
  */
 function isMatchPredictionSaveBlocked(session, official, m, targetParticipantId, isKo) {
+  if (!session?.participantId) return true;
   const locked = isKo ? isKoMatchPredictionsLocked(official, m) : isGroupMatchPredictionsLocked(official, m);
   const pStore = loadPredictions(targetParticipantId);
   const predCommitted = isKo
@@ -2090,6 +2091,17 @@ function tryLightPartidosSelfPredPatch(wrap, matchId, isKo, focusEl) {
     ? (preds.knockoutScores?.[matchId] ?? { home: "", away: "" })
     : (preds.groupScores[matchId] ?? { home: "", away: "" });
 
+  // Mantener steppers alineados con el store (si un guardado falló o hubo listeners
+  // duplicados, evita que la UI quede en un marcador distinto al persistido).
+  const inputSel = isKo ? ".score-stepper__input[data-kid]" : ".score-stepper__input[data-mid]";
+  row.querySelectorAll(inputSel).forEach((inp) => {
+    if (!(inp instanceof HTMLInputElement) || inp.disabled) return;
+    const side = inp.dataset.side;
+    if (side !== "home" && side !== "away") return;
+    const v = pred[side];
+    inp.value = v === "" || v === undefined ? "" : String(v);
+  });
+
   const ganadorTd = row.querySelector("td.quiniela-ganador-col");
   if (ganadorTd) {
     let ganadorInner;
@@ -2127,7 +2139,9 @@ function tryLightPartidosSelfPredPatch(wrap, matchId, isKo, focusEl) {
   }
 
   if (isKo && row.querySelector(".ko-user-pen-pick")) {
-    wireQuinielaPredictionHandlersInScope(row);
+    // Los botones de penales son HTML nuevo: hay que cablearlos con session.
+    // Sin session, isMatchPredictionSaveBlocked lanza y el pick no se guarda.
+    wireQuinielaPredictionHandlersInScope(row, session);
   }
 
   return true;
@@ -2238,6 +2252,9 @@ function wireScoreSteppers(wrap, mode, onCommit, wireOpts = {}) {
   }
 
   wrap.querySelectorAll(".score-stepper").forEach((stepper) => {
+    // Evita listeners duplicados tras light-patch móvil (penales / rewire de fila).
+    if (stepper.dataset.pm26StepperWired === "1") return;
+    stepper.dataset.pm26StepperWired = "1";
     const inp = stepper.querySelector(inputSel);
     if (!inp || inp.disabled) return;
     wireScoreStepperMobileBehavior(stepper, inp);
@@ -9124,7 +9141,21 @@ function bindPartidosAdminHandlers(scope, session) {
  * @param {HTMLElement} scope
  * @param {{ participantId: string }} session
  */
+/** Evita listeners duplicados en botones recreados/re-cableados (light-patch móvil). */
+function markQuinielaPredControlWired(el) {
+  if (!(el instanceof HTMLElement)) return false;
+  if (el.dataset.pm26PredWired === "1") return false;
+  el.dataset.pm26PredWired = "1";
+  return true;
+}
+
+/**
+ * @param {HTMLElement} scope
+ * @param {{ participantId: string } | null | undefined} session
+ */
 function wireQuinielaPredictionHandlersInScope(scope, session) {
+  if (!session?.participantId) return;
+
   scope.querySelectorAll(".quiniela-pred-edit-row").forEach((row) => {
     wireScoreSteppers(row, "grupos", (partial, triggerEl) => {
       const mid = row.dataset.quinielaSelfMid;
@@ -9140,6 +9171,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
   });
 
   scope.querySelectorAll(".quiniela-pred-confirm-user").forEach((btn) => {
+    if (!markQuinielaPredControlWired(btn)) return;
     btn.addEventListener("click", () => {
       const mid = btn.dataset.mid;
       const targetParticipantId = btn.dataset.pid || session.participantId;
@@ -9163,6 +9195,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
   });
 
   scope.querySelectorAll(".quiniela-pred-unlock-user").forEach((btn) => {
+    if (!markQuinielaPredControlWired(btn)) return;
     btn.addEventListener("click", () => {
       const mid = btn.dataset.mid;
       const targetParticipantId = btn.dataset.pid || session.participantId;
@@ -9212,6 +9245,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
   });
 
   scope.querySelectorAll(".ko-user-pen-pick").forEach((btn) => {
+    if (!markQuinielaPredControlWired(btn)) return;
     btn.addEventListener("click", () => {
       const kid = btn.dataset.kidPen;
       const targetParticipantId = btn.dataset.pid || session.participantId;
@@ -9232,6 +9266,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
   });
 
   scope.querySelectorAll(".partidos-ko-pred-confirm-user").forEach((btn) => {
+    if (!markQuinielaPredControlWired(btn)) return;
     btn.addEventListener("click", () => {
       const kid = btn.dataset.kid;
       const targetParticipantId = btn.dataset.pid || session.participantId;
@@ -9264,6 +9299,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
   });
 
   scope.querySelectorAll(".partidos-ko-pred-unlock-user").forEach((btn) => {
+    if (!markQuinielaPredControlWired(btn)) return;
     btn.addEventListener("click", () => {
       const kid = btn.dataset.kid;
       const targetParticipantId = btn.dataset.pid || session.participantId;
@@ -9284,6 +9320,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
   });
 
   scope.querySelectorAll(".quiniela-pred-delete-user").forEach((btn) => {
+    if (!markQuinielaPredControlWired(btn)) return;
     btn.addEventListener("click", async () => {
       const mid = btn.dataset.mid;
       const targetParticipantId = btn.dataset.pid;
@@ -9307,6 +9344,7 @@ function wireQuinielaPredictionHandlersInScope(scope, session) {
   });
 
   scope.querySelectorAll(".partidos-ko-pred-delete-user").forEach((btn) => {
+    if (!markQuinielaPredControlWired(btn)) return;
     btn.addEventListener("click", async () => {
       const kid = btn.dataset.kid;
       const targetParticipantId = btn.dataset.pid;
