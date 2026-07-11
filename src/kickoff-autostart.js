@@ -88,7 +88,7 @@ function confirmPendingPredictionsForLockedMatches(official) {
  */
 export function applyKickoffAutoStarts() {
   if (isArenaMode()) return false;
-  const official = loadOfficialResults();
+  let official = loadOfficialResults();
   /** @type {Record<string, "started">} */
   const groupMatchState = {};
   /** @type {Record<string, { home: 0, away: 0 }>} */
