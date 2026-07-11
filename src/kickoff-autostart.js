@@ -2,67 +2,21 @@ import { isArenaMode } from "./arena-mode.js";
 import { getParticipantsForDisplay } from "./participants.js";
 import { loadOfficialResults, saveOfficialResults } from "./official-results-store.js";
 import { loadPredictions, savePredictions } from "./predictions-store.js";
-import { isLockedAtKickoff, scheduleKickoffLockRefresh } from "./locks.js";
+import {
+  isLockedAtKickoff,
+  isGroupMatchPredictionsLocked,
+  isKoMatchPredictionsLocked,
+  scheduleKickoffLockRefresh,
+} from "./locks.js";
 import {
   areQuinielaKnockoutSlotsDecided,
   isQuinielaTeamSlotDecided,
 } from "./quiniela-knockout-slots.js";
+import { GROUP_MATCHES, getKnockoutMatchesFlat } from "./tournament.js";
 import {
-  GROUP_MATCHES,
-  getKnockoutMatchesFlat,
-  knockoutRoundRequiresPenaltyPickOnDraw,
-} from "./tournament.js";
-
-/**
- * Convierte borrador en marcador confirmable. Sin borrador → null (no cuenta).
- * Borrador parcial: conserva lo escrito y completa el otro lado con 0.
- * @param {{ home?: string|number|"", away?: string|number|"" } | undefined} draft
- * @param {{ allowPartialDraft?: boolean }} [opts]
- * @returns {{ home: string|number, away: string|number } | null}
- */
-function draftToConfirmedGroupScore(draft, opts = {}) {
-  if (!opts.allowPartialDraft) return null;
-  const home = draft?.home;
-  const away = draft?.away;
-  const homeFilled = home !== "" && home != null;
-  const awayFilled = away !== "" && away != null;
-  if (!homeFilled && !awayFilled) return null;
-  if (homeFilled && awayFilled) return { home, away };
-  return {
-    home: homeFilled ? home : 0,
-    away: awayFilled ? away : 0,
-  };
-}
-
-/** @param {string|number|""|undefined} home @param {string|number|""|undefined} away */
-function isDrawScoreNumbers(home, away) {
-  const h = typeof home === "number" ? home : parseInt(String(home), 10);
-  const a = typeof away === "number" ? away : parseInt(String(away), 10);
-  return Number.isFinite(h) && Number.isFinite(a) && h === a;
-}
-
-/**
- * @param {{ home?: string|number|"", away?: string|number|"", penaltyWinner?: string } | undefined} draft
- * @param {{ allowPartialDraft?: boolean, roundId?: string }} [opts]
- */
-function draftToConfirmedKoScore(draft, opts = {}) {
-  const base = draftToConfirmedGroupScore(draft, opts);
-  if (!base) return null;
-  const pw = draft?.penaltyWinner;
-  const penaltyWinner = pw === "home" || pw === "away" ? pw : "";
-  // Empate en ronda con penales sin ganador elegido → no auto-confirmar (queda incompleto).
-  if (
-    knockoutRoundRequiresPenaltyPickOnDraw(opts.roundId) &&
-    isDrawScoreNumbers(base.home, base.away) &&
-    !penaltyWinner
-  ) {
-    return null;
-  }
-  return {
-    ...base,
-    penaltyWinner,
-  };
-}
+  draftToConfirmedGroupScore,
+  draftToConfirmedKoScore,
+} from "./prediction-autoconfirm.js";
 
 /** @param {string} matchId @param {{ allowPartialDraft?: boolean }} [opts] @returns {boolean} */
 export function confirmPendingPredictionsForGroupMatch(matchId, opts = {}) {
@@ -106,6 +60,26 @@ export function confirmPendingPredictionsForKoMatch(matchId, opts = {}) {
   return changed;
 }
 
+/** @param {ReturnType<typeof loadOfficialResults>} official @returns {boolean} */
+function confirmPendingPredictionsForLockedMatches(official) {
+  const opts = { allowPartialDraft: true };
+  let changed = false;
+
+  for (const m of GROUP_MATCHES) {
+    if (!isGroupMatchPredictionsLocked(official, m)) continue;
+    if (!isQuinielaTeamSlotDecided(m.home) || !isQuinielaTeamSlotDecided(m.away)) continue;
+    if (confirmPendingPredictionsForGroupMatch(m.id, opts)) changed = true;
+  }
+
+  for (const m of getKnockoutMatchesFlat()) {
+    if (!isKoMatchPredictionsLocked(official, m)) continue;
+    if (!areQuinielaKnockoutSlotsDecided(m, official)) continue;
+    if (confirmPendingPredictionsForKoMatch(m.id, opts)) changed = true;
+  }
+
+  return changed;
+}
+
 /**
  * Al llegar el kickoff: iniciar partido (0-0 oficial) y confirmar solo borradores con marcador.
  * Quien no predijo no se confirma ni puntúa.
@@ -134,7 +108,6 @@ export function applyKickoffAutoStarts() {
       groupMatchState[m.id] = "started";
       groupScores[m.id] = { home: 0, away: 0 };
       changed = true;
-      if (confirmPendingPredictionsForGroupMatch(m.id, { allowPartialDraft: true })) changed = true;
     }
   }
 
@@ -147,7 +120,6 @@ export function applyKickoffAutoStarts() {
       knockoutMatchState[m.id] = "started";
       knockoutScores[m.id] = { home: 0, away: 0, penaltyWinner: "" };
       changed = true;
-      if (confirmPendingPredictionsForKoMatch(m.id, { allowPartialDraft: true })) changed = true;
     }
   }
 
@@ -156,7 +128,11 @@ export function applyKickoffAutoStarts() {
       ...(Object.keys(groupMatchState).length ? { groupMatchState, groupScores } : {}),
       ...(Object.keys(knockoutMatchState).length ? { knockoutMatchState, knockoutScores } : {}),
     });
+    official = loadOfficialResults();
   }
+
+  // También si el servidor ya inició el partido (0-0) antes de que abriera un cliente.
+  if (confirmPendingPredictionsForLockedMatches(official)) changed = true;
 
   return changed;
 }

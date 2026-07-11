@@ -13,6 +13,7 @@ import { fileURLToPath } from "url";
 import {
   BUILTIN_PARTICIPANTS,
   reconcileParticipantsWithBuiltin,
+  ADMIN_PARTICIPANT_ID,
 } from "../src/participants.js";
 import { emptyOfficialResults } from "../src/official-results-store.js";
 import { emptyPredictions } from "../src/predictions-store.js";
@@ -25,6 +26,7 @@ import {
 } from "./official-sync-shared.mjs";
 import { normalizePredictionsData } from "../src/predictions-store.js";
 import { mergeOfficialPreferAdvancedNormalized } from "../src/official-sync-merge.js";
+import { mergePredictionsPreferAdvanced } from "../src/predictions-merge.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.PM26_DATA_DIR || path.join(__dirname, "data");
@@ -59,6 +61,12 @@ function pruneServerPredictionsToParticipants() {
   for (const key of Object.keys(state.predictions)) {
     if (!ids.has(key)) delete state.predictions[key];
   }
+}
+
+function getCompetingParticipantIds() {
+  return state.participants
+    .map((p) => String((p && p.id) ?? "").trim())
+    .filter((id) => id && id !== ADMIN_PARTICIPANT_ID);
 }
 
 function applyParticipantsState(list) {
@@ -340,8 +348,12 @@ app.put("/api/predictions/:participantId", (req, res) => {
     res.status(400).json({ error: "body inválido" });
     return;
   }
-  state.predictions[id] = normalizePredictionsData(req.body);
-  persistAndBroadcast()
+  const existing = state.predictions[id];
+  const incoming = normalizePredictionsData(req.body);
+  state.predictions[id] =
+    existing != null
+      ? mergePredictionsPreferAdvanced(existing, incoming)
+      : incoming;  persistAndBroadcast()
     .then(() => res.json({ ok: true }))
     .catch((e) => {
       console.error(e);
@@ -452,6 +464,12 @@ async function main() {
       state.officialUpdatedAt = new Date().toISOString();
       void persistAndBroadcast();
     },
+    () => state.predictions,
+    (next) => {
+      state.predictions = next;
+      void persistAndBroadcast();
+    },
+    getCompetingParticipantIds,
   );
 }
 

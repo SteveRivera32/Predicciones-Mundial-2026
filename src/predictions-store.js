@@ -11,6 +11,7 @@ import {
 } from "./arena-mode.js";
 import { migrateStoredTeamNames } from "./tournament.js";
 import { cloneScoreMap, mergeScoreMapCloned } from "./match-score-clone.js";
+import { mergePredictionsPreferAdvanced } from "./predictions-merge.js";
 import { pushPredictions, deleteRemotePredictions } from "./sync-push.js";
 
 /** @typedef {ReturnType<typeof emptyPredictions>} Predictions */
@@ -220,10 +221,16 @@ export function hydratePredictionsFromRemote(map) {
     return;
   }
   useRemotePredictions = true;
+  const prevMap = { ...predictionsRemoteMap };
   predictionsRemoteMap = {};
   const src = map && typeof map === "object" ? map : {};
   for (const [id, raw] of Object.entries(src)) {
-    predictionsRemoteMap[id] = normalizePredictionsData(raw);
+    const prev = prevMap[id];
+    if (pendingPushByParticipant.has(id) || prev == null) {
+      predictionsRemoteMap[id] = normalizePredictionsData(raw);
+    } else {
+      predictionsRemoteMap[id] = mergePredictionsPreferAdvanced(prev, raw);
+    }
   }
   reconcilePendingPushOnHydrate();
 }

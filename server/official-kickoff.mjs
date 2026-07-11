@@ -1,9 +1,11 @@
 /**
- * Quiniela privada (servidor): al llegar el kickoff, pasa el partido oficial a «en juego» (0-0).
+ * Quiniela privada (servidor): al llegar el kickoff, pasa el partido oficial a «en juego» (0-0)
+ * y confirma borradores pendientes en predicciones.
  * Independiente de Arena; marcadores finales los pone el admin en privadas.
  */
 
 import { normalizeOfficialResultsData } from "../src/official-results-store.js";
+import { autoconfirmLockedMatchPredictions } from "../src/prediction-autoconfirm.js";
 import {
   areQuinielaKnockoutSlotsDecided,
   isQuinielaTeamSlotDecided,
@@ -20,9 +22,18 @@ function isPastKickoff(isoKickoff) {
 /**
  * @param {() => unknown} readOfficial
  * @param {(next: ReturnType<typeof normalizeOfficialResultsData>) => void} writeOfficial
+ * @param {() => Record<string, unknown>} readPredictions
+ * @param {(next: Record<string, unknown>) => void} writePredictions
+ * @param {() => string[]} readCompetingParticipantIds
  * @returns {boolean}
  */
-export function applyServerKickoffStarts(readOfficial, writeOfficial) {
+export function applyServerKickoffStarts(
+  readOfficial,
+  writeOfficial,
+  readPredictions,
+  writePredictions,
+  readCompetingParticipantIds,
+) {
   const official = normalizeOfficialResultsData(readOfficial());
   /** @type {Record<string, "started">} */
   const groupMatchState = {};
@@ -50,6 +61,13 @@ export function applyServerKickoffStarts(readOfficial, writeOfficial) {
   }
 
   if (!Object.keys(groupMatchState).length && !Object.keys(knockoutMatchState).length) {
+    const predictions = readPredictions();
+    const participantIds = readCompetingParticipantIds();
+    if (autoconfirmLockedMatchPredictions(official, predictions, participantIds)) {
+      writePredictions(predictions);
+      console.log("[pm26 kickoff] predicciones pendientes auto-confirmadas");
+      return true;
+    }
     return false;
   }
 
@@ -69,16 +87,34 @@ export function applyServerKickoffStarts(readOfficial, writeOfficial) {
       : {}),
   });
   writeOfficial(next);
+  const officialAfter = normalizeOfficialResultsData(next);
+  const predictions = readPredictions();
+  const participantIds = readCompetingParticipantIds();
+  let predictionsChanged = autoconfirmLockedMatchPredictions(officialAfter, predictions, participantIds);
+  if (predictionsChanged) writePredictions(predictions);
   const n = Object.keys(groupMatchState).length + Object.keys(knockoutMatchState).length;
   console.log(`[pm26 kickoff] ${n} partido(s) iniciado(s) automáticamente (0-0)`);
+  if (predictionsChanged) console.log("[pm26 kickoff] predicciones pendientes auto-confirmadas");
   return true;
 }
 
-/** @param {() => unknown} readOfficial @param {(next: ReturnType<typeof normalizeOfficialResultsData>) => void} writeOfficial */
-export function startOfficialKickoffPoll(readOfficial, writeOfficial) {
+/** @param {() => unknown} readOfficial @param {(next: ReturnType<typeof normalizeOfficialResultsData>) => void} writeOfficial @param {() => Record<string, unknown>} readPredictions @param {(next: Record<string, unknown>) => void} writePredictions @param {() => string[]} readCompetingParticipantIds */
+export function startOfficialKickoffPoll(
+  readOfficial,
+  writeOfficial,
+  readPredictions,
+  writePredictions,
+  readCompetingParticipantIds,
+) {
   const intervalMs = Number(process.env.PM26_KICKOFF_CHECK_MS || 60_000);
   const tick = () => {
-    applyServerKickoffStarts(readOfficial, writeOfficial);
+    applyServerKickoffStarts(
+      readOfficial,
+      writeOfficial,
+      readPredictions,
+      writePredictions,
+      readCompetingParticipantIds,
+    );
   };
   tick();
   console.log(`[pm26 kickoff] Revisión cada ${Math.round(intervalMs / 1000)} s al llegar la hora de inicio`);
