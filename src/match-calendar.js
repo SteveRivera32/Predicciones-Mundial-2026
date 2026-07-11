@@ -47,15 +47,17 @@ export function calendarDayKeyLocal(d) {
 }
 
 /**
+ * Días hasta el kickoff según calendario del torneo (CDMX).
  * @param {string} isoKickoff
+ * @param {string} [timeZone]
  */
-export function daysUntilKickoffLocal(isoKickoff) {
+export function daysUntilKickoffLocal(isoKickoff, timeZone = TOURNAMENT_DAY_TZ) {
   const t = Date.parse(isoKickoff);
   if (Number.isNaN(t)) return null;
-  const kick = new Date(t);
-  const now = new Date();
-  const k = Date.UTC(kick.getFullYear(), kick.getMonth(), kick.getDate());
-  const n = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const kickDay = calendarDayKeyInTz(new Date(t), timeZone);
+  const nowDay = calendarDayKeyInTz(new Date(), timeZone);
+  const k = Date.parse(`${kickDay}T12:00:00`);
+  const n = Date.parse(`${nowDay}T12:00:00`);
   return Math.round((k - n) / 86400000);
 }
 
@@ -77,13 +79,14 @@ export function formatKickoffLongSpanish(isoKickoff) {
 }
 
 /**
- * Fecha/hora compacta para esquina de tarjeta (hora local del equipo del usuario).
+ * Fecha/hora compacta para esquina de tarjeta (hora CDMX, alineada al torneo).
  * @param {string} isoKickoff
  */
 export function formatKickoffShortSpanish(isoKickoff) {
   const t = Date.parse(isoKickoff);
   if (Number.isNaN(t)) return "";
   return new Intl.DateTimeFormat("es-MX", {
+    timeZone: TOURNAMENT_DAY_TZ,
     day: "numeric",
     month: "short",
     year: "numeric",
