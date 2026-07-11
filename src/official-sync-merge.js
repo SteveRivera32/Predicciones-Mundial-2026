@@ -78,13 +78,17 @@ export function isExplicitMatchDowngrade(incoming, baseline, id, kind) {
     incoming[scoresKey] ?? {}
   )[id];
   const incomingStates = /** @type {Record<string, string>} */ (incoming[stateKey] ?? {});
+  const incomingConfirmed = /** @type {Record<string, boolean>} */ (incoming[confirmedKey] ?? {});
+  const explicitRestart =
+    incomingConfirmed[id] === false &&
+    Object.prototype.hasOwnProperty.call(incomingConfirmed, id);
 
   if (
     is === "ready" &&
     stageRank(bs) >= 1 &&
     !ic &&
     scoreIsEmpty(sc) &&
-    Object.prototype.hasOwnProperty.call(incomingStates, id)
+    (Object.prototype.hasOwnProperty.call(incomingStates, id) || explicitRestart)
   ) {
     return true;
   }
@@ -121,8 +125,6 @@ function pickGroupMatchSlice(local, remote, id) {
   const remoteUnconfirm = isExplicitMatchUnconfirm(remote, local, id, "group");
 
   if (localUnconfirm && remoteFinish) return sliceFrom(local, id, "group");
-  if (localFinish && !remoteFinish) return sliceFrom(local, id, "group");
-  if (remoteFinish && !localFinish) return sliceFrom(remote, id, "group");
   if (remoteUnconfirm && localFinish) return sliceFrom(remote, id, "group");
 
   if (isExplicitMatchDowngrade(remote, local, id, "group")) {
@@ -131,6 +133,9 @@ function pickGroupMatchSlice(local, remote, id) {
   if (isExplicitMatchDowngrade(local, remote, id, "group")) {
     return sliceFrom(local, id, "group");
   }
+
+  if (localFinish && !remoteFinish) return sliceFrom(local, id, "group");
+  if (remoteFinish && !localFinish) return sliceFrom(remote, id, "group");
 
   const ls = /** @type {Record<string, string>} */ (local.groupMatchState ?? {})[id] ?? "ready";
   const rs = /** @type {Record<string, string>} */ (remote.groupMatchState ?? {})[id] ?? "ready";
@@ -197,8 +202,6 @@ function pickKnockoutMatchSlice(local, remote, id) {
   const remoteUnconfirm = isExplicitMatchUnconfirm(remote, local, id, "ko");
 
   if (localUnconfirm && remoteFinish) return sliceFrom(local, id, "ko");
-  if (localFinish && !remoteFinish) return sliceFrom(local, id, "ko");
-  if (remoteFinish && !localFinish) return sliceFrom(remote, id, "ko");
   if (remoteUnconfirm && localFinish) return sliceFrom(remote, id, "ko");
 
   if (isExplicitMatchDowngrade(remote, local, id, "ko")) {
@@ -207,6 +210,9 @@ function pickKnockoutMatchSlice(local, remote, id) {
   if (isExplicitMatchDowngrade(local, remote, id, "ko")) {
     return sliceFrom(local, id, "ko");
   }
+
+  if (localFinish && !remoteFinish) return sliceFrom(local, id, "ko");
+  if (remoteFinish && !localFinish) return sliceFrom(remote, id, "ko");
 
   const ls = /** @type {Record<string, string>} */ (local.knockoutMatchState ?? {})[id] ?? "ready";
   const rs = /** @type {Record<string, string>} */ (remote.knockoutMatchState ?? {})[id] ?? "ready";
@@ -282,9 +288,11 @@ export function mergeOfficialPreferAdvancedNormalized(local, remote) {
   for (const id of groupIds) {
     const pick = pickGroupMatchSlice(local, remote, id);
     if (pick.state === "ready" && scoreIsEmpty(/** @type {{ home?: unknown, away?: unknown } | undefined} */ (pick.score))) {
-      delete /** @type {Record<string, unknown>} */ (out.groupMatchState)[id];
+      out.groupMatchState = { .../** @type {object} */ (out.groupMatchState), [id]: "ready" };
       delete /** @type {Record<string, unknown>} */ (out.groupScores)[id];
-      delete /** @type {Record<string, unknown>} */ (out.groupScoresConfirmed)[id];
+      const nextGroupConfirmed = { .../** @type {object} */ (out.groupScoresConfirmed) };
+      delete nextGroupConfirmed[id];
+      out.groupScoresConfirmed = nextGroupConfirmed;
       continue;
     }
     if (pick.state !== "ready") {
@@ -314,9 +322,14 @@ export function mergeOfficialPreferAdvancedNormalized(local, remote) {
   for (const id of koIds) {
     const pick = pickKnockoutMatchSlice(local, remote, id);
     if (pick.state === "ready" && scoreIsEmpty(/** @type {{ home?: unknown, away?: unknown } | undefined} */ (pick.score))) {
-      delete /** @type {Record<string, unknown>} */ (out.knockoutMatchState)[id];
+      out.knockoutMatchState = {
+        .../** @type {object} */ (out.knockoutMatchState),
+        [id]: "ready",
+      };
       delete /** @type {Record<string, unknown>} */ (out.knockoutScores)[id];
-      delete /** @type {Record<string, unknown>} */ (out.knockoutScoresConfirmed)[id];
+      const nextKoConfirmed = { .../** @type {object} */ (out.knockoutScoresConfirmed) };
+      delete nextKoConfirmed[id];
+      out.knockoutScoresConfirmed = nextKoConfirmed;
       continue;
     }
     if (pick.state !== "ready") {

@@ -85,6 +85,22 @@ function persistOfficialCaches(next) {
   writeOfficialToLocalStorage(next);
 }
 
+function isExplicitMatchReset(
+  /** @type {ReturnType<typeof emptyOfficialResults>} */ side,
+  /** @type {string} */ id,
+  /** @type {"group"|"ko"} */ kind,
+) {
+  const stateKey = kind === "group" ? "groupMatchState" : "knockoutMatchState";
+  const confirmedKey = kind === "group" ? "groupScoresConfirmed" : "knockoutScoresConfirmed";
+  const scoresKey = kind === "group" ? "groupScores" : "knockoutScores";
+  const stage = side[stateKey]?.[id] ?? "ready";
+  const confirmed = side[confirmedKey]?.[id] === true;
+  const sc = side[scoresKey]?.[id];
+  const scoreEmpty =
+    !sc || ((sc.home === "" || sc.home == null) && (sc.away === "" || sc.away == null));
+  return stage === "ready" && !confirmed && scoreEmpty;
+}
+
 function localExplicitFinishWouldBeLost(
   /** @type {ReturnType<typeof emptyOfficialResults>} */ local,
   /** @type {ReturnType<typeof emptyOfficialResults>} */ merged,
@@ -112,6 +128,33 @@ function localExplicitFinishWouldBeLost(
       (merged.knockoutMatchState?.[id] ?? "ready") === "finished" &&
       merged.knockoutScoresConfirmed?.[id] === true;
     if (wasFinished && !staysFinished) return true;
+  }
+  return false;
+}
+
+function localExplicitResetWouldBeLost(
+  /** @type {ReturnType<typeof emptyOfficialResults>} */ local,
+  /** @type {ReturnType<typeof emptyOfficialResults>} */ merged,
+) {
+  for (const id of new Set([
+    ...Object.keys(local.groupMatchState ?? {}),
+    ...Object.keys(local.groupScoresConfirmed ?? {}),
+  ])) {
+    if (!isExplicitMatchReset(local, id, "group")) continue;
+    const mergedFinished =
+      (merged.groupMatchState?.[id] ?? "ready") === "finished" &&
+      merged.groupScoresConfirmed?.[id] === true;
+    if (mergedFinished) return true;
+  }
+  for (const id of new Set([
+    ...Object.keys(local.knockoutMatchState ?? {}),
+    ...Object.keys(local.knockoutScoresConfirmed ?? {}),
+  ])) {
+    if (!isExplicitMatchReset(local, id, "ko")) continue;
+    const mergedFinished =
+      (merged.knockoutMatchState?.[id] ?? "ready") === "finished" &&
+      merged.knockoutScoresConfirmed?.[id] === true;
+    if (mergedFinished) return true;
   }
   return false;
 }
@@ -285,7 +328,10 @@ export function hydrateOfficialFromRemote(data) {
       ? mergeOfficialPreferAdvancedNormalized(local, remote)
       : mergeOfficialPreferAdvancedNormalized(remote, local),
   );
-  if (recentLocalWrite && localExplicitFinishWouldBeLost(local, merged)) {
+  if (
+    recentLocalWrite &&
+    (localExplicitFinishWouldBeLost(local, merged) || localExplicitResetWouldBeLost(local, merged))
+  ) {
     return;
   }
   officialRemoteMode = true;
@@ -305,13 +351,14 @@ export function disableRemoteOfficial() {
 }
 
 /**
- * @param {Partial<ReturnType<typeof emptyOfficialResults>> & { replaceGroupScoresConfirmed?: boolean; replaceGroupOfficialOrderConfirmed?: boolean; replaceGroupMatchState?: boolean }} patch
+ * @param {Partial<ReturnType<typeof emptyOfficialResults>> & { replaceGroupScoresConfirmed?: boolean; replaceKnockoutScoresConfirmed?: boolean; replaceGroupOfficialOrderConfirmed?: boolean; replaceGroupMatchState?: boolean }} patch
  * Si `replaceGroupScoresConfirmed === true`, `groupScoresConfirmed` sustituye al mapa anterior (sirve para quitar claves).
  */
 export function saveOfficialResults(patch) {
   const prev = loadOfficialResults();
   const {
     replaceGroupScoresConfirmed,
+    replaceKnockoutScoresConfirmed,
     replaceGroupOfficialOrderConfirmed,
     replaceGroupMatchState,
     ...rest
@@ -373,7 +420,9 @@ export function saveOfficialResults(patch) {
     knockoutScoresConfirmed:
       patch.knockoutScoresConfirmed === undefined
         ? prev.knockoutScoresConfirmed
-        : { ...prev.knockoutScoresConfirmed, ...patch.knockoutScoresConfirmed },
+        : replaceKnockoutScoresConfirmed
+          ? { ...patch.knockoutScoresConfirmed }
+          : { ...prev.knockoutScoresConfirmed, ...patch.knockoutScoresConfirmed },
   };
   const normalized = normalizeOfficialResultsData(next);
   relinkOfficialRemoteCacheIfNeeded();

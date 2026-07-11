@@ -9127,9 +9127,12 @@ function bindPartidosAdminHandlers(scope, session) {
     btn.addEventListener("click", () => {
       const kid = btn.dataset.kid;
       if (!kid) return;
+      const cur = loadOfficialResults();
+      const { [kid]: _r, ...rest } = cur.knockoutScoresConfirmed ?? {};
       saveOfficialResults({
         knockoutScores: { [kid]: { home: "", away: "", penaltyWinner: "" } },
-        knockoutScoresConfirmed: { [kid]: false },
+        knockoutScoresConfirmed: rest,
+        replaceKnockoutScoresConfirmed: true,
         knockoutMatchState: { [kid]: "ready" },
       });
       refreshAll(loadSession());
