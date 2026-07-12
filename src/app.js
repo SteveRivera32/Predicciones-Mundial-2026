@@ -2378,6 +2378,22 @@ function partidosPredsLazyTbodyHtml() {
   return `<tbody data-pm26-preds-lazy="1"></tbody>`;
 }
 
+/**
+ * Arena: tbody perezoso (muchos usuarios). Privadas: filas al renderizar (pocos participantes).
+ * @param {{ id: string, groupId?: string, roundId?: string }} m
+ * @param {{ participantId: string }} session
+ * @param {ReturnType<typeof loadOfficialResults>} official
+ * @param {boolean} isAdmin
+ * @param {boolean} [isKo]
+ */
+function partidosPredsTbodyHtml(m, session, official, isAdmin, isKo = false) {
+  if (isArenaMode()) return partidosPredsLazyTbodyHtml();
+  const rows = isKo
+    ? buildQuinielaPredRowsHtmlKo(m, session, official, isAdmin)
+    : buildQuinielaPredRowsHtml(m, session, official, isAdmin);
+  return `<tbody>${rows}</tbody>`;
+}
+
 /** Barras de votos: se generan al abrir el acordeón (evita O(partidos × participantes) al cargar). */
 function partidosVoteBarsLazyShellHtml() {
   return `<div class="match-vote-bars-host" data-pm26-vote-bars-lazy="1" hidden></div>`;
@@ -3063,6 +3079,46 @@ function refreshArenaPartidosPredictionTables(session) {
   syncQuinielaPerfectBonusCanvases(wrap);
   syncGroupPtsBadgeCanvases(wrap);
   syncArenaTruncationHints();
+  scheduleSyncQuinielaTableHorizontalScroll(wrap);
+}
+
+/**
+ * Privadas: actualiza tablas de predicciones abiertas sin reemplazar todo Partidos.
+ * @param {{ participantId: string }} session
+ */
+function refreshPrivadasPartidosPredictionTables(session) {
+  const wrap = $("#quiniela-wrap");
+  if (!wrap || !session || isArenaMode()) return;
+  const official = loadOfficialResults();
+  const isAdmin = canEditOfficialResults(session.participantId);
+  wrap.querySelectorAll("article.quiniela-match[data-quiniela-mid]").forEach((card) => {
+    const det = card.querySelector("details.partidos-acc");
+    if (!(det instanceof HTMLDetailsElement) || !det.open) return;
+    const mid = card.getAttribute("data-quiniela-mid");
+    if (!mid) return;
+    const tb = card.querySelector(".quiniela-preds tbody");
+    if (!tb) return;
+    if (tb.dataset.pm26PredsLazy === "1") {
+      hydratePartidosMatchPredsTable(card, session);
+      return;
+    }
+    const gm = GROUP_MATCHES.find((x) => x.id === mid);
+    if (gm) {
+      tb.innerHTML = buildQuinielaPredRowsHtml(gm, session, official, isAdmin);
+      stampQuinielaCardPredictionMeta(card, gm, session, official, false);
+      wireQuinielaPredictionHandlersInScope(card, session);
+      return;
+    }
+    const mKo = getKnockoutMatchesFlat().find((x) => x.id === mid);
+    if (mKo) {
+      tb.innerHTML = buildQuinielaPredRowsHtmlKo(mKo, session, official, isAdmin);
+      patchQuinielaKoPredTableTeamHeaders(card, mKo, official);
+      stampQuinielaCardPredictionMeta(card, mKo, session, official, true);
+      wireQuinielaPredictionHandlersInScope(card, session);
+    }
+  });
+  syncQuinielaPerfectBonusCanvases(wrap);
+  syncGroupPtsBadgeCanvases(wrap);
   scheduleSyncQuinielaTableHorizontalScroll(wrap);
 }
 
@@ -8687,7 +8743,7 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
                   ${quinielaPredsLastThKo}
                 </tr>
               </thead>
-              ${partidosPredsLazyTbodyHtml()}
+              ${partidosPredsTbodyHtml(mKo, session, official, isAdmin, true)}
             </table>
           </div>
         </div>
@@ -10526,7 +10582,7 @@ function renderQuinielaMatchCard(m, session, official, isAdmin, nextJornadaIds, 
                   ${quinielaPredsLastTh}
                 </tr>
               </thead>
-              ${partidosPredsLazyTbodyHtml()}
+              ${partidosPredsTbodyHtml(m, session, official, isAdmin, false)}
             </table>
           </div>
         </div>
@@ -12495,6 +12551,23 @@ function refreshArenaPanelsIfIdle() {
   }
 }
 
+/** Privadas: refresco ligero tras sync remoto (sin reemplazar todo Partidos). */
+function refreshPrivadasPanelsIfIdle() {
+  if (hasOpenGroupOrderPicker()) return;
+  const session = loadSession();
+  if (!session) return;
+  const tab = getActiveTabId();
+  if (tab === "partidos") {
+    refreshPrivadasPartidosPredictionTables(session);
+  }
+  refreshAll(session, {
+    preserveScroll: true,
+    onlyActivePanel: true,
+    deferGlobalRankings: true,
+    skipPartidosRender: tab === "partidos" && !shouldMutePartidosFullRender(),
+  });
+}
+
 /**
  * @param {{ participantId: string } | null} session
  * @param {{ skipPartidosRender?: boolean, preserveScroll?: boolean, onlyActivePanel?: boolean, deferGlobalRankings?: boolean }} [opts]
@@ -12708,12 +12781,19 @@ export function initApp() {
     }
     externalSyncRefreshChain = externalSyncRefreshChain
       .then(() => {
-        invalidateAllPanelContent();
-        refreshAll(loadSession(), {
-          preserveScroll: true,
-          onlyActivePanel: true,
-          deferGlobalRankings: true,
-        });
+        const sess = loadSession();
+        const tab = getActiveTabId();
+        if (!sess || !isPanelContentReady(tab)) {
+          invalidateAllPanelContent();
+          refreshAll(sess, {
+            preserveScroll: true,
+            onlyActivePanel: true,
+            deferGlobalRankings: true,
+          });
+          return;
+        }
+        invalidateInactivePanelContent();
+        refreshPrivadasPanelsIfIdle();
       })
       .catch((err) => {
         console.error("[pm26] refresh tras sincronización externa", err);

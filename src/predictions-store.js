@@ -220,10 +220,11 @@ export function hydratePredictionsFromRemote(map) {
     }
     return;
   }
+  if (map == null || typeof map !== "object") return;
   useRemotePredictions = true;
   const prevMap = { ...predictionsRemoteMap };
   predictionsRemoteMap = {};
-  const src = map && typeof map === "object" ? map : {};
+  const src = map;
   for (const [id, raw] of Object.entries(src)) {
     const prev = prevMap[id];
     if (pendingPushByParticipant.has(id) || prev == null) {
