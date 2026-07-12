@@ -8743,7 +8743,7 @@ function renderQuinielaMatchCardKo(m, session, official, isAdmin, nextJornadaIds
                   ${quinielaPredsLastThKo}
                 </tr>
               </thead>
-              ${partidosPredsTbodyHtml(mKo, session, official, isAdmin, true)}
+              ${partidosPredsTbodyHtml(m, session, official, isAdmin, true)}
             </table>
           </div>
         </div>
