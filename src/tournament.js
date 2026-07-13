@@ -271,6 +271,10 @@ const KO_CUSTOM_FEEDERS = {
     { home: 13, away: 15 }, // M95: W86 vs W88
     { home: 12, away: 14 }, // M96: W85 vs W87
   ],
+  sf: [
+    { home: 0, away: 2 }, // M101: W97 vs W98 (ko-qf-1 vs ko-qf-3)
+    { home: 1, away: 3 }, // M102: W99 vs W100 (ko-qf-2 vs ko-qf-4)
+  ],
 };
 
 function koKick(id) {
