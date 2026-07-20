@@ -1867,11 +1867,7 @@ function hydratePredsEveryoneLazyHost(host) {
     host.innerHTML = buildGeneralesPredictionsTableHtml(session.participantId);
     const officialStore = loadOfficialResults();
     const officialGen = officialStore.generalOfficial ?? {};
-    const hasOfficialData =
-      officialStore.generalOfficialConfirmed === true &&
-      Boolean(String(officialGen.first ?? "").trim()) &&
-      Boolean(String(officialGen.second ?? "").trim()) &&
-      Boolean(String(officialGen.third ?? "").trim());
+    const hasOfficialData = officialStore.generalOfficialConfirmed === true;
     const generalesBar = host.querySelector("[data-participant-search-bar]");
     if (generalesBar instanceof HTMLElement) {
       stampArenaPredictionListMeta(
@@ -4921,11 +4917,7 @@ function getGeneralesPredListOpts(currentParticipantId, officialGen, hasOfficial
 function buildGeneralesPredictionsTableHtml(currentParticipantId) {
   const officialStore = loadOfficialResults();
   const officialGen = officialStore.generalOfficial ?? {};
-  const hasOfficialData =
-    officialStore.generalOfficialConfirmed === true &&
-    Boolean(String(officialGen.first ?? "").trim()) &&
-    Boolean(String(officialGen.second ?? "").trim()) &&
-    Boolean(String(officialGen.third ?? "").trim());
+  const hasOfficialData = officialStore.generalOfficialConfirmed === true;
 
   const draftHasAny =
     Boolean(String(officialGen.first ?? "").trim()) ||
@@ -5039,7 +5031,7 @@ function buildGeneralesPredictionsTableHtml(currentParticipantId) {
           </div>
         </th>
         ${c1}${c2}${c3}${ta}${tb}${tc}
-        <td class="${ptsTdClass}">${hasOfficialData ? score.total : "—"}</td>
+        <td class="${ptsTdClass}"><div class="group-preds-pts-cell">${hasOfficialData ? score.total : "—"}</div></td>
       </tr>`;
     })
     .join("");
@@ -5129,11 +5121,7 @@ function renderGeneralesComparisonTable(participantId) {
   host.innerHTML = buildGeneralesPredictionsTableHtml(participantId);
   const officialStore = loadOfficialResults();
   const officialGen = officialStore.generalOfficial ?? {};
-  const hasOfficialData =
-    officialStore.generalOfficialConfirmed === true &&
-    Boolean(String(officialGen.first ?? "").trim()) &&
-    Boolean(String(officialGen.second ?? "").trim()) &&
-    Boolean(String(officialGen.third ?? "").trim());
+  const hasOfficialData = officialStore.generalOfficialConfirmed === true;
   const generalesBar = host.querySelector("[data-participant-search-bar]");
   if (generalesBar instanceof HTMLElement) {
     stampArenaPredictionListMeta(
@@ -5401,8 +5389,7 @@ function bindGeneralesOfficialAdminActions() {
         generalOfficialConfirmed: true,
         generalPredictionsBlockedForParticipants: false,
       });
-      renderGenerales(participantId, loadPredictions(participantId), false);
-      renderStats(loadSession());
+      refreshAll(loadSession());
       return;
     }
     if (action === "unlock-official") {
@@ -5410,16 +5397,9 @@ function bindGeneralesOfficialAdminActions() {
         generalOfficialConfirmed: false,
         generalPredictionsBlockedForParticipants: false,
       });
-      refreshGeneralesAfterOfficialUnlock(participantId);
+      refreshAll(loadSession());
     }
   });
-}
-
-/** Sin re montar el formulario de usuario solo para quitar «confirmado» del admin. */
-function refreshGeneralesAfterOfficialUnlock(participantId) {
-  renderGeneralesOfficialAdmin(participantId);
-  renderGeneralesComparisonTable(participantId);
-  renderStats(loadSession());
 }
 
 function renderGenerales(participantId, predictions, disabled) {

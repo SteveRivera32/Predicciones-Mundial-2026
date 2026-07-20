@@ -353,10 +353,14 @@ export function mergeOfficialPreferAdvancedNormalized(local, remote) {
     }
   }
 
-  if (remote.generalOfficialConfirmed && !local.generalOfficialConfirmed) {
-    out.generalOfficial = { .../** @type {object} */ (local.generalOfficial), ...remote.generalOfficial };
-    out.generalOfficialConfirmed = true;
+  // Generales: el snapshot base (`local`) manda. En push el cliente es `local`;
+  // en hydrate sin escritura reciente el remoto es `local` (primer argumento).
+  // No re-imponer confirmación del otro lado: eso impedía desconfirmar y podía
+  // dejar puntos de generales fuera de sync entre pestañas/servidor.
+  if (local.generalOfficial != null && typeof local.generalOfficial === "object") {
+    out.generalOfficial = { .../** @type {object} */ (local.generalOfficial) };
   }
+  out.generalOfficialConfirmed = local.generalOfficialConfirmed === true;
   if (remote.groupPredictionsBlockedForAll || local.groupPredictionsBlockedForAll) {
     out.groupPredictionsBlockedForAll =
       remote.groupPredictionsBlockedForAll || local.groupPredictionsBlockedForAll;

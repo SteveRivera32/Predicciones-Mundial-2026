@@ -446,15 +446,12 @@ export function computeLiveParticipantRowsFromData(
   );
   const liveOfficial = getLiveOfficialGroupSnapshotFromOfficial(official);
   const officialGen = official.generalOfficial ?? {};
-  const hasGeneralOfficial =
-    official.generalOfficialConfirmed === true &&
-    Boolean(String(officialGen.first ?? "").trim()) &&
-    Boolean(String(officialGen.second ?? "").trim()) &&
-    Boolean(String(officialGen.third ?? "").trim());
+  const hasGeneralOfficial = official.generalOfficialConfirmed === true;
 
   return participants.map((p) => {
     let total = 0;
     let matchPointsTotal = 0;
+    let generalPointsTotal = 0;
     let exact = 0;
     let outcome = 0;
     let zeroPointMatches = 0;
@@ -476,7 +473,8 @@ export function computeLiveParticipantRowsFromData(
 
     if (hasGeneralOfficial) {
       const genScore = computeGeneralPredictionsScore(pStore.general ?? {}, officialGen, true);
-      total += genScore.total;
+      generalPointsTotal = genScore.total;
+      total += generalPointsTotal;
       if (genScore.exactTierLabel === "bien") generalBienCount += 1;
       else if (genScore.exactTierLabel === "excelente") generalExcelenteCount += 1;
       else if (genScore.exactTierLabel === "perfecto") generalPerfectCount += 1;
@@ -645,6 +643,7 @@ export function computeLiveParticipantRowsFromData(
       groupOrderPerfectCount,
       groupOrderBonusCount,
       groupOrderPointsTotal,
+      generalPointsTotal,
     };
   });
 }
@@ -719,6 +718,7 @@ export function arenaRankingRowToParticipantStats(row) {
     groupOrderPerfectCount: row.groupOrderPerfectCount ?? 0,
     groupOrderBonusCount: row.groupOrderBonusCount ?? 0,
     groupOrderPointsTotal: row.groupOrderPointsTotal ?? 0,
+    generalPointsTotal: row.generalPointsTotal ?? 0,
   };
 }
 

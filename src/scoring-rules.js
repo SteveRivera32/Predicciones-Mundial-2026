@@ -202,57 +202,56 @@ export function computeGeneralPredictionsScore(pred, official, hasOfficialData) 
   const ot = String(official.third ?? "").trim();
 
   const offPodium = [of, os, ot].filter(Boolean);
-  if (offPodium.length < 3) {
-    return empty;
-  }
+  const podiumReady = offPodium.length >= 3;
 
-  const offSet = new Set(offPodium);
-
-  const cellExact = {
-    first: Boolean(pf && pf === of),
-    second: Boolean(ps && ps === os),
-    third: Boolean(pt && pt === ot),
-  };
-
+  /** @type {{ first: boolean, second: boolean, third: boolean }} */
+  const cellExact = { first: false, second: false, third: false };
+  /** @type {{ first: boolean, second: boolean, third: boolean }} */
+  const cellQualWrongPos = { first: false, second: false, third: false };
+  /** @type {{ first: number, second: number, third: number }} */
+  const cellPodiumPts = { first: 0, second: 0, third: 0 };
   let exactCount = 0;
-  if (cellExact.first) exactCount += 1;
-  if (cellExact.second) exactCount += 1;
-  if (cellExact.third) exactCount += 1;
-
   let exactTierPts = 0;
   /** @type {null | "bien" | "excelente" | "perfecto"} */
   let exactTierLabel = null;
-  if (exactCount === 1) {
-    exactTierPts = PODIUM_EXACT_COUNT_BONUS[1];
-    exactTierLabel = "bien";
-  } else if (exactCount === 2) {
-    exactTierPts = PODIUM_EXACT_COUNT_BONUS[2];
-    exactTierLabel = "excelente";
-  } else if (exactCount === 3) {
-    exactTierPts = PODIUM_EXACT_COUNT_BONUS[3];
-    exactTierLabel = "perfecto";
-  }
 
-  const slotTeams = [pf, ps, pt];
-  /** @type {("first"|"second"|"third")[]} */
-  const slotKeys = ["first", "second", "third"];
-  /** @type {{ first: number, second: number, third: number }} */
-  const cellPodiumPts = { first: 0, second: 0, third: 0 };
-  let hitIdx = 0;
-  for (let i = 0; i < 3; i++) {
-    const team = slotTeams[i];
-    if (team && offSet.has(team)) {
-      const add = PODIUM_SLOT_AWARDS_ORDER[hitIdx] ?? 0;
-      cellPodiumPts[slotKeys[i]] = add;
-      hitIdx += 1;
+  if (podiumReady) {
+    const offSet = new Set(offPodium);
+    cellExact.first = Boolean(pf && pf === of);
+    cellExact.second = Boolean(ps && ps === os);
+    cellExact.third = Boolean(pt && pt === ot);
+    if (cellExact.first) exactCount += 1;
+    if (cellExact.second) exactCount += 1;
+    if (cellExact.third) exactCount += 1;
+
+    if (exactCount === 1) {
+      exactTierPts = PODIUM_EXACT_COUNT_BONUS[1];
+      exactTierLabel = "bien";
+    } else if (exactCount === 2) {
+      exactTierPts = PODIUM_EXACT_COUNT_BONUS[2];
+      exactTierLabel = "excelente";
+    } else if (exactCount === 3) {
+      exactTierPts = PODIUM_EXACT_COUNT_BONUS[3];
+      exactTierLabel = "perfecto";
     }
-  }
 
-  const cellQualWrongPos = {
-    first: Boolean(pf && offSet.has(pf) && !cellExact.first),
-    second: Boolean(ps && offSet.has(ps) && !cellExact.second),
-    third: Boolean(pt && offSet.has(pt) && !cellExact.third),
-  };
+    const slotTeams = [pf, ps, pt];
+    /** @type {("first"|"second"|"third")[]} */
+    const slotKeys = ["first", "second", "third"];
+    let hitIdx = 0;
+    for (let i = 0; i < 3; i++) {
+      const team = slotTeams[i];
+      if (team && offSet.has(team)) {
+        const add = PODIUM_SLOT_AWARDS_ORDER[hitIdx] ?? 0;
+        cellPodiumPts[slotKeys[i]] = add;
+        hitIdx += 1;
+      }
+    }
+
+    cellQualWrongPos.first = Boolean(pf && offSet.has(pf) && !cellExact.first);
+    cellQualWrongPos.second = Boolean(ps && offSet.has(ps) && !cellExact.second);
+    cellQualWrongPos.third = Boolean(pt && offSet.has(pt) && !cellExact.third);
+  }
 
   const norm = normalizeAwardText;
   const oPlayer = norm(official.bestPlayer);

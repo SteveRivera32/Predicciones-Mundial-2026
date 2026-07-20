@@ -237,12 +237,10 @@ export async function initArenaSyncPoll() {
   });
 
   window.addEventListener("pm26-arena-local-official-saved", () => {
-
     lastOfficialFingerprint = "";
-
     lastFingerprint = "";
-
+    void pullArenaOfficialSync({ lite: true }).catch(() => {});
+    void pullArenaRankings().catch(() => {});
   });
-
 }
 
